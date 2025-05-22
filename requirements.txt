@@ -5,3 +5,4 @@ scikit-image
 Pillow
 renishawWiRE
 pandas
+json
