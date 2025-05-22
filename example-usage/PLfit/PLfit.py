@@ -86,12 +86,8 @@ class PLfit:
 
         # Normalization
         self.normalize = normalize
-        if self.normalize:
-            self.peak_intensity = np.max(self.processed_spectra)
-            self.intensity_normal = self.processed_spectra / self.peak_intensity
-        else:
-            self.peak_intensity = 1.0
-            self.intensity_normal = self.processed_spectra
+        self.peak_intensity = np.max(self.processed_spectra)
+        self.intensity_normal = self.processed_spectra / self.peak_intensity
 
         # Default fitting bounds (Exciton and Trion)
         self.lower_bound = [1.95, 0, 0, 1.8, 0, 0]
@@ -203,39 +199,43 @@ class PLfit:
         exciton_amp = params[5]
         
         # Determine scaling factors based on normalization
+        data_plot = self.processed_spectra * scale + offset
         if self.normalize:
-            data_plot = self.processed_spectra * scale + offset
-            fit_scale = self.peak_intensity
-            trion_peak = (trion_amp / (np.pi * trion_scale)) * self.peak_intensity
-            exciton_peak = (exciton_amp / (np.pi * exciton_scale)) * self.peak_intensity
-            plt.yticks([])
-        else:
-            data_plot = self.processed_spectra * scale + offset
             fit_scale = 1.0  # Already in original units
             trion_peak = trion_amp / (np.pi * trion_scale)
             exciton_peak = exciton_amp / (np.pi * exciton_scale)
+            plt.yticks([])
+        else:
+            fit_scale = self.peak_intensity
+            trion_peak = (trion_amp / (np.pi * trion_scale)) * self.peak_intensity
+            exciton_peak = (exciton_amp / (np.pi * exciton_scale)) * self.peak_intensity
 
         # Plot processed spectrum
         plt.plot(self.energy, data_plot, 'k-', label='Processed Spectrum')
 
-
-
         # Calculate and plot fitted curves
         y_fit = self.lorentzian_pl(self.energy, *params) * fit_scale
-        plt.plot(self.energy, y_fit, 'b--', label='Total Fit')
+        if self.normalize:
+            plt.plot(self.energy, y_fit * self.peak_intensity, 'b--', label='Fitted Total Curve')
+        else:
+            plt.plot(self.energy, y_fit , 'b--', label='Fitted Total Curve')
 
         # Plot components
-        y_fit_trion = (params[1]/((self.energy-params[0])**2+params[1]**2)) * params[2]/np.pi * fit_scale
-        y_fit_exciton = (params[4]/((self.energy-params[3])**2+params[4]**2)) * params[5]/np.pi * fit_scale
+        if self.normalize:
+            y_fit_trion = (params[1]/((self.energy-params[0])**2+params[1]**2)) * params[2]/np.pi * fit_scale * self.peak_intensity
+            y_fit_exciton = (params[4]/((self.energy-params[3])**2+params[4]**2)) * params[5]/np.pi * fit_scale * self.peak_intensity        
+        else:
+            y_fit_trion = (params[1]/((self.energy-params[0])**2+params[1]**2)) * params[2]/np.pi * fit_scale
+            y_fit_exciton = (params[4]/((self.energy-params[3])**2+params[4]**2)) * params[5]/np.pi * fit_scale
         plt.plot(self.energy, y_fit_trion, 'r--', label="Trion")
         plt.plot(self.energy, y_fit_exciton, 'g--', label="Exciton")
 
         # Calculate normalized residual
         fitted_curve = self.lorentzian_pl(self.energy, *params)
         residual = np.sum((self.intensity_normal - fitted_curve) ** 2) / np.sum(self.intensity_normal ** 2)
-        
-        print(f'\nFitting Quality Metrics:')
         print(f'Normalized Residual: {residual:.4f} (Perfect fit has R = 0)\n')
+        
+        # Print FWHM and Amplitude of exciton and trion
         print(f'Trion: {params[0]:.2f} eV   | FWHM: {2*trion_scale:.2f} eV  | Amplitude: {trion_peak:.2f}')
         print(f'Exciton: {params[3]:.2f} eV | FWHM: {2*exciton_scale:.2f} eV  | Amplitude: {exciton_peak:.2f}')
 
