@@ -11,6 +11,9 @@
 - Heatmaps of integrated spectra data in a selected range
 - Heatmaps of the data processed with a `filter_range` and `data_range` selection.
 - Heatmaps of intensity at specific wavenumber/energy by fitted spectra
+- Auto-calculation of important data for 2D materials: **A1g - E2g peak difference** and **FWHM** of peaks
+- Heatmaps of Raman spectrum **A1g - E2g Peak difference** and **E2g/A1g peak ratio**
+- Sanity check: normalised residual calculation and distribution, dynamical spectrum fitting view
 
 ## Repository Structure
 
