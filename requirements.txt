@@ -1,8 +1,5 @@
-numpy
-matplotlib
-scipy
-scikit-image
-Pillow
-renishawWiRE
-pandas
-json
+numpy>=1.24.4
+matplotlib>=3.5.2
+scipy>=1.11.0
+Pillow>=11.2.1
+renishawWiRE>=0.1.16
