@@ -1,4 +1,4 @@
-# RamanPL_2D
+# RamanPL_2D (version 0.1.0)
 
 **RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
 
@@ -14,13 +14,14 @@
 
 ## Repository Structure
 
+```bash
 RamanPL_2D/
 ├── example-usage/ # Sample spectral data files and demonstrated usage of python codes by jupyter-notebook (`.ipynb`files)
 │ ├── Mapping/     # PL, Raman data mapping using `Mapping.py`
 │ ├── PLfit/       # PL component curve fitting using `PLfit.py`
 │ └── Ramanfit/    # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
-├── src/ # Source code for data processing and analysis
-│ ├── **init**.py               # For package installation only, header to indicate this is a folder of python packages
+├── src/                # Source code for data processing and analysis
+│ ├── __init__.py               # For package installation only, header to indicate this is a folder of python packages
 │ ├── setup.py                  # For package installation only, include some required python packages for using
 │ ├── RamanFit.py               # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
 │ ├── raman_materials.json      # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
@@ -28,12 +29,13 @@ RamanPL_2D/
 │ └── Mapping.py                # Mapping of Raman, PL and integration of spectra
 ├── requirements.txt    # List of required Python packages
 └── README.md           # Project documentation
+```
 
 ---
 
 ## Getting Started
 
-    For users new to Python or Visual Studio Code (VS Code), the following steps will help you get started:
+For users new to Python or Visual Studio Code (VS Code), the following steps will help you get started:
 
 ### 1. Install Python
 
@@ -51,27 +53,27 @@ Download and install VS Code from: <https://code.visualstudio.com/>
 
 ### 4. Clone the Repository
 
-    ```bash
+```bash
     git clone https://github.com/barry063/RamanPL_2D.git
     cd RamanPL_2D
-    ```
+```
 
 ### 5. Install Dependencies
 
-    ```bash
+ ```bash
     pip install -r requirements.txt
-    ```
+```
 
 ### 6. Run Example Notebook
 
-    - Open example_analysis.ipynb in the notebooks/ folder using VS Code or Jupyter.
-    - Run the cells to see the toolkit in action.
+- Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
+- Run the cells to see the toolkit in action.
 
 ## Usage Examples
 
 ### 1. Mapping.py - PL Mapping Analysis
 
-    ```python
+```python
     import numpy as np
     from Mapping import PLMapping
 
@@ -101,11 +103,11 @@ Download and install VS Code from: <https://code.visualstudio.com/>
 
     # Plot spectrum fit at specific coordinates
     pl_map.plot_spectrum_fit(x=10, y=15)
-    ```
+```
 
 ### 2. PLfit.py - Single Spectrum PL Analysis
 
-    ```python
+```python
     import numpy as np
     from PLfit import PLfit
 
@@ -128,11 +130,11 @@ Download and install VS Code from: <https://code.visualstudio.com/>
 
     # Visualize results
     pl.plot_fit(params, x_lim=[1.8, 2.1])
-    ```
+```
 
 ### 3. RamanFit.py - Raman Analysis with Material Library
 
-    ```python
+```python
     from RamanFit import RamanFit
     import numpy as np
 
@@ -159,11 +161,11 @@ Download and install VS Code from: <https://code.visualstudio.com/>
 
     # Visualize results
     raman.plot_fit(params, x_lim=[300, 450], x_ticks=[300, 350, 400, 450])
-    ```
+```
 
 Material Library Format (`raman_materials.json`):
 
-    ```json
+```json
     {
         "WS2": {
             "substrate": false,
@@ -182,13 +184,13 @@ Material Library Format (`raman_materials.json`):
             }
         }
     }
-    ```
+```
 
 - Tips: if you need to add new materials to the current materials peak library, please email me at <hy377@cam.ac.uk>
 
 ## 4. Mapping.py - PL Integration Mapping (Without Peak Fitting)
 
-    ```python
+```python
     from Mapping import PL_Integration
 
     # Initialize integration analysis
@@ -221,7 +223,7 @@ Material Library Format (`raman_materials.json`):
     # - Heatmap showing intensity distribution in specified region
     # - Spectrum plot comparing raw and background-removed data
     # - Console output showing calculated integration values
-    ```
+```
 
 ---
 
