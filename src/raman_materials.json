@@ -1,0 +1,179 @@
+{
+    "Si": {
+        "peaks": {
+            "lower_bound": [519, 0, 0],
+            "upper_bound": [522, 10, 10],
+            "peak_labels": ["Si"]
+        },
+        "substrate": true
+    },
+
+    "SiO2": {
+        "peaks": {
+            "lower_bound": [519, 0, 0],
+            "upper_bound": [522, 10, 10],
+            "peak_labels": ["Si"]
+        },
+        "substrate": true
+    },
+
+    "WS2": {
+        "peaks": {
+            "lower_bound": [
+                353, 0, 0, 
+                418, 0, 0, 
+                170, 0, 0,
+                348, 0, 0, 
+                225, 0, 0, 
+                295, 0, 0,
+                318, 0, 0, 
+                583, 0, 0, 
+                697, 0, 0,  
+                413, 0, 0
+            ],
+            "upper_bound": [
+                358, 5, 10, 
+                424, 5, 10, 
+                180, 10, 10,
+                353, 5, 10, 
+                235, 10, 10,
+                305, 10, 2,
+                328, 10, 10, 
+                587, 10, 10, 
+                710, 10, 10, 
+                418, 5, 5
+            ],
+            "peak_labels": ["E12g", "A1g", "LA(M)", "2LA(M)",
+                "A1g(M)-LA(M)", "2LA(M)-2E22g", "2LA(M)-E22g",
+                "A1g(M)+LA(M)", "4LA(M)", "B1/u"]
+        },
+        "substrate": false  
+    },
+
+    
+    "WO3": {        
+        "peaks": {
+            "lower_bound": [
+                250, 0, 0, 
+                800, 0, 0
+            ],
+            "upper_bound": [
+                270, 10, 10, 
+                810, 5, 10
+            ],
+            "peak_labels": ["W=O bending",  "W=O stretching"]
+        },
+        "substrate": false 
+    },
+
+    "MoS2": {
+        "peaks": {
+            "lower_bound": [
+                380, 0, 0,      
+                400, 0, 0,      
+                460, 0, 0,      
+                570, 0, 0,      
+                595, 0, 0,      
+                638, 0, 0    
+            ],
+            "upper_bound": [
+                388, 5, 10,
+                409, 5, 10,
+                469, 5, 10,
+                576, 5, 10,
+                605, 5, 10,
+                646, 5, 10
+            ],
+            "peak_labels": ["E12g", "A1g", "2LA(M)", "2E1g", "E22g+LA(M)", "A12g+LA(M)"]
+        },
+        "substrate": false  
+    },
+
+    "a-MoO3": {
+        "peaks": {
+            "lower_bound": [
+                120, 0, 0,
+                189, 0, 0,
+                209, 0, 0,
+                239, 0, 0,
+                330, 0, 0,
+                356, 0, 0,
+                482, 0, 0
+            ],
+            "upper_bound": [
+                140, 5, 10,
+                209, 5, 10,
+                229, 5, 10,
+                259, 5, 10,
+                350, 5, 10,
+                376, 5, 10,
+                502, 5, 10
+            ],
+            "peak_labels": ["B2g", "B1u", "B3u", "B3g", "B2u", "A1g(O=Mo)", "Ag"]
+        },
+        "substrate": false  
+    },
+
+    "HfO2": {
+        "peaks": {
+            "lower_bound": [
+                108, 0, 0,
+                132, 0, 0,
+                147, 0, 0,
+                164, 0, 0,
+                319, 0, 0,
+                378, 0, 0,
+                393, 0, 0,
+                498, 0, 0
+            ],
+            "upper_bound": [
+                115, 10, 5,
+                138, 10, 5,
+                152, 10, 5,
+                170, 10, 5,
+                325, 10, 5,
+                384, 10, 5,
+                400, 10, 5,
+                504, 10, 5
+            ],
+            "peak_labels": ["HfO2-Ag1","HfO2-Ag2","HfO2-Ag3","HfO2-Ag4",
+                            "HfO2-Bg1","HfO2-Bg2","HfO2-Bg3","HfO2-Bg4"]
+        },
+        "substrate": false  
+    },
+
+    "HfSe2": {
+        "peaks": {
+            "lower_bound": [
+                140, 0, 0,
+                224, 0, 0,
+                196, 0, 0
+            ],
+            "upper_bound": [
+                148, 10, 5,
+                228, 10, 5,
+                203, 10, 5
+            ],
+            "peak_labels": ["Eg1","Eg2","A1g"]
+        },
+        "substrate": false  
+    },
+
+    "Se": {
+        "peaks": {
+            "lower_bound": [
+                228, 0, 0,
+                245, 0, 0,
+                256, 0, 0
+            ],
+            "upper_bound": [
+                236, 10, 10,
+                255, 10, 10,
+                264, 10, 10
+            ],
+            "peak_labels": ["t-Se","a-Se","Se8"]
+        },
+        "substrate": false  
+    }
+
+}
