@@ -1,7 +1,7 @@
 """
-A module for analyzing Raman spectra using multi-peak Lorentzian fitting with material-specific configurations.
+A module for  importing Raman data from .wdf and .txt files, analyzing Raman spectra using multi-peak Lorentzian fitting with material-specific configurations.
 """
-
+from renishawWiRE import WDFReader
 import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
@@ -9,7 +9,65 @@ from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter1d
 from numpy.polynomial import Polynomial
 import json
-import os
+
+
+class DataImporter:
+    """Class for importing Raman data from .wdf and .txt files (single spectrum only)"""
+    @staticmethod
+    def data_import(filename, readlines=[300, 780]):
+        """Import Raman data from single spectrum files
+        
+        Parameters
+        ----------
+        filename : str
+            Path to .wdf or .txt file
+        readlines : list, optional
+            Data range indices [start, end] to select subset of data points
+            
+        Returns
+        -------
+        tuple
+            (spectra, xdata) as numpy arrays
+            
+        Raises
+        ------
+        RuntimeError
+            If file cannot be imported
+        ValueError
+            For unsupported formats or invalid data
+        """
+        try:
+            if filename.lower().endswith('.wdf'):
+                
+                # Handle WDF files
+                reader = WDFReader(filename)               
+                spectra = reader.spectra
+                xdata = reader.xdata
+
+            elif filename.lower().endswith('.txt'):
+                # Handle text files with numpy
+                data = np.loadtxt(filename, delimiter="\t", skiprows=1)
+                
+                # Validate text file format
+                if data.shape[1] != 2:
+                    raise ValueError("Text file must contain exactly 2 columns: xdata and intensity")
+                
+                xdata = data[:, 0]
+                spectra = data[:, 1]
+
+            else:
+                raise ValueError("Supported formats: .wdf, .txt")
+
+            # Apply safe range selection
+            n_points = len(spectra)
+            start = max(0, min(readlines[0], n_points))
+            end = max(start, min(readlines[1], n_points))
+            
+            return spectra[start:end], xdata[start:end]
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to import {filename}: {str(e)}")
+
 
 class RamanFit:
     """A class for fitting and analyzing Raman spectra using configurable multi-peak Lorentzian models.
@@ -54,8 +112,6 @@ class RamanFit:
     plot_fit(params, **kwargs)
         Visualize fitting results
     """
-
-class RamanFit:
     def __init__(self, spectra, wavenumber, materials=None, substrate=None,
                  background_remove=False, baseline_method='poly',
                  poly_degree=3, gaussian_sigma=50, smoothing=False, 
