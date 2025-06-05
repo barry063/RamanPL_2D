@@ -17,6 +17,11 @@
 
 ### Change log
 
+**Version 0.2.0 (2025-6-6):**
+
+1. Move source code to `ramanpl` folder, create package installation manuals for local library installation and usage
+2. Modified the jupyter-notebook codes in example for local library usage.
+
 **Version 0.1.5 (2025-6-5):**
 
 1. Added *Gr* and *2L-Gr* for graphene/bilayer-graphene library file `raman_materials.json`
@@ -31,15 +36,18 @@ RamanPL_2D/
 │ ├── Mapping/     # PL, Raman data mapping using `Mapping.py`
 │ ├── PLfit/       # PL component curve fitting using `PLfit.py`
 │ └── Ramanfit/    # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
-├── src/                # Source code for data processing and analysis
-│ ├── __init__.py               # For package installation only, header to indicate this is a folder of python packages
-│ ├── setup.py                  # For package installation only, include some required python packages for using
-│ ├── RamanFit.py               # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
-│ ├── raman_materials.json      # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
-│ ├── PLfit.py                  # Class modules for Raman spectra fitting and plotting
-│ └── Mapping.py                # Mapping of Raman, PL and integration of spectra
+├── src/                # Source code for data processing and analysis DON'T CHANGE THE FOLDER STRUCTURE!
+│ ├── ramanpl/          # header of the pacakage name, so you should use "from ramanpl import RamanFit" forspecific module
+│ │ ├── __init__.py               # For package installation only, header to indicate this is a folder of python packages
+│ │ ├── RamanFit.py               # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
+│ │ ├── raman_materials.json      # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
+│ │ ├── PLfit.py                  # Class modules for Raman spectra fitting and plotting
+│ │ └── Mapping.py                # Mapping of Raman, PL and integration of spectra
+│ ├── install.ipynb     # A jupyter-notebook run to install  our package
+│ └── setup.py          # For package installation only, include some required python packages for using
 ├── requirements.txt    # List of required Python packages
 └── README.md           # Project documentation
+
 ```
 
 ---
@@ -75,7 +83,56 @@ Download and install VS Code from: <https://code.visualstudio.com/>
     pip install -r requirements.txt
 ```
 
-### 6. Run Example Notebook
+### 6. **(Optional)** Installing the Library Locally (for VSCode & Jupyter Notebook)
+
+To use the `RamanPL_2D` toolkit in your own scripts or Jupyter notebooks, you can install the package locally using either of the following methods:
+
+#### Option 1: Install as Editable Package (Recommended)
+
+This method allows you to import your package from anywhere, and changes in your source code will be automatically reflected without needing to reinstall.
+
+1. Navigate to the Source Folder
+
+    ```bash
+        cd "path to code\RamanPL_2D\src"
+    ```
+
+2. Install Using `pip`
+
+    ```bash
+        pip install .
+    ```
+
+3. This will install the library in **editable** mode. You can now import it in Python like:
+
+    ```python
+        from ramanpl import RamanFit
+        from ramanpl import PLfit
+    ```
+
+#### Option 2: Run `install.ipynb` for installation
+
+Go to the `src` folder, click open the `install.ipynb` jupyter-notebook file. **DON'T** move the `install.ipynb` out of the `src` folder!
+Simply run all the codes in the `install.ipynb` to run the installation in the jupyter-notebook
+
+**Important**: all the `.ipynb` in the example usage folders assume you have installed the package. So if you couldn't run the example nicely, maybe install the packages first.
+
+#### Option 3: Add Folder to PYTHONPATH or sys.path (Manual)
+
+If you prefer not to install the package, you can manually add the source folder to your Python path.
+
+In your script or jupyter-notebook:
+
+```python
+    import sys
+    sys.path.append(r"path\RamanPL_2D\src")
+
+    from ramanpl import RamanFit
+```
+
+**This approach is transient – it must be repeated each time the Python kernel restarts unless automated via environment variables or startup scripts.**
+
+### 7. Run Example Notebook
 
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
@@ -240,7 +297,7 @@ Material Library Format (`raman_materials.json`):
 
 ## To-do
 
-- Add more materials to the `raman_materials.json` library, such as graphnene, hBN etc.
+- Add more materials to the `raman_materials.json` library, such as hBN etc.
 - Add a manuals basic science behind curve-fitting
 - Add more background substraction options such as shirley, tougard, etc.
 - Add a batch processing and batch visualisation tools or functionalities

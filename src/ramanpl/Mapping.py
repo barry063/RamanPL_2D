@@ -1,3 +1,18 @@
+"""Module for spectroscopic mapping data analysis and visualization.
+
+Provides classes for loading, processing, and visualizing photoluminescence (PL) 
+and Raman mapping data from .wdf and .txt files. Includes peak fitting, spectral 
+integration, and 2D heatmap visualization capabilities.
+
+Classes:
+    MappingFileLoader: Loads spectroscopic mapping data from files
+    MappingImage: Displays optical images from .wdf files
+    PLMapping: Analyzes PL data through Lorentzian peak fitting
+    PL_Integration: Analyzes PL data through spectral integration
+    RamanMapping: Analyzes Raman data through Lorentzian peak fitting
+    Raman_Integration: Analyzes Raman data through spectral integration
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import optimize
@@ -11,7 +26,26 @@ from renishawWiRE import WDFReader
 
 
 class MappingFileLoader:
+    """Loader for spectroscopic mapping data from .wdf and .txt files.
+    
+    Attributes:
+        filename (str): Path to input file
+        data_format (str): File format ('txt' or 'wdf')
+        reader (WDFReader): Renishaw file reader object (for .wdf only)
+        X (int): Number of points in X-direction
+        Y (int): Number of points in Y-direction
+        xdata (ndarray): Spectral axis values
+        spectra (ndarray): 3D array of spectra [Y, X, spectral_points]
+    """
     def __init__(self, filename):
+        """Initialize file loader and detect file format.
+        
+        Args:
+            filename (str): Path to input file (.wdf or .txt)
+        
+        Raises:
+            ValueError: For unsupported file formats
+        """
         self.filename = filename
         self.reader = None
         if filename.endswith(".txt"):
@@ -24,6 +58,12 @@ class MappingFileLoader:
             raise ValueError("Unsupported file format. Only '.txt' and '.wdf' are supported.")
 
     def _load_txt(self):
+        """Load mapping data from ASCII text file.
+        
+        Expected format:
+        - First row: Headers (skipped)
+        - Columns: [X, Y, Wavenumber, Intensity]
+        """
         data = np.loadtxt(self.filename, skiprows=1)
         x_coords = np.unique(data[:, 0])
         y_coords = np.unique(data[:, 1])
@@ -42,6 +82,7 @@ class MappingFileLoader:
         self.spectra = spectra
 
     def _load_wdf(self):
+        """Load mapping data from Renishaw .wdf file using renishawWiRE library."""
         self.reader = WDFReader(self.filename)
         self.X = self.reader.map_shape[0]
         self.Y = self.reader.map_shape[1]
@@ -54,12 +95,29 @@ class MappingFileLoader:
 
 
 class MappingImage:
+    """Displays optical images from .wdf files with mapping region overlay.
+    
+    Attributes:
+        reader (WDFReader): Renishaw file reader object
+    """
     def __init__(self, filename):
+        """Initialize image viewer for .wdf files.
+        
+        Args:
+            filename (str): Path to .wdf file
+            
+        Raises:
+            ValueError: If non-.wdf file is provided
+        """
         if not filename.endswith(".wdf"):
             raise ValueError("MappingImage can only be used with .wdf files.")
         self.reader = WDFReader(filename)
 
     def show_optical_image(self):
+        """Display optical image with mapping area rectangle overlay.
+        
+        Uses PIL for image handling and matplotlib for visualization.
+        """
         from PIL import Image
         import matplotlib.patches as patches
 
@@ -79,36 +137,54 @@ class MappingImage:
 #########################################################################################################################
 
 class PLMapping:
-    """A class for analyzing and visualizing photoluminescence (PL) mapping data through Lorentzian peak fitting.
+    """Photoluminescence mapping analysis through Lorentzian peak fitting.
     
     Attributes:
-        filename (str): Path to .wdf PL mapping file
-        custom_peaks (dict): Dictionary defining peak parameters for fitting
-        data_range (tuple): Spectral range to analyze (min_energy, max_energy) in eV
+        filename (str): Path to .wdf file
+        custom_peaks (dict): Peak parameters for fitting
+        data_range (tuple): Spectral analysis range (min, max) in eV
         step_size (float): Physical step size in micrometers
         poly_degree (int): Polynomial degree for background removal
-        normalize (bool): Whether to normalize spectra to [0,1] range
-        background_remove (bool): Enable/disable background subtraction
-        baseline_method (str): Background removal method ('poly' or 'gaussian')
+        normalize (bool): Enable spectrum normalization
+        background_remove (bool): Enable background subtraction
+        baseline_method (str): Background method ('poly' or 'gaussian')
+        smoothing (bool): Enable spectral smoothing
+        smooth_window (int): Savitzky-Golay window size
+        smooth_poly (int): Savitzky-Golay polynomial order
+        gaussian_sigma (int): Gaussian filter width
+        peak_params (list): Peak names from custom_peaks
+        X (int): Map width in pixels
+        Y (int): Map height in pixels
+        xdata (ndarray): Spectral axis in eV
+        spectra (ndarray): Raw spectral data [Y, X, points]
+        image_viewer (MappingImage): Optical image handler
+        peak_positions (ndarray): Fitted peak centers [Y, X, peaks]
+        peak_intensities (ndarray): Fitted peak amplitudes [Y, X, peaks]
+        fitted_params (ndarray): Full fitting parameters [Y, X, 3*peaks]
+        residual_map (ndarray): Fitting residuals [Y, X]
     """
+
     def __init__(self, filename, custom_peaks, data_range=None, step_size=0.3,
                  poly_degree=3, normalize=False, background_remove=True,
                  baseline_method='poly', smoothing=True, smooth_window=11,
                  smooth_poly=3, gaussian_sigma=10):
-        """Initialize PL mapping analysis parameters.
+        """Initialize PL mapping analyzer.
         
         Args:
-            filename (str): Path to .wdf PL mapping file
-            custom_peaks (dict): Peak definitions with format:
-                {'PeakName': ([min_loc, min_scale, min_amp], [max_loc, max_scale, max_amp])}
-            data_range (tuple): Analysis range (min, max) in eV (default: full spectrum)
-            step_size (float): Physical step size in micrometers (default: 0.3)
-            header (bool): Print file metadata if True (default: False)
-            poly_degree (int): Polynomial degree for background removal (default: 3)
-            normalize (bool): Normalize spectra to [0,1] range (default: False)
-            smooth_window (int): Savitzky-Golay window size (default: 11)
-            gaussian_sigma (int): Sigma for Gaussian background (default: 10)
-        """        
+            filename: Path to .wdf PL mapping file
+            custom_peaks: Peak definitions with bounds {name: (min_params, max_params)}
+            data_range: Spectral range (min, max) in eV (default: full spectrum)
+            step_size: Physical step size in micrometers
+            poly_degree: Background polynomial degree
+            normalize: Normalize spectra to [0,1] range
+            background_remove: Enable background subtraction
+            baseline_method: 'poly' or 'gaussian' background
+            smoothing: Enable spectral smoothing
+            smooth_window: Savitzky-Golay window size
+            smooth_poly: Savitzky-Golay polynomial order
+            gaussian_sigma: Gaussian filter width
+        """
+
         self.filename = filename
         self.custom_peaks = custom_peaks
         self.data_range = data_range
@@ -146,14 +222,14 @@ class PLMapping:
             self.image_viewer.show_optical_image()
 
     def lorentzian(self, x, *params):
-        """Calculate multi-Lorentzian curve for given parameters.
+        """Multi-Lorentzian function for curve fitting.
         
         Args:
-            x (ndarray): Energy values in eV
-            *params: Fitting parameters in sequence [loc1, scale1, amp1, loc2,...]
+            x: Spectral axis values
+            *params: Fitting parameters (loc, scale, amp) for each peak
             
         Returns:
-            ndarray: Sum of Lorentzian components
+            Sum of Lorentzian components
         """
         result = np.zeros_like(x)
         for i in range(0, len(params), 3):
@@ -164,14 +240,15 @@ class PLMapping:
         return result
 
     def remove_background(self, xdata, intensity):
-        """Remove background using specified method.
+        """Remove spectral background using selected method.
         
         Args:
-            energy (ndarray): Spectral axis values in eV
-            intensity (ndarray): Raw intensity values
+            xdata: Spectral axis values
+            intensity: Raw intensity values
             
         Returns:
-            ndarray: Background-subtracted intensity
+            Background-subtracted intensity
+            
         Raises:
             ValueError: For invalid baseline methods
         """
@@ -186,18 +263,19 @@ class PLMapping:
         return bg_removed.clip(min=0)
 
     def fit_spectra(self):
-        """Perform spectral fitting across all map points.
+        """Perform Lorentzian fitting across all map points.
         
-        Processes data through:
-        1. Optional normalization
-        2. Background removal
-        3. Smoothing
+        Processing steps:
+        1. Normalization (optional)
+        2. Background removal (optional)
+        3. Smoothing (optional)
         4. Lorentzian peak fitting
         
         Stores results in:
-        - peak_positions: Fitted peak centers (eV)
-        - peak_intensities: Calculated peak intensities (a.u.)
-        - residual_map: Fitting quality metrics (normalized MSE)
+        - peak_positions in eV
+        - peak_intensities in count/a.u.
+        - fitted_params
+        - residual_map
         """
         lower_bound = []
         upper_bound = []
@@ -240,17 +318,16 @@ class PLMapping:
         """Visualize 2D map of spectral features.
         
         Args:
-            data_type (str): Plot type from:
-                'exciton_position' - Exciton peak center positions
-                'trion_position' - Trion peak center positions
-                'exciton_intensity' - Exciton peak intensities
-                'trion_intensity' - Trion peak intensities
-                'specific_intensity' - Intensity at specified xdata
-            cmap (str): Matplotlib colormap name (default: 'viridis')
-            filter_range (tuple): Data range (min, max) to display
-            specific_xdata (float): Required for 'specific_intensity' type (eV)
-            x_range (tuple): X axis range to display (start, end)
-            y_range (tuple): Y axis range to display (start, end)
+            data_type: Plot type ('exciton_position', 'trion_position', 
+                       'exciton_intensity', 'trion_intensity', 'specific_intensity')
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            specific_xdata: Energy value for 'specific_intensity' plots
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
+            
+        Raises:
+            ValueError: For invalid data types or missing parameters
         """
         if data_type == 'specific_intensity':
             if specific_xdata is None:
@@ -394,22 +471,30 @@ class PLMapping:
 #########################################################################################################################
 
 class PL_Integration:
-    """A class for PL mapping analysis through spectral integration.
+    """Photoluminescence mapping analysis through spectral integration.
     
     Attributes:
-        integration_range (tuple): Spectral range for integration (min_energy, max_energy)
-        background_remove (bool): Enable/disable background subtraction
-        poly_degree (int): Polynomial degree for background removal
+        filename (str): Path to input file
+        integration_range (tuple): Spectral integration range (min, max) in eV
+        step_size (float): Physical step size in micrometers
+        poly_degree (int): Background polynomial degree
+        background_remove (bool): Enable background subtraction
+        X (int): Map width in pixels
+        Y (int): Map height in pixels
+        energy (ndarray): Spectral axis in eV
+        spectra (ndarray): Raw spectral data [Y, X, points]
+        image_viewer (MappingImage): Optical image handler
+        integration_area (ndarray): Integrated intensities [Y, X]
     """
     def __init__(self, filename, integration_range, step_size=0.3, poly_degree=3, background_remove=True):
-        """Initialize integration analysis parameters.
+        """Initialize PL integration analyzer.
         
         Args:
-            filename (str): Path to .wdf PL mapping file
-            integration_range (tuple): Spectral range (min, max) in eV
-            step_size (float): Physical step size in micrometers (default: 0.3)
-            poly_degree (int): Background removal polynomial degree (default: 3)
-            background_remove (bool): Enable background subtraction (default: True)
+            filename: Path to .wdf file
+            integration_range: Spectral range (min, max) in eV
+            step_size: Physical step size in micrometers
+            poly_degree: Background polynomial degree
+            background_remove: Enable background subtraction
         """
         self.filename = filename
         self.integration_range = integration_range
@@ -473,10 +558,10 @@ class PL_Integration:
         """Visualize 2D map of integrated intensities.
         
         Args:
-            cmap (str): Matplotlib colormap name (default: 'viridis')
-            filter_range (tuple): Data range (min, max) to display
-            x_range (tuple): X axis range to display (start, end)
-            y_range (tuple): Y axis range to display (start, end)
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
         """
         # Filter data range
         data = self.integration_area
@@ -556,34 +641,53 @@ class PL_Integration:
 ########################################################################################################################
 
 class RamanMapping:
-    """A class for analyzing and visualizing Raman mapping data through peak fitting.
+    """Raman mapping analysis through Lorentzian peak fitting.
     
     Attributes:
-        filename (str): Path to .wdf Raman mapping file
-        custom_peaks (dict): Dictionary defining peak parameters for fitting
-        data_range (tuple): Spectral range to analyze (min_wavenumber, max_wavenumber)
+        filename (str): Path to .wdf file
+        custom_peaks (dict): Peak parameters for fitting
+        data_range (tuple): Spectral analysis range (min, max) in cm⁻¹
         step_size (float): Physical step size in micrometers
-        normalize (bool): Whether to normalize spectra to [0,1] range
-        background_remove (bool): Enable/disable background subtraction
-        baseline_method (str): Background removal method ('poly' or 'gaussian')
-        smooth_window (int): Window size for Savitzky-Golay filter
+        poly_degree (int): Background polynomial degree
+        normalize (bool): Enable spectrum normalization
+        background_remove (bool): Enable background subtraction
+        smoothing (bool): Enable spectral smoothing
+        baseline_method (str): Background method ('poly' or 'gaussian')
+        smooth_window (int): Savitzky-Golay window size
+        smooth_poly (int): Savitzky-Golay polynomial order
+        gaussian_sigma (int): Gaussian filter width
+        peak_params (list): Peak names from custom_peaks
+        X (int): Map width in pixels
+        Y (int): Map height in pixels
+        wavenumber (ndarray): Spectral axis in cm⁻¹
+        spectra (ndarray): Raw spectral data [Y, X, points]
+        image_viewer (MappingImage): Optical image handler
+        peak_positions (ndarray): Fitted peak centers [Y, X, peaks]
+        peak_intensities (ndarray): Fitted peak amplitudes [Y, X, peaks]
+        fitted_params (ndarray): Full fitting parameters [Y, X, 3*peaks]
+        residual_map (ndarray): Fitting residuals [Y, X]
+        Peaks_distance (ndarray): A1g-E2g peak distances [Y, X]
+        ratio_A1g_E2g (ndarray): A1g/E2g intensity ratios [Y, X]
+        ratio_E2g_A1g (ndarray): E2g/A1g intensity ratios [Y, X]
     """
     def __init__(self, filename, custom_peaks, data_range, step_size=0.3, poly_degree=3,
                  normalize=False, background_remove=True, smoothing=True, baseline_method='poly', smooth_window=11,
                  smooth_poly=3, gaussian_sigma=10):
-        """Initialize Raman mapping analysis parameters.
+        """Initialize Raman mapping analyzer.
         
         Args:
-            filename (str): Path to .wdf Raman mapping file
-            custom_peaks (dict): Peak definitions with format:
-                {'PeakName': ([min_loc, min_scale, min_amp], [max_loc, max_scale, max_amp])}
-            data_range (tuple): Analysis range (min, max) in cm⁻¹
-            step_size (float): Physical step size in micrometers (default: 0.3)
-            header (bool): Print file metadata if True (default: False)
-            poly_degree (int): Polynomial degree for background removal (default: 3)
-            normalize (bool): Normalize spectra to [0,1] range (default: False)
-            smooth_window (int): Savitzky-Golay window size (default: 11)
-            gaussian_sigma (int): Sigma for Gaussian background (default: 10)
+            filename: Path to .wdf file
+            custom_peaks: Peak definitions with bounds {name: (min_params, max_params)}
+            data_range: Spectral range (min, max) in cm⁻¹
+            step_size: Physical step size in micrometers
+            poly_degree: Background polynomial degree
+            normalize: Normalize spectra to [0,1] range
+            background_remove: Enable background subtraction
+            smoothing: Enable spectral smoothing
+            baseline_method: 'poly' or 'gaussian' background
+            smooth_window: Savitzky-Golay window size
+            smooth_poly: Savitzky-Golay polynomial order
+            gaussian_sigma: Gaussian filter width
         """
         self.filename = filename
         self.custom_peaks = custom_peaks
@@ -628,6 +732,7 @@ class RamanMapping:
         self.gaussian_sigma = gaussian_sigma
 
     def show_optical_image(self):
+        """Display optical image with mapping area overlay."""
         if self.image_viewer:
             self.image_viewer.show_optical_image()
 
@@ -681,6 +786,11 @@ class RamanMapping:
         2. Background removal
         3. Smoothing
         4. Lorentzian peak fitting
+    
+        Additional calculations:
+        - A1g-E2g peak distances
+        - A1g/E2g intensity ratios
+        - E2g/A1g intensity ratios
         
         Stores results in:
         - peak_positions: Fitted peak centers
@@ -754,15 +864,16 @@ class RamanMapping:
         """Visualize 2D map of spectral features.
         
         Args:
-            data_type (str): Plot type from:
-                'position' - Peak center positions
-                'intensity' - Peak intensities  
-                'specific_intensity' - Intensity at given wavenumber
-                'distance' - A1g-E2g peak spacing
-            cmap (str): Matplotlib colormap name (default: 'viridis')
-            filter_range (tuple): Data range (min, max) to display
-            specific_wavenumber (float): Required for 'specific_intensity' type
-            peak_name (str): Required for position/intensity plots
+            data_type: Plot type ('position', 'intensity', 'specific_intensity', 'distance')
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            specific_wavenumber: Wavenumber for 'specific_intensity' plots
+            peak_name: Peak name for position/intensity plots
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
+            
+        Raises:
+            ValueError: For invalid data types or missing parameters
         """
         # Handle input validation dynamically
         if data_type in ['position', 'intensity']:
@@ -823,14 +934,17 @@ class RamanMapping:
         plt.show()
 
     def plot_ratio_heatmap(self, ratio_type='A1g/E2g', cmap='viridis', filter_range=None, x_range=None, y_range=None):
-        """
-        Plot a heatmap of intensity ratios.
-
-        :param ratio_type: Ratio type, options: 'A1g/E2g', 'E2g/A1g'
-        :param cmap: Color map
-        :param filter_range: Filter range, e.g., [min_value, max_value], only values within this range will be displayed
-        :param x_range: X range, e.g., (10, 20), indicating X from 10 to 20
-        :param y_range: Y range, e.g., (1, 20), indicating Y from 1 to 20
+        """Visualize 2D map of peak intensity ratios.
+        
+        Args:
+            ratio_type: 'A1g/E2g' or 'E2g/A1g'
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
+            
+        Raises:
+            ValueError: For invalid ratio types or missing peaks
         """
         if ratio_type == 'A1g/E2g':
             if 'A1g' not in self.peak_params or 'E2g' not in self.peak_params:
@@ -950,23 +1064,32 @@ class RamanMapping:
 ########################################################################################################################
 
 class Raman_Integration:
-    """A class for Raman mapping analysis through spectral integration.
+    """Raman mapping analysis through spectral integration.
     
     Attributes:
-        integration_range (tuple): Spectral range for integration (min, max)
-        background_remove (bool): Enable/disable background subtraction
-        poly_degree (int): Polynomial degree for background removal
-    """    
+        filename (str): Path to input file
+        integration_range (tuple): Spectral integration range (min, max) in cm⁻¹
+        step_size (float): Physical step size in micrometers
+        poly_degree (int): Background polynomial degree
+        background_remove (bool): Enable background subtraction
+        X (int): Map width in pixels
+        Y (int): Map height in pixels
+        wavenumber (ndarray): Spectral axis in cm⁻¹
+        spectra (ndarray): Raw spectral data [Y, X, points]
+        image_viewer (MappingImage): Optical image handler
+        integration_area (ndarray): Integrated intensities [Y, X]
+    """   
     def __init__(self, filename, integration_range, 
                  step_size=0.3, header=False, 
                  poly_degree=3, background_remove=True):
-        """Initialize integration analysis parameters.
+        """Initialize Raman integration analyzer.
         
         Args:
-            filename (str): Path to .wdf Raman mapping file
-            integration_range (tuple): Spectral range (min, max) in cm⁻¹
-            step_size (float): Physical step size in micrometers (default: 0.3)
-            poly_degree (int): Background removal polynomial degree (default: 3)
+            filename: Path to .wdf file
+            integration_range: Spectral range (min, max) in cm⁻¹
+            step_size: Physical step size in micrometers
+            poly_degree: Background polynomial degree
+            background_remove: Enable background subtraction
         """
         self.filename = filename
         self.integration_range = integration_range
@@ -987,13 +1110,15 @@ class Raman_Integration:
             self.image_viewer.show_optical_image()
 
     def remove_background(self, wavenumber, intensity, poly_degree=3):
-        """
-        Remove background signal using polynomial fitting.
-
-        :param wavenumber: Wavenumber axis data
-        :param intensity: Intensity data
-        :param poly_degree: Polynomial fitting degree
-        :return: Intensity data with background removed (negative values set to zero)
+        """Remove background using polynomial fitting.
+        
+        Args:
+            wavenumber: Spectral axis in cm⁻¹
+            intensity: Raw intensity values
+            poly_degree: Polynomial degree for fitting
+            
+        Returns:
+            Background-subtracted intensity (negative values clipped)
         """
         # Use polynomial fitting to remove background signal
         coeffs = Polynomial.fit(wavenumber, intensity, poly_degree).convert().coef
@@ -1003,10 +1128,9 @@ class Raman_Integration:
         return bg_removed
 
     def calculate_integration(self):
-        """Calculate integrated area under spectra across all map points.
+        """Calculate integrated area using Simpson's rule.
         
-        Uses Simpson's rule for integration
-        Stores results in integration_area array
+        Stores results in integration_area array.
         """
         wavenumber = self.wavenumber[:]
         mask = (wavenumber >= self.integration_range[0]) & (wavenumber <= self.integration_range[1])
@@ -1026,13 +1150,13 @@ class Raman_Integration:
                 self.integration_area[j, i] = np.abs(simpson(spectra_subset, wavenumber_subset))
 
     def plot_integration_heatmap(self, cmap='viridis', filter_range=None, x_range=None, y_range=None):
-        """
-        Plot a heatmap of the integration area.
-
-        :param cmap: Color map
-        :param filter_range: Filter range, e.g., [min_value, max_value], only values within this range will be displayed
-        :param x_range: X range, e.g., (10, 20), indicating X from 10 to 20
-        :param y_range: Y range, e.g., (1, 20), indicating Y from 1 to 20
+        """Visualize 2D map of integrated intensities.
+        
+        Args:
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
         """
         # Filter data range
         data = self.integration_area
@@ -1066,11 +1190,14 @@ class Raman_Integration:
         plt.show()
 
     def plot_spectrum(self, x, y):
-        """
-        Plot the original spectrum and background-removed spectrum (if background removal is enabled) for a specific pixel.
-
-        :param x: X coordinate (step)
-        :param y: Y coordinate (step)
+        """Plot raw and processed spectra for single map point.
+        
+        Args:
+            x: X coordinate (0-indexed)
+            y: Y coordinate (0-indexed)
+            
+        Raises:
+            ValueError: For invalid coordinates
         """
         if x < 0 or x >= self.X or y < 0 or y >= self.Y:
             raise ValueError("Invalid coordinates. Please ensure x and y are within the mapping range.")
