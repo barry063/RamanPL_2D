@@ -1,7 +1,14 @@
 """
-A module for analyzing Raman spectra using multi-peak Lorentzian fitting with material-specific configurations.
-"""
+A module for  importing Raman data from .wdf and .txt files, analyzing Raman spectra using multi-peak Lorentzian fitting with material-specific configurations.
 
+This module provides tools for preprocessing Raman data (smoothing, background subtraction),
+fitting multiple peaks using Lorentzian functions, and visualizing the results. The code works with selected materials in the raman_materials.json library.
+
+Classes:
+    RamanFit: Main class for processing, fitting, and visualizing Raman spectra.
+    DataImporter: Class for importing Raman data from .wdf and .txt files (single spectrum only)
+"""
+from renishawWiRE import WDFReader
 import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
@@ -10,6 +17,65 @@ from scipy.ndimage import gaussian_filter1d
 from numpy.polynomial import Polynomial
 import json
 import os
+
+
+class DataImporter:
+    """Class for importing Raman data from .wdf and .txt files (single spectrum only)"""
+    @staticmethod
+    def data_import(filename, readlines=[300, 780]):
+        """Import Raman data from single spectrum files
+        
+        Parameters
+        ----------
+        filename : str
+            Path to .wdf or .txt file
+        readlines : list, optional
+            Data range indices [start, end] to select subset of data points
+            
+        Returns
+        -------
+        tuple
+            (spectra, xdata) as numpy arrays
+            
+        Raises
+        ------
+        RuntimeError
+            If file cannot be imported
+        ValueError
+            For unsupported formats or invalid data
+        """
+        try:
+            if filename.lower().endswith('.wdf'):
+                
+                # Handle WDF files
+                reader = WDFReader(filename)               
+                spectra = reader.spectra
+                xdata = reader.xdata
+
+            elif filename.lower().endswith('.txt'):
+                # Handle text files with numpy
+                data = np.loadtxt(filename, delimiter="\t", skiprows=1)
+                
+                # Validate text file format
+                if data.shape[1] != 2:
+                    raise ValueError("Text file must contain exactly 2 columns: xdata and intensity")
+                
+                xdata = data[:, 0]
+                spectra = data[:, 1]
+
+            else:
+                raise ValueError("Supported formats: .wdf, .txt")
+
+            # Apply safe range selection
+            n_points = len(spectra)
+            start = max(0, min(readlines[0], n_points))
+            end = max(start, min(readlines[1], n_points))
+            
+            return spectra[start:end], xdata[start:end]
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to import {filename}: {str(e)}")
+
 
 class RamanFit:
     """A class for fitting and analyzing Raman spectra using configurable multi-peak Lorentzian models.
@@ -54,8 +120,6 @@ class RamanFit:
     plot_fit(params, **kwargs)
         Visualize fitting results
     """
-
-class RamanFit:
     def __init__(self, spectra, wavenumber, materials=None, substrate=None,
                  background_remove=False, baseline_method='poly',
                  poly_degree=3, gaussian_sigma=50, smoothing=False, 
@@ -94,6 +158,7 @@ class RamanFit:
         ValueError
             For unrecognized baseline methods or invalid material/substrate IDs
         """
+        
         # Initialize default parameters (WS2 core peaks)
         self.lower_bound = [
             353, 0, 0,   # E12g(Γ)
@@ -153,6 +218,11 @@ class RamanFit:
         self.peak_intensity = np.max(self.processed_spectra)
         self.intensity_normal = self.processed_spectra / self.peak_intensity
 
+    def _get_material_lib_path(self):
+        """Get absolute path to raman_materials.json in module directory."""
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(module_dir, 'raman_materials.json')
+    
     def load_material_parameters(self, materials):
         """Load peak parameters from JSON material library.
 
@@ -166,11 +236,12 @@ class RamanFit:
         ValueError
             If material library file is missing or contains invalid data
         """
+        json_path = self._get_material_lib_path()
         try:
-            with open('raman_materials.json', 'r') as f:
+            with open(json_path, 'r') as f:
                 material_lib = json.load(f)
         except FileNotFoundError:
-            raise ValueError("Material library file 'raman_materials.json' not found")
+            raise ValueError(f"Material library file not found at: {json_path}")
         
         # Clear defaults when materials are specified
         self.lower_bound = []
@@ -205,11 +276,12 @@ class RamanFit:
         ValueError
             If substrate not found or not marked as substrate in library
         """
+        json_path = self._get_material_lib_path()
         try:
-            with open('raman_materials.json', 'r') as f:
+            with open(json_path, 'r') as f:
                 material_lib = json.load(f)
         except FileNotFoundError:
-            raise ValueError("Material library file 'raman_materials.json' not found")
+            raise ValueError(f"Material library file not found at: {json_path}")
 
         if substrate not in material_lib or not material_lib[substrate].get('substrate', False):
             raise ValueError(f"Invalid substrate '{substrate}' or not marked as substrate in library")
