@@ -1,4 +1,4 @@
-# RamanPL_2D (version 0.1.0)
+# RamanPL_2D (version 0.1.5)
 
 **RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
 
@@ -14,6 +14,14 @@
 - Auto-calculation of important data for 2D materials: **A1g - E2g peak difference** and **FWHM** of peaks
 - Heatmaps of Raman spectrum **A1g - E2g Peak difference** and **E2g/A1g peak ratio**
 - Sanity check: normalised residual calculation and distribution, dynamical spectrum fitting view
+
+### Change log
+
+**Version 0.1.5 (2025-6-5):**
+
+1. Added *Gr* and *2L-Gr* for graphene/bilayer-graphene library file `raman_materials.json`
+2. Added new sample bilayer graphene data (`Raman Sample 532nm 2L-Graphene.txt`) into example folders
+3. Modify the doc-strings in `Mapping.py`
 
 ## Repository Structure
 
