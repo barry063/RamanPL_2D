@@ -174,6 +174,61 @@
             "peak_labels": ["t-Se","a-Se","Se8"]
         },
         "substrate": false  
-    }
+    },
 
+    "Gr": {
+        "peaks": {
+            "lower_bound": [
+                1580, 0, 0,
+                2600, 0, 0,
+                1300, 0, 0
+            ],
+            "upper_bound": [
+                1600, 10, 20,
+                2800, 10, 20,
+                1400, 10, 10
+            ],
+            "peak_labels": ["G","2D","D"]
+        },
+        "substrate": false  
+    },
+
+    "2L-Gr": {
+        "peaks": {
+            "lower_bound": [
+                1580, 0, 0,
+                2550, 0, 0,
+                2620, 0, 0,
+                2680, 0, 0,
+                2720, 0, 0,
+                1300, 0, 0
+            ],
+            "upper_bound": [
+                1600, 10, 20,
+                2580, 10, 10,
+                2650, 10, 20,
+                2720, 10, 20,
+                2750, 10, 10,
+                1400, 10, 10
+            ],
+            "peak_labels": ["G","2D-1B","2D-1A","2D-2A","2D-2B","D"]
+        },
+        "substrate": false  
+    },
+
+    "NiS": {
+        "peaks": {
+            "lower_bound": [
+                185, 0, 0,
+                380, 0, 0
+            ],
+            "upper_bound": [
+                185, 0, 0,
+                390, 5, 5
+            ],
+            "peak_labels": ["Ni-S","beta Ni-S"]
+        },
+        "substrate": false  
+    }
+    
 }
