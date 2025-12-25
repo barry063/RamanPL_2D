@@ -299,7 +299,7 @@ pl_int.plot_spectrum(x=15, y=20)
 - (v0.2.2) Make sure the `custom_peak` of `Mapping.py` to be consistent with `PLfit.py` and `RamanFit.py`
 - (v0.2.5) Add a batch processing and batch visualisation tools or functionalities
 - (v0.2.8) Add peak arithmatic processing (subtraction / addition)
-- (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get. 
+- (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
 ## License
 

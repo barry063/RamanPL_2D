@@ -54,14 +54,18 @@
     "WO3": {        
         "peaks": {
             "lower_bound": [
-                250, 0, 0, 
-                800, 0, 0
+                250, 0, 0,
+                290, 0, 0, 
+                800, 0, 0,
+                690, 0, 0
             ],
             "upper_bound": [
-                270, 10, 10, 
-                810, 5, 10
+                280, 10, 10,
+                310, 10, 10, 
+                810, 5, 10,
+                710, 5, 10
             ],
-            "peak_labels": ["W=O bending",  "W=O stretching"]
+            "peak_labels": ["W=O bending1", "W=O bending2", "W=O stretching1", "W=O stretching2"]
         },
         "substrate": false 
     },
