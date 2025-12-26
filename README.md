@@ -18,6 +18,7 @@
 ### Change log
 
 **Version 0.2.3 (2025-12-25):**
+
     1. Changed `normalize` option in `Mapping.py` to control whether to display normalised data for heatmap display. This option does not affect the fitting process.
     2. Added `warm_start` and `reset_on_fail` options in `Mapping.py`'s `fit_spectra()` method to improve fitting stability.
     3. Updated `plot_residual_distribution()`, `plot_heatmap()`, `plot_spectrum()_fit` method in `Mapping.py` to visualise the distribution of fitting residuals for quality check.
