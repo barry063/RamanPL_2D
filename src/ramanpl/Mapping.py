@@ -300,14 +300,16 @@ class PLMapping:
         return bg_removed.clip(min=0)
 
     ## UPDATED METHOD in v0.2.3 ##
-    def fit_spectra(self, initial_p0=None, warm_start=False, reset_on_fail=True, maxfev=6400,  warm_start_rmse_gate=0.06):
+    def fit_spectra(self, initial_p0=None, warm_start=False, reset_on_fail=True,
+                    maxfev=6400, warm_start_rmse_gate=0.06):
         """
         Fit all map spectra using self.custom_peaks as bounds.
 
         Parameters
         ----------
-        initial_p0 : array-like or None
-            Optional initial guess vector (e.g., from a single-point PLfit result).
+        initial_p0 : array-like or dict or None
+            Optional initial guess vector (e.g., from a single-point PLfit result),
+            or dict package {"p0": <vector>, "peak_order": <list>}.
             Must match parameter ordering implied by self.custom_peaks.
         warm_start : bool
             If True, use previous successful fit parameters as p0 for next pixel.
@@ -315,21 +317,23 @@ class PLMapping:
             If True, on fit failure reset p0 to baseline (midpoint/initial_p0).
         maxfev : int
             curve_fit maximum function evaluations.
-         warm_start_rmse_gate=0.06 : float
-            RMSE threshold for warm start acceptance.
+        warm_start_rmse_gate : float
+            RMSE threshold (normalised space) for accepting warm-start propagation.
 
         Returns
         -------
         fitted_parameters : np.ndarray
             Array with shape (Y, X, n_params), NaN where fitting failed.
         """
+        import numpy as np
+        from scipy import optimize
+
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
 
         # --- Build spectral mask from energy range (eV)
         e_min, e_max = self.data_range
         mask = (self.xdata >= e_min) & (self.xdata <= e_max)
-
         xdata = self.xdata[mask]
 
         # --- Build bounds from custom_peaks (in insertion order)
@@ -340,7 +344,6 @@ class PLMapping:
 
         lower_bound = np.asarray(lower_bound, dtype=float)
         upper_bound = np.asarray(upper_bound, dtype=float)
-
         n_params = lower_bound.size
 
         # Default p0: midpoint of bounds
@@ -349,9 +352,6 @@ class PLMapping:
         # Optional: seed from single-point PLfit
         if initial_p0 is not None:
 
-            # Accept either:
-            #   (a) raw numeric vector p0
-            #   (b) dict package: {"p0": <vector>, "peak_order": <list>}
             if isinstance(initial_p0, dict):
                 peak_order_pkg = initial_p0.get("peak_order", None)
                 p0_vec = initial_p0.get("p0", None)
@@ -359,7 +359,6 @@ class PLMapping:
                 if p0_vec is None:
                     raise ValueError("initial_p0 dict must contain key 'p0' with a numeric vector.")
 
-                # Validate ordering contract if provided
                 if peak_order_pkg is not None:
                     if [p.lower() for p in peak_order_pkg] != [p.lower() for p in self.peak_params]:
                         raise ValueError(
@@ -369,33 +368,40 @@ class PLMapping:
                             "Ensure both use the same custom_peaks ordering (or pass peak_order explicitly)."
                         )
 
-                initial_p0 = p0_vec  # now reduce to numeric vector
+                initial_p0 = p0_vec
 
-            # Now initial_p0 must be a numeric vector
             initial_p0 = np.asarray(initial_p0, dtype=float)
-
             if initial_p0.shape != p0_base.shape:
-                raise ValueError(
-                    f"initial_p0 shape {initial_p0.shape} does not match expected {p0_base.shape}"
-                )
+                raise ValueError(f"initial_p0 shape {initial_p0.shape} does not match expected {p0_base.shape}")
 
             p0_base = np.clip(initial_p0, lower_bound, upper_bound)
+
         p0_current = p0_base.copy()
 
-        # Output: NaN = fit failed
+        # Output arrays
         fitted_params = np.full((self.Y, self.X, n_params), np.nan)
+
+        # Ensure these exist and are float arrays
+        if not hasattr(self, "norm_scale_map"):
+            self.norm_scale_map = np.full((self.Y, self.X), np.nan)
+        if not hasattr(self, "residual_map"):
+            self.residual_map = np.full((self.Y, self.X), np.nan)
 
         for j in range(self.Y):
             for i in range(self.X):
                 raw_spec = self.spectra[j, i, :][mask]
 
                 spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
-                self.norm_scale_map[j, i] = scale
+
                 if spec_norm is None:
+                    self.norm_scale_map[j, i] = np.nan
                     self.residual_map[j, i] = np.nan
                     if reset_on_fail:
                         p0_current = p0_base.copy()
                     continue
+
+                # valid spectrum
+                self.norm_scale_map[j, i] = scale
 
                 try:
                     params, _ = optimize.curve_fit(
@@ -406,7 +412,7 @@ class PLMapping:
                         bounds=(lower_bound, upper_bound),
                         maxfev=maxfev
                     )
-                    
+
                     # Residual (fit space)
                     model_norm = self.lorentzian(xdata, *params)
                     residual_norm = spec_norm - model_norm
@@ -415,44 +421,39 @@ class PLMapping:
 
                     fitted_params[j, i, :] = params
 
-                    # --- Store peak positions and intensities consistently
-                    for k, peak_name in enumerate(self.peak_params):
+                    # Store peak positions and intensities
+                    for k, _ in enumerate(self.peak_params):
                         idx = 3 * k
-                        center, width, amp = params[idx:idx+3]
-
+                        center, width, amp = params[idx:idx + 3]
                         self.peak_positions[j, i, k] = center
 
                         peak_height_norm = amp / (np.pi * width)
-
                         if self.normalize:
-                            # display normalised intensity
                             self.peak_intensities[j, i, k] = peak_height_norm
                         else:
-                            # display raw-count intensity
                             self.peak_intensities[j, i, k] = peak_height_norm * scale
 
-                    # --- GATED warm-start: only propagate good fits
+                    # Gated warm-start
                     if warm_start:
                         if rmse_norm <= warm_start_rmse_gate:
                             p0_current = params
                         else:
-                            # Prevent scanline propagation of a bad local minimum
                             if reset_on_fail:
                                 p0_current = p0_base.copy()
-                # --- Fit failed
+
                 except RuntimeError:
                     self.residual_map[j, i] = np.nan
-                    spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
+                    # keep the scale (it was valid), but reset p0 if requested
                     if reset_on_fail:
                         p0_current = p0_base.copy()
                     continue
-        
+
         n_fit = np.sum(~np.isnan(self.residual_map))
         print(f"Successful fits: {n_fit} / {self.X * self.Y}")
 
         self.fitted_params = fitted_params
-        return fitted_params 
-    
+        return fitted_params
+               
     def plot_spectrum_fit(self, x, y):
         """Plot raw data and fitting results for a single map point.
 
@@ -651,50 +652,39 @@ class PLMapping:
         plt.tight_layout()
         plt.show()   
 
-    def plot_heatmap(self, data_type='exciton_position', cmap='viridis', 
-                     filter_range=None, specific_xdata=None,
-                     x_range=None, y_range=None):
-        """Visualize 2D map of spectral features.
-        
-        Args:
-            data_type: Plot type ('exciton_position', 'trion_position', 
-                       'exciton_intensity', 'trion_intensity', 'specific_intensity')
-            cmap: Matplotlib colormap name
-            filter_range: Data display range [min, max]
-            specific_xdata: Energy value for 'specific_intensity' plots
-            x_range: X display range [start, end]
-            y_range: Y display range [start, end]
-            
-        Raises:
-            ValueError: For invalid data types or missing parameters
-        """
+    def plot_heatmap(self, data_type='exciton_position', cmap='viridis',
+                    filter_range=None, specific_xdata=None,
+                    x_range=None, y_range=None):
+        """Visualize 2D map of spectral features."""
+        import numpy as np
+        import matplotlib.pyplot as plt
+
         if data_type == 'specific_intensity':
             if specific_xdata is None:
-                raise ValueError("For 'specific_intensity' data type, the 'specific_xdata' parameter must be provided.")
+                raise ValueError("For 'specific_intensity' data type, 'specific_xdata' must be provided (in eV).")
 
             data = np.full((self.Y, self.X), np.nan, dtype=float)
 
             for j in range(self.Y):
                 for i in range(self.X):
                     params = self.fitted_params[j, i, :]
-
                     if np.any(np.isnan(params)):
                         continue  # fit failed
 
                     y_norm = self.lorentzian(specific_xdata, *params)
 
                     if self.normalize:
-                        # display normalised model intensity
+                        # display normalised model intensity (dimensionless)
                         data[j, i] = y_norm
                     else:
-                        # display raw model intensity using stored scale
-                        scale = getattr(self, "norm_scale_map", None)
-                        if scale is None or np.isnan(self.norm_scale_map[j, i]):
-                            # If scale was not stored, fall back to NaN rather than misleading numbers
+                        # display raw model intensity using stored per-pixel scale
+                        if (not hasattr(self, "norm_scale_map")) or np.isnan(self.norm_scale_map[j, i]):
                             continue
                         data[j, i] = y_norm * self.norm_scale_map[j, i]
 
-            label = f'Intensity at {specific_xdata} eV (a.u.)'
+            label = (f'Normalised intensity at {specific_xdata} eV (a.u.)'
+                    if self.normalize else
+                    f'Intensity at {specific_xdata} eV (a.u.)')
 
         elif data_type == 'exciton_position':
             data = self.peak_positions[:, :, 0]
@@ -706,21 +696,24 @@ class PLMapping:
                 label = 'Trion Position (eV)'
             else:
                 raise ValueError("Trion data not available.")
-            
+
         elif data_type == 'exciton_intensity':
             data = self.peak_intensities[:, :, 0]
-            label = 'Exciton Intensity (a.u.)'
-            
+            label = 'Exciton Intensity (a.u.)'  # already scaled in fit_spectra when normalize=False
+
         elif data_type == 'trion_intensity':
             if self.peak_intensities.shape[2] > 1:
                 data = self.peak_intensities[:, :, 1]
                 label = 'Trion Intensity (a.u.)'
             else:
                 raise ValueError("Trion data not available.")
-        else:
-            raise ValueError("Invalid data_type. Choose from 'exciton_position', 'trion_position', 'exciton_intensity', 'trion_intensity', 'specific_intensity'.")
 
-        # Apply optional range filter (clip outliers to lower bound as you requested)
+        else:
+            raise ValueError("Invalid data_type. Choose from "
+                            "'exciton_position', 'trion_position', "
+                            "'exciton_intensity', 'trion_intensity', 'specific_intensity'.")
+
+        # Apply optional range filter (your current behaviour: clip outliers to lower bound)
         if filter_range is not None:
             data = np.where((data >= filter_range[0]) & (data <= filter_range[1]), data, filter_range[0])
 
@@ -728,7 +721,7 @@ class PLMapping:
         if x_range is not None and y_range is not None:
             x_start, x_end = x_range
             y_start, y_end = y_range
-            data = data[y_start:y_end+1, x_start:x_end+1]
+            data = data[y_start:y_end + 1, x_start:x_end + 1]
             Xp = (x_end - x_start + 1)
             Yp = (y_end - y_start + 1)
         else:
