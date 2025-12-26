@@ -17,6 +17,15 @@
 
 ### Change log
 
+**Version 0.2.3 (2025-12-25):**
+    1. Changed `normalize` option in `Mapping.py` to control whether to display normalised data for heatmap display. This option does not affect the fitting process.
+    2. Added `warm_start` and `reset_on_fail` options in `Mapping.py`'s `fit_spectra()` method to improve fitting stability.
+    3. Updated `plot_residual_distribution()`, `plot_heatmap()`, `plot_spectrum()_fit` method in `Mapping.py` to visualise the distribution of fitting residuals for quality check.
+    4. Added `export_p0()` method in `PLfit.py` to export the fitted parameters after fitting for further analysis.
+    5. Updated Mapping examples in `Mapping PL Example.ipynb`, `PL_component.ipynb`, and `Mapping PL txt Example.ipynb` to reflect the changes in `normalize` option, added residual distribution plotting, `p0_pkg` for better `p0` guess in the example.
+
+    All changes are backward compatible with previous version (0.2.0).
+
 **Version 0.2.0 (2025-6-6):**
 
     1. Move source code to `ramanpl` folder, create package installation manuals for local library installation and usage
@@ -136,169 +145,15 @@ from ramanpl import RamanFit
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
 
-## Usage Examples
-
-### 1. Mapping.py - PL Mapping Analysis
-
-```python
-import numpy as np
-from Mapping import PLMapping
-
-# Initialize PL mapping analysis
-pl_map = PLMapping(
-    filename='sample_pl.wdf',
-    custom_peaks={
-        'Exciton': ([1.95, 0.01, 0.1], [2.05, 0.1, 10]),  # [min_loc, min_scale, min_amp], [max...]
-        'Trion': ([1.75, 0.01, 0.1], [1.9, 0.1, 10])
-    },
-    data_range=(1.6, 2.2),  # eV
-    step_size=0.3,  # μm
-    poly_degree=3,
-    baseline_method='poly'
-)
-
-# Show optical image
-pl_map.show_optical_image()
-
-# Perform fitting across all points
-pl_map.fit_spectra()
-
-# Plot exciton position heatmap
-pl_map.plot_heatmap(data_type='exciton_position', 
-                filter_range=(1.95, 2.05),
-                cmap='viridis')
-
-# Plot spectrum fit at specific coordinates
-pl_map.plot_spectrum_fit(x=10, y=15)
-```
-
-### 2. PLfit.py - Single Spectrum PL Analysis
-
-```python
-import numpy as np
-from PLfit import PLfit
-
-# Generate sample data
-energy = np.linspace(1.7, 2.2, 500)
-spectra = np.random.normal(size=500) + 10*np.exp(-(energy-2.0)**2/(0.02))
-
-# Initialize and fit
-pl = PLfit(spectra, energy,
-        background_remove=True,
-        baseline_method='poly',
-        smoothing=True,
-        smooth_window=15)
-
-# Update bounds for better fitting
-pl.update_bounds(Exciton=([1.95, 0.01, 1], [2.05, 0.1, 5]))
-
-# Perform fitting
-params, cov = pl.fit_spectrum()
-
-# Visualize results
-pl.plot_fit(params, x_lim=[1.8, 2.1])
-```
-
-### 3. RamanFit.py - Raman Analysis with Material Library
-
-```python
-from RamanFit import RamanFit
-import numpy as np
-
-# Sample data (would typically load from file)
-wavenumber = np.linspace(250, 750, 1000)
-spectra = np.random.normal(size=1000) + 100*np.exp(-(wavenumber-350)**2/(50))
-
-# Initialize with material parameters
-raman = RamanFit(
-    spectra=spectra,
-    wavenumber=wavenumber,
-    materials=['WS2'],  # Load from raman_materials.json
-    substrate='SiO2',
-    background_remove=True,
-    baseline_method='poly',
-    smoothing=True
-)
-
-# Remove unwanted peaks (optional)
-raman.remove_peaks('A1g(Γ)')
-
-# Perform fitting
-params, cov = raman.fit_spectrum()
-
-# Visualize results
-raman.plot_fit(params, x_lim=[300, 450], x_ticks=[300, 350, 400, 450])
-```
-
-Material Library Format (`raman_materials.json`):
-
-```json
-{
-    "WS2": {
-        "substrate": false,
-        "peaks": {
-            "lower_bound": [350, 0, 0, 418, 0, 0],
-            "upper_bound": [358, 5, 10, 424, 5, 10],
-            "peak_labels": ["E12g(Γ)", "A1g(Γ)"]
-        }
-    },
-    "SiO2": {
-        "substrate": true,
-        "peaks": {
-            "lower_bound": [300, 0, 0],
-            "upper_bound": [310, 5, 5],
-            "peak_labels": ["SiO2_peak"]
-        }
-    }
-}
-```
-
-- Tips: if you need to add new materials to the current materials peak library, please email me at <hy377@cam.ac.uk>
-
-## 4. Mapping.py - PL Integration Mapping (Without Peak Fitting)
-
-```python
-from Mapping import PL_Integration
-
-# Initialize integration analysis
-pl_int = PL_Integration(
-    filename='sample_pl_map.wdf',
-    integration_range=(1.85, 2.05),  # eV range for integration
-    step_size=0.3,  # μm
-    poly_degree=3,
-    background_remove=True
-)
-
-# Show optical image with mapping area
-pl_int.show_optical_image()
-
-# Calculate integrated intensities
-pl_int.calculate_integration()
-
-# Plot heatmap with intensity filtering
-pl_int.plot_integration_heatmap(
-    cmap='plasma',
-    filter_range=(500, 5000),  # Ignore values <500 and cap at 5000
-    x_range=(10, 30),  # Show subset of X coordinates
-    y_range=(5, 25)    # Show subset of Y coordinates
-)
-
-# Plot spectrum at specific coordinate with/without background
-pl_int.plot_spectrum(x=15, y=20)
-
-# Expected Output:
-# - Heatmap showing intensity distribution in specified region
-# - Spectrum plot comparing raw and background-removed data
-# - Console output showing calculated integration values
-```
-
 ---
 
 ## To-do
 
-- (v0.2.2) Make sure the `custom_peak` of `Mapping.py` to be consistent with `PLfit.py` and `RamanFit.py`
-- (v0.2.5) Add a batch processing and batch visualisation tools or functionalities
-- (v0.2.8) Add peak arithmatic processing (subtraction / addition)
+- (v0.2.4) Update `RamanFit.py` and Raman mapping sections in `Mapping.py` to be compatible with the package structure.
+- (v0.2.5) Change background_removal based on the end-point subtraction
+- (v0.2.6) Add a batch processing and batch visualisation tools or functionalities
+- (v0.2.7) Add peak arithmatic processing (subtraction / addition)
+... ...
 - (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
 ## License

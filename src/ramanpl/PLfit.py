@@ -100,8 +100,9 @@ class PLfit:
     """
 
     def __init__(self, spectra, energy, background_remove=False, baseline_method='poly',
-                 poly_degree=3, gaussian_sigma=50, smoothing=False, 
-                 smooth_window=11, smooth_order=3, normalize=True):
+             poly_degree=3, gaussian_sigma=50, smoothing=False,
+             smooth_window=11, smooth_order=3, normalize=True,
+             custom_peaks=None, peak_order=None):
         """Initialize PLfit object with data and processing parameters.
 
         Parameters:
@@ -114,7 +115,7 @@ class PLfit:
             smoothing (bool): Enable Savitzky-Golay smoothing (default: False)
             smooth_window (int): Window size for smoothing filter (default: 11)
             smooth_order (int): Polynomial order for smoothing (default: 3)
-            normalize (bool): Normalize intensity to maximum value (default: True)
+            normalize (bool):  controls DISPLAY/OUTPUT scaling only. Fitting is ALWAYS performed in peak-normalised space.
 
         Raises:
             ValueError: If invalid baseline method is specified
@@ -125,35 +126,70 @@ class PLfit:
 
         # Apply smoothing
         if smoothing:
-            self.processed_spectra = savgol_filter(self.processed_spectra, 
-                                                 smooth_window, smooth_order)
+            self.processed_spectra = savgol_filter(self.processed_spectra,
+                                                smooth_window, smooth_order)
 
         # Apply background subtraction
         if background_remove:
             if baseline_method == 'poly':
-                # Polynomial background removal
                 coeffs = Polynomial.fit(self.energy, self.processed_spectra, poly_degree).convert().coef
-                background = np.polyval(coeffs[::-1], self.energy)  # Reverse coefficients for np.polyval
+                background = np.polyval(coeffs[::-1], self.energy)
                 self.processed_spectra -= background
-                
+
             elif baseline_method == 'gaussian':
-                # Gaussian background removal
                 background = gaussian_filter1d(self.processed_spectra, sigma=gaussian_sigma)
                 self.processed_spectra -= background
             else:
                 raise ValueError(f"Baseline method '{baseline_method}' not recognized. Use 'poly' or 'gaussian'.")
 
-        # Normalization
+        # DISPLAY flag (fit is always normalised)
         self.normalize = normalize
+
+        # Peak normalisation for fitting space
         self.peak_intensity = np.max(self.processed_spectra)
+        if self.peak_intensity <= 0:
+            raise ValueError("Peak intensity is non-positive after preprocessing; cannot normalise for fitting.")
         self.intensity_normal = self.processed_spectra / self.peak_intensity
 
-        # Default fitting bounds (Exciton and Trion)
-        self.lower_bound = [1.95, 0, 0, 1.8, 0, 0]
-        self.upper_bound = [2.1, 0.05, 10, 2.0, 0.2, 10]
-        self.peak_labels = ['trion', 'exciton']
+        # ---- NEW in v0.2.3: allow mapping-consistent bounds/order via custom_peaks
+        self.custom_peaks = custom_peaks  # may be None
+
+        if custom_peaks is None:
+            # Backwards-compatible defaults (your existing behaviour)
+            self.lower_bound = [1.95, 0, 0, 1.8, 0, 0]
+            self.upper_bound = [2.1, 0.05, 10, 2.0, 0.2, 10]
+            self.peak_labels = ['trion', 'exciton']
+        else:
+            if not isinstance(custom_peaks, dict) or len(custom_peaks) == 0:
+                raise ValueError("custom_peaks must be a non-empty dict: {name: ([lb...],[ub...])}")
+
+            # Stable ordering contract
+            if peak_order is None:
+                self.peak_order = list(custom_peaks.keys())
+            else:
+                self.peak_order = list(peak_order)
+                missing = [k for k in self.peak_order if k not in custom_peaks]
+                if missing:
+                    raise ValueError(f"peak_order contains keys not in custom_peaks: {missing}")
+
+            self.peak_labels = list(self.peak_order)
+
+            self.lower_bound, self.upper_bound = [], []
+            for name in self.peak_labels:
+                lb, ub = custom_peaks[name]
+                if len(lb) != 3 or len(ub) != 3:
+                    raise ValueError(f"Peak '{name}' bounds must be length-3 lists: [centre, width, amp]")
+                self.lower_bound += list(lb)
+                self.upper_bound += list(ub)
+
+        # Initial guess at midpoint of bounds
         self.p0 = [(low + high) / 2 for low, high in zip(self.lower_bound, self.upper_bound)]
 
+        # ---- NEW in v0.2.3: slots for exporting to mapping
+        self.params_fit = None
+        self.params_cov = None
+
+    ### UPDATED METHOD in v0.2.3 ###
     def update_bounds(self, **kwargs):
         """Update fitting constraints for specific peaks.
 
@@ -168,15 +204,13 @@ class PLfit:
             ...                  Exciton=([1.7, 0.01, 1], [1.9, 0.1, 5]))
         """
         for peak_name, new_bounds in kwargs.items():
-            if peak_name not in self.peak_labels:
-                raise ValueError(f"Peak '{peak_name}' is not a recognized peak name. Available peaks are: {self.peak_labels}")
+            peak_key = str(peak_name).lower()
+            labels_lower = [p.lower() for p in self.peak_labels]
 
-            if not (isinstance(new_bounds, tuple) and len(new_bounds) == 2 and 
-                    isinstance(new_bounds[0], list) and isinstance(new_bounds[1], list) and 
-                    len(new_bounds[0]) == 3 and len(new_bounds[1]) == 3):
-                raise ValueError(f"Bounds for '{peak_name}' must be a tuple of two lists with three elements each.")
+            if peak_key not in labels_lower:
+                raise ValueError(f"Peak '{peak_name}' is not recognised. Available peaks: {self.peak_labels}")
 
-            idx = self.peak_labels.index(peak_name)
+            idx = labels_lower.index(peak_key)
 
             # Update the lower and upper bounds for the specified peak
             self.lower_bound[3 * idx:3 * idx + 3] = new_bounds[0]
@@ -184,6 +218,53 @@ class PLfit:
 
             # Update p0 to the midpoint of the new bounds
             self.p0[3 * idx:3 * idx + 3] = [(new_bounds[0][i] + new_bounds[1][i]) / 2 for i in range(3)]
+
+    def fit_spectrum(self):
+        """Perform curve fitting using specified bounds and initial parameters.
+
+        Returns:
+            tuple: Contains two elements:
+                - params (ndarray): Optimized fitting parameters
+                - params_cov (ndarray): Covariance matrix of parameters
+
+        Note:
+            Uses scipy.optimize.curve_fit with max 6400 function evaluations
+        """
+        params, params_cov = optimize.curve_fit(
+            self.lorentzian_pl,
+            self.energy,
+            self.intensity_normal,
+            p0=self.p0,
+            maxfev=6400,
+            bounds=(self.lower_bound, self.upper_bound)
+        )
+        self.params_fit = params
+        self.params_cov = params_cov
+        return params, params_cov
+    ### END UPDATED METHOD ###
+    
+    ### NEW METHOD in v0.2.3 ###
+    def export_p0(self):
+        """
+        Export mapping-ready initial guess vector and ordering metadata.
+
+        Returns
+        -------
+        dict:
+            {
+            "p0": np.ndarray,  # normalised-space params
+            "peak_order": list[str]
+            }
+        """
+        import numpy as np
+
+        if self.params_fit is None:
+            raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
+
+        peak_order = list(self.peak_labels)  # authoritative ordering used in params vector
+        return {"p0": np.asarray(self.params_fit, dtype=float).copy(),
+                "peak_order": peak_order}
+    ### END NEW METHOD ###
 
     # Lorentzian function to fit each peak
     @staticmethod
@@ -210,27 +291,6 @@ class PLfit:
             L += (scale / ((x - loc) ** 2 + scale ** 2)) * amp / np.pi
         return L
     
-    
-    # Method to fit the spectrum
-    def fit_spectrum(self):
-        """Perform curve fitting using specified bounds and initial parameters.
-
-        Returns:
-            tuple: Contains two elements:
-                - params (ndarray): Optimized fitting parameters
-                - params_cov (ndarray): Covariance matrix of parameters
-
-        Note:
-            Uses scipy.optimize.curve_fit with max 6400 function evaluations
-        """
-        # Perform curve fitting
-        params, params_cov = optimize.curve_fit(self.lorentzian_pl, 
-                                                self.energy, self.intensity_normal,
-                                                p0=self.p0, maxfev=6400, 
-                                                bounds=(self.lower_bound, self.upper_bound))
-        return params, params_cov
-    
-
     def plot_fit(self, params, offset=0, scale=1.0, x_lim=[1.7, 2.2]):
         """Visualize spectrum, fit results, and individual components.
 
