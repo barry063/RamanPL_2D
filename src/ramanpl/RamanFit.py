@@ -13,10 +13,10 @@ import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
-from scipy.ndimage import gaussian_filter1d
-from numpy.polynomial import Polynomial
 import json
 import os
+from ramanpl.baselineAPI import BaselineAPI
+
 
 
 class DataImporter:
@@ -201,21 +201,26 @@ class RamanFit:
             self.processed_spectra = savgol_filter(self.processed_spectra, 
                                                  smooth_window, smooth_order)
 
-        # Apply background subtraction
+        # New in v0.2.5
+        # Background subtraction (smoothing happens before this; unchanged)
         if background_remove:
-            if baseline_method == 'poly':
-                # Polynomial background removal
-                coeffs = Polynomial.fit(self.wavenumber, self.processed_spectra, poly_degree).convert().coef
-                background = np.polyval(coeffs[::-1], self.wavenumber)  # Reverse coefficients for np.polyval
-                self.processed_spectra -= background
-                
-            elif baseline_method == 'gaussian':
-                # Gaussian background removal
-                background = gaussian_filter1d(self.processed_spectra, sigma=gaussian_sigma)
-                self.processed_spectra -= background
-            else:
-                raise ValueError(f"Baseline method '{baseline_method}' not recognized. Use 'poly' or 'gaussian'.")
+            method, bkwargs = BaselineAPI.parse_spec(
+                baseline_method,
+                poly_degree=poly_degree,
+                gaussian_sigma=gaussian_sigma
+            )
 
+            result = BaselineAPI.subtract(
+                x=self.wavenumber,
+                y=self.processed_spectra,
+                method=method,
+                clip_nonnegative=True,  # always clip
+                **bkwargs,
+            )
+            self.processed_spectra = result.y_corrected
+
+
+        
         ### Updated in v.0.2.4 ###
         # Fit is ALWAYS performed in peak-normalised space.
         # normalize controls DISPLAY/OUTPUT scaling only.

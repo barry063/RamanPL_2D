@@ -13,9 +13,7 @@ import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
-from scipy.ndimage import gaussian_filter1d
-from numpy.polynomial import Polynomial
-
+from ramanpl.baselineAPI import BaselineAPI
 
 class DataImporter:
     """Class for importing Raman data from .wdf and .txt files (single spectrum only)"""
@@ -129,18 +127,26 @@ class PLfit:
             self.processed_spectra = savgol_filter(self.processed_spectra,
                                                 smooth_window, smooth_order)
 
-        # Apply background subtraction
+        # New in v0.2.5
+        # Background subtraction (smoothing happens before this; unchanged)
         if background_remove:
-            if baseline_method == 'poly':
-                coeffs = Polynomial.fit(self.energy, self.processed_spectra, poly_degree).convert().coef
-                background = np.polyval(coeffs[::-1], self.energy)
-                self.processed_spectra -= background
+            method, bkwargs = BaselineAPI.parse_spec(
+                baseline_method,
+                poly_degree=poly_degree,
+                gaussian_sigma=gaussian_sigma
+            )
 
-            elif baseline_method == 'gaussian':
-                background = gaussian_filter1d(self.processed_spectra, sigma=gaussian_sigma)
-                self.processed_spectra -= background
-            else:
-                raise ValueError(f"Baseline method '{baseline_method}' not recognized. Use 'poly' or 'gaussian'.")
+            result = BaselineAPI.subtract(
+                x=self.energy,
+                y=self.processed_spectra,
+                method=method,
+                clip_nonnegative=True,  # always clip
+                **bkwargs,
+            )
+            self.processed_spectra = result.y_corrected
+
+
+
 
         # DISPLAY flag (fit is always normalised)
         self.normalize = normalize

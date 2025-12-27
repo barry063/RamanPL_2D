@@ -16,13 +16,11 @@ Classes:
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import optimize
-from numpy.polynomial.polynomial import Polynomial
 from scipy.signal import savgol_filter
-from scipy.ndimage import gaussian_filter1d
 from scipy.integrate import simpson
 from renishawWiRE import WDFReader
-# import os
-# import re
+from ramanpl.baselineAPI import BaselineAPI
+#########################################################################################################################
 
 
 class MappingFileLoader:
@@ -199,6 +197,13 @@ class PLMapping:
         self.gaussian_sigma = gaussian_sigma
         self.peak_params = list(custom_peaks.keys())
 
+        # New in v0.2.5: Baseline configuration (single source of truth)
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma
+        )
+
         loader = MappingFileLoader(filename)
         self.X = loader.X
         self.Y = loader.Y
@@ -276,28 +281,19 @@ class PLMapping:
             result += (scale / ((x - loc)**2 + scale**2)) * amp / np.pi
         return result
 
+    ### UPDATED METHOD in v0.2.5 ##
     def remove_background(self, xdata, intensity):
-        """Remove spectral background using selected method.
-        
-        Args:
-            xdata: Spectral axis values
-            intensity: Raw intensity values
-            
-        Returns:
-            Background-subtracted intensity
-            
-        Raises:
-            ValueError: For invalid baseline methods
-        """
-        if self.baseline_method == 'poly':
-            coeffs = Polynomial.fit(xdata, intensity, self.poly_degree).convert().coef
-            background = np.polyval(coeffs[::-1], xdata)
-        elif self.baseline_method == 'gaussian':
-            background = gaussian_filter1d(intensity, sigma=self.gaussian_sigma)
-        else:
-            raise ValueError(f"Invalid baseline method: {self.baseline_method}")
-        bg_removed = intensity - background
-        return bg_removed.clip(min=0)
+        """Remove spectral background via BaselineAPI (always clips to non-negative)."""
+        result = BaselineAPI.subtract(
+            x=xdata,
+            y=intensity,
+            method=self._baseline_method,
+            clip_nonnegative=True,
+            **self._baseline_kwargs
+        )
+        return result.y_corrected
+
+
 
     ## UPDATED METHOD in v0.2.3 ##
     def fit_spectra(self, initial_p0=None, warm_start=False, reset_on_fail=True,
@@ -770,7 +766,8 @@ class PL_Integration:
         image_viewer (MappingImage): Optical image handler
         integration_area (ndarray): Integrated intensities [Y, X]
     """
-    def __init__(self, filename, integration_range, step_size=0.3, poly_degree=3, background_remove=True):
+    def __init__(self, filename, integration_range, step_size=0.3, poly_degree=3,
+             background_remove=True, baseline_method="poly"):
         """Initialize PL integration analyzer.
         
         Args:
@@ -779,12 +776,20 @@ class PL_Integration:
             step_size: Physical step size in micrometers
             poly_degree: Background polynomial degree
             background_remove: Enable background subtraction
+            baseline_method: 'poly' or 'gaussian' background
         """
         self.filename = filename
         self.integration_range = integration_range
         self.step_size = step_size
         self.poly_degree = poly_degree
         self.background_remove = background_remove
+
+        # New in v0.2.5 Baseline configuration (single source of truth; backward compatible)
+        self.baseline_method = baseline_method
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree
+        )
 
         loader = MappingFileLoader(filename)
         self.X = loader.X
@@ -799,21 +804,18 @@ class PL_Integration:
         if self.image_viewer:
             self.image_viewer.show_optical_image()
 
+    ### Updated in v0.2.5 ##
+    def remove_background(self, energy, intensity):
+        """Background removal via BaselineAPI (always clips to non-negative)."""
+        result = BaselineAPI.subtract(
+            x=energy,
+            y=intensity,
+            method=self._baseline_method,
+            clip_nonnegative=True,
+            **self._baseline_kwargs
+        )
+        return result.y_corrected
 
-    def remove_background(self, energy, intensity, poly_degree=3):
-        """Remove background using polynomial fitting.
-        
-        Args:
-            energy (ndarray): Spectral axis values in eV
-            intensity (ndarray): Raw intensity values
-            poly_degree (int): Polynomial degree for fitting
-            
-        Returns:
-            ndarray: Background-subtracted intensity
-        """
-        coeffs = Polynomial.fit(energy, intensity, poly_degree).convert().coef
-        background = np.polyval(coeffs[::-1], energy)  # Calculate background signal
-        return intensity - background  # Subtract background signal
 
     def calculate_integration(self):
         """Calculate integrated area under spectra across all map points.
@@ -833,7 +835,9 @@ class PL_Integration:
 
                 # If background removal is enabled, remove the background signal
                 if self.background_remove:
-                    spectra_subset = self.remove_background(energy_subset, spectra_subset, self.poly_degree)
+                    ## Updated in v0.2.5 ##
+                    spectra_subset = self.remove_background(energy_subset, spectra_subset)
+
 
                 # Calculate the integration area
                 self.integration_area[j, i] = np.abs(simpson(spectra_subset, energy_subset))
@@ -904,7 +908,8 @@ class PL_Integration:
 
         # If background removal is enabled, remove the background signal
         if self.background_remove:
-            spectra_bg_removed = self.remove_background(energy_subset, spectra_subset, self.poly_degree)
+            ## Updated in v0.2.5 ##
+            spectra_subset = self.remove_background(energy_subset, spectra_subset)
         else:
             spectra_bg_removed = spectra_subset
 
@@ -986,6 +991,13 @@ class RamanMapping:
         self.smooth_poly = smooth_poly
         self.gaussian_sigma = gaussian_sigma
         self.peak_params = list(custom_peaks.keys())
+
+        # New in v0.2.5: Baseline configuration (single source of truth)
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma
+        )
 
         loader = MappingFileLoader(filename)
         self.X = loader.X
@@ -1091,7 +1103,7 @@ class RamanMapping:
 
         return None
 
-    ### End NEW METHOD ###
+    ### End NEW METHOD in v0.2.4 ###
 
     def show_optical_image(self):
         """Display optical image with mapping area overlay."""
@@ -1116,29 +1128,19 @@ class RamanMapping:
             result += (scale / ((x - loc)**2 + scale**2)) * amp / np.pi
         return result
 
+    ### UPDATED METHOD IN v0.2.5 ###
     def remove_background(self, wavenumber, intensity):
-        """Remove background using specified method.
-        
-        Args:
-            wavenumber (ndarray): Spectral axis values
-            intensity (ndarray): Raw intensity values
-            
-        Returns:
-            ndarray: Background-subtracted intensity
-        Raises:
-            ValueError: For invalid baseline methods
-        """
-        if self.baseline_method == 'poly':
-            coeffs = Polynomial.fit(wavenumber, intensity, self.poly_degree).convert().coef
-            background = np.polyval(coeffs[::-1], wavenumber)
-        elif self.baseline_method == 'gaussian':
-            background = gaussian_filter1d(intensity, sigma=self.gaussian_sigma)
-        else:
-            raise ValueError(f"Invalid baseline method: {self.baseline_method}. Choose 'poly' or 'gaussian'.")
-        
-        bg_removed = intensity - background
-        bg_removed = bg_removed.clip(min=0)  # Ensure non-negative values
-        return bg_removed
+        """Remove spectral background via BaselineAPI (always clips to non-negative)."""
+        result = BaselineAPI.subtract(
+            x=wavenumber,
+            y=intensity,
+            method=self._baseline_method,
+            clip_nonnegative=True,
+            **self._baseline_kwargs
+        )
+        return result.y_corrected
+
+
 
     ### UPDATED METHOD IN v0.2.4 ###
     def fit_spectra(
@@ -1721,9 +1723,10 @@ class Raman_Integration:
         image_viewer (MappingImage): Optical image handler
         integration_area (ndarray): Integrated intensities [Y, X]
     """   
-    def __init__(self, filename, integration_range, 
-                 step_size=0.3, header=False, 
-                 poly_degree=3, background_remove=True):
+    def __init__(self, filename, integration_range,
+                step_size=0.3, header=False,
+                poly_degree=3, background_remove=True,
+                baseline_method="poly"):
         """Initialize Raman integration analyzer.
         
         Args:
@@ -1747,27 +1750,30 @@ class Raman_Integration:
         self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
         self.integration_area = np.zeros((self.Y, self.X))
 
+        # New in v0.2.5 Baseline configuration (single source of truth; backward compatible)
+        self.baseline_method = baseline_method
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree
+        )
+
     def show_optical_image(self):
         if self.image_viewer:
             self.image_viewer.show_optical_image()
 
-    def remove_background(self, wavenumber, intensity, poly_degree=3):
-        """Remove background using polynomial fitting.
-        
-        Args:
-            wavenumber: Spectral axis in cm⁻¹
-            intensity: Raw intensity values
-            poly_degree: Polynomial degree for fitting
-            
-        Returns:
-            Background-subtracted intensity (negative values clipped)
-        """
-        # Use polynomial fitting to remove background signal
-        coeffs = Polynomial.fit(wavenumber, intensity, poly_degree).convert().coef
-        background = np.polyval(coeffs[::-1], wavenumber)  # Calculate background signal
-        bg_removed = intensity - background  # Subtract background signal
-        bg_removed[bg_removed < 0] = 0  # Set negative values to zero
-        return bg_removed
+    ## Updated in v0.2.5 ##
+    def remove_background(self, wavenumber, intensity):
+        """Background removal via BaselineAPI (always clips to non-negative)."""
+        result = BaselineAPI.subtract(
+            x=wavenumber,
+            y=intensity,
+            method=self._baseline_method,
+            clip_nonnegative=True,
+            **self._baseline_kwargs
+        )
+        return result.y_corrected
+
+
 
     def calculate_integration(self):
         """Calculate integrated area using Simpson's rule.
@@ -1786,7 +1792,9 @@ class Raman_Integration:
 
                 # If background removal is enabled, remove the background signal
                 if self.background_remove:
-                    spectra_subset = self.remove_background(wavenumber_subset, spectra_subset, self.poly_degree)
+                    ## new in v0.2.5 ##
+                    spectra_subset = self.remove_background(wavenumber_subset, spectra_subset)
+
 
                 # Calculate the integration area
                 self.integration_area[j, i] = np.abs(simpson(spectra_subset, wavenumber_subset))
@@ -1855,7 +1863,8 @@ class Raman_Integration:
 
         # If background removal is enabled, remove the background signal
         if self.background_remove:
-            spectra_bg_removed = self.remove_background(wavenumber_subset, spectra_subset, self.poly_degree)
+            ## new in v0.2.5 ##
+            spectra_subset = self.remove_background(wavenumber_subset, spectra_subset)
         else:
             spectra_bg_removed = spectra_subset
 

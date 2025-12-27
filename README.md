@@ -1,4 +1,4 @@
-# RamanPL_2D (version 0.2.4)
+# RamanPL_2D (version 0.2.5)
 
 **RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
 
@@ -17,6 +17,15 @@
 
 ### Change log
 
+**Version 0.2.5 (2025-12-27):**
+    1. Added a few new examples in PLfit and Ramanfit example foldders to demonstrate background subtraction using various fitting methods.
+    2. Updated `PLfit.py` and `RamanFit.py` to include a new `baseline_method` parameter in the constructor, allowing users to choose between 'poly' (polynomial fitting) and 'gaussian' (Gaussian fitting) for background removal.
+    3. Created a new module `baselineAPI.py` to handle baseline correction methods, which is now imported and used in both `PLfit.py`,`RamanFit.py` and `Mapping.py`.
+    4. Deprecating the previous `poly_degree` and `gaussian_sigma` parameters in favour of the new `baseline_method` parameter. Warnings are issued if the old parameters are used.
+    5. Added new background removal options in `baselineAPI.py`: `airpls`, `asls`, `arpls`, which are now utilised in the fitting classes.
+
+*All changes are backward compatible with previous version (0.2.4).*
+
 **Version 0.2.4 (2025-12-26):**
 
     1. Updated `RamanFit.py` to fix a bug where the fitting was incorrectly performed on unnormalised data when `normalize` was set to False. Now, fitting is always done on normalised data, and the `normalize` option only affects display and output scaling. 
@@ -24,7 +33,7 @@
     3. Updated example notebooks `Mapping Raman Example.ipynb` and `Mapping Raman txt Example.ipynb` to reflect the changes in fitting behaviour and clarify the purpose of the `normalize` option.
     4. Optimise the fitting speed in `Mapping.py` by improving the warm-start logic and reducing redundant computations.
 
-    *All changes are backward compatible with previous version (0.2.3).*
+*All changes are backward compatible with previous version (0.2.3).*
 
 **Version 0.2.3 (2025-12-25):**
 
@@ -34,7 +43,7 @@
     4. Added `export_p0()` method in `PLfit.py` to export the fitted parameters after fitting for further analysis.
     5. Updated Mapping examples in `Mapping PL Example.ipynb`, `PL_component.ipynb`, and `Mapping PL txt Example.ipynb` to reflect the changes in `normalize` option, added residual distribution plotting, `p0_pkg` for better `p0` guess in the example.
 
-    *All changes are backward compatible with previous version (0.2.0).*
+*All changes are backward compatible with previous version (0.2.0).*
 
 **Version 0.2.0 (2025-6-6):**
 
@@ -159,10 +168,8 @@ from ramanpl import RamanFit
 
 ## To-do
 
-- (v0.2.4) Update `RamanFit.py` and Raman mapping sections in `Mapping.py` to be compatible with the package structure.
-- (v0.2.5) Change background_removal based on the end-point subtraction
-- (v0.2.6) Add a batch processing and batch visualisation tools or functionalities
-- (v0.2.7) Add peak arithmatic processing (subtraction / addition)
+- (v0.2.6) Add peak arithmatic processing (subtraction / addition) and change `read_lines` to `data_range` that reflect the actuall wavenumber/energy range
+- (v0.2.7) Add a batch processing and batch visualisation tools or functionalities
 ... ...
 - (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
