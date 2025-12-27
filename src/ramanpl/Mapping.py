@@ -995,25 +995,103 @@ class RamanMapping:
         self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
         
         # Initialize arrays with dynamic dimensions based on number of peaks
-        num_peaks = len(custom_peaks)
-        self.peak_positions = np.zeros((self.Y, self.X, num_peaks))
-        self.peak_intensities = np.zeros((self.Y, self.X, num_peaks))
-        self.fitted_params = np.zeros((self.Y, self.X, num_peaks * 3))
-        self.residual_map = np.zeros((self.Y, self.X))
-       
-        # Initialize ratio and distance arrays
-        self.Peaks_distance = np.zeros((self.Y, self.X))
-        self.ratio_A1g_E2g = np.zeros((self.Y, self.X))
-        self.ratio_E2g_A1g = np.zeros((self.Y, self.X))
+        num_peaks = len(self.custom_peaks)
 
-        # Data processing parameters
-        self.normalize = normalize
-        self.background_remove = background_remove
-        self.smoothing = smoothing
-        self.baseline_method = baseline_method
-        self.smooth_window = smooth_window
-        self.smooth_poly = smooth_poly
-        self.gaussian_sigma = gaussian_sigma
+        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan)
+        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan)
+        self.fitted_params = np.full((self.Y, self.X, num_peaks * 3), np.nan)
+
+        ## Updated in v0.2.4 ##
+        self.residual_map = np.full((self.Y, self.X), np.nan)
+        self.norm_scale_map = np.full((self.Y, self.X), np.nan)
+        # Initialise derived maps as NaN (so “not computed / invalid” is visible)
+        self.Peaks_distance = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.ratio_A1g_E2g = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.ratio_E2g_A1g = np.full((self.Y, self.X), np.nan, dtype=float)
+        #####################
+
+    ### NEW METHOD IN v0.2.4 ###
+    def _preprocess_single_spectrum(self, xdata, spec):
+        """
+        Preprocessing for fitting (always normalised):
+        1) optional smoothing
+        2) optional background removal
+        3) normalisation by peak intensity
+
+        Returns
+        -------
+        y_norm : ndarray or None
+            Peak-normalised spectrum for fitting
+        scale : float or None
+            Peak intensity used for scaling back (raw units)
+        """
+        y = np.asarray(spec, dtype=float)
+
+        if self.smoothing:
+            y = savgol_filter(y, self.smooth_window, self.smooth_poly)
+
+        if self.background_remove:
+            y = self.remove_background(xdata, y)
+
+        scale = np.max(y)
+        if scale <= 0:
+            return None, None
+
+        return y / scale, scale
+    
+    @staticmethod
+    def custom_peaks_from_ramanfit(raman_fit):
+        """
+        Build Mapping-compatible custom_peaks dict from a RamanFit instance that
+        already loaded its peaks from the library.
+
+        Returns
+        -------
+        dict: {peak_name: ([lb_center, lb_width, lb_amp], [ub_center, ub_width, ub_amp])}
+        """
+        import numpy as np
+
+        labels = list(raman_fit.peak_labels)
+        lb = np.asarray(raman_fit.lower_bound, dtype=float)
+        ub = np.asarray(raman_fit.upper_bound, dtype=float)
+
+        if lb.size != ub.size or lb.size != 3 * len(labels):
+            raise ValueError("RamanFit bounds length mismatch with peak_labels.")
+
+        out = {}
+        for k, name in enumerate(labels):
+            out[name] = (lb[3*k:3*k+3].tolist(), ub[3*k:3*k+3].tolist())
+        return out
+    
+    def _find_peak_index(self, target):
+        """
+        Resolve a peak index robustly.
+        Matches exact name first, then case-insensitive, then substring containment.
+        Returns int index or None.
+        """
+        if target is None:
+            return None
+
+        names = list(self.peak_params)
+        # exact
+        if target in names:
+            return names.index(target)
+
+        # case-insensitive exact
+        t = target.lower()
+        for i, n in enumerate(names):
+            if n.lower() == t:
+                return i
+
+        # substring match (handles e.g. 'E2g' vs 'E12g(Γ)')
+        for i, n in enumerate(names):
+            nl = n.lower()
+            if t in nl or nl in t:
+                return i
+
+        return None
+
+    ### End NEW METHOD ###
 
     def show_optical_image(self):
         """Display optical image with mapping area overlay."""
@@ -1062,86 +1140,471 @@ class RamanMapping:
         bg_removed = bg_removed.clip(min=0)  # Ensure non-negative values
         return bg_removed
 
-    def fit_spectra(self):
-        """Perform spectral fitting across all map points.
-        
-        Processes data through:
-        1. Optional normalization
-        2. Background removal
-        3. Smoothing
-        4. Lorentzian peak fitting
-    
-        Additional calculations:
-        - A1g-E2g peak distances
-        - A1g/E2g intensity ratios
-        - E2g/A1g intensity ratios
-        
-        Stores results in:
-        - peak_positions: Fitted peak centers
-        - peak_intensities: Calculated peak heights
-        - residual_map: Fitting quality metrics
+    ### UPDATED METHOD IN v0.2.4 ###
+    def fit_spectra(
+        self,
+        initial_p0=None,
+        warm_start=False,
+        reset_on_fail=True,
+        maxfev=6400,
+        warm_start_rmse_gate=0.06,
+        row_reset=True,
+        bound_tol=1e-10
+    ):
         """
-        lower_bound = []
-        upper_bound = []
-        for peak, (low, high) in self.custom_peaks.items():
-            lower_bound.extend(low)
-            upper_bound.extend(high)
-        p0 = [(l + h)/2 for l, h in zip(lower_bound, upper_bound)]
+        Fit all map spectra using self.custom_peaks as bounds.
+
+        Behaviour (PL-equivalent):
+        - fitting is ALWAYS performed in peak-normalised space
+        - self.normalize affects DISPLAY only (intensity maps)
+        - supports initial_p0 as vector or dict package {"p0":..., "peak_order":...}
+        - warm-start propagation is gated (RMSE + plausibility) to reduce scanline ledges
+        - optional row_reset prevents row-to-row propagation artefacts
+        """
+        if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
+            raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising RamanMapping.")
+
+        # ---------- helpers ----------
+        def _params_plausible(params, lb, ub, n_peaks, tol=1e-10):
+            """
+            Reject fits that are stuck at bounds or have non-physical widths.
+            params are [center, width, amp] repeated.
+            """
+            params = np.asarray(params, dtype=float)
+            for k in range(n_peaks):
+                c = params[3*k]
+                w = params[3*k + 1]
+                a = params[3*k + 2]
+
+                # width must be positive and not absurdly small
+                if not np.isfinite(w) or w <= 1e-8:
+                    return False
+
+                # centre/width at bounds often indicates a constrained "fallback" minimum
+                if abs(c - lb[3*k]) < tol or abs(c - ub[3*k]) < tol:
+                    return False
+                if abs(w - lb[3*k + 1]) < tol or abs(w - ub[3*k + 1]) < tol:
+                    return False
+
+                # amplitude exactly at bound is also suspicious in mapping (can indicate saturation)
+                if abs(a - lb[3*k + 2]) < tol or abs(a - ub[3*k + 2]) < tol:
+                    return False
+
+            return True
+
+        # ---------- mask + x-axis ----------
+        wn_min, wn_max = self.data_range
+        mask = (self.wavenumber >= wn_min) & (self.wavenumber <= wn_max)
+        xdata = self.wavenumber[mask]
+
+        # ---------- bounds ----------
+        lower_bound, upper_bound = [], []
+        for params_range in self.custom_peaks.values():
+            lower_bound.extend(params_range[0])
+            upper_bound.extend(params_range[1])
+
+        lower_bound = np.asarray(lower_bound, dtype=float)
+        upper_bound = np.asarray(upper_bound, dtype=float)
+        n_params = lower_bound.size
+        n_peaks = len(self.peak_params)
+
+        # baseline p0
+        p0_base = (lower_bound + upper_bound) / 2.0
+
+        # ---------- optional: seed from RamanFit export ----------
+        if initial_p0 is not None:
+            if isinstance(initial_p0, dict):
+                peak_order_pkg = initial_p0.get("peak_order", None)
+                p0_vec = initial_p0.get("p0", None)
+
+                if p0_vec is None:
+                    raise ValueError("initial_p0 dict must contain key 'p0' with a numeric vector.")
+
+                if peak_order_pkg is not None:
+                    if [p.lower() for p in peak_order_pkg] != [p.lower() for p in self.peak_params]:
+                        raise ValueError(
+                            "peak_order mismatch between RamanFit and RamanMapping.\n"
+                            f"RamanFit: {list(peak_order_pkg)}\n"
+                            f"RamanMapping: {list(self.peak_params)}\n"
+                            "Ensure both use the same peak ordering."
+                        )
+
+                initial_p0 = p0_vec
+
+            initial_p0 = np.asarray(initial_p0, dtype=float)
+            if initial_p0.shape != p0_base.shape:
+                raise ValueError(f"initial_p0 shape {initial_p0.shape} does not match expected {p0_base.shape}")
+            p0_base = np.clip(initial_p0, lower_bound, upper_bound)
+
+        # outputs
+        fitted_params = np.full((self.Y, self.X, n_params), np.nan)
+
+        # ensure maps exist
+        if not hasattr(self, "norm_scale_map"):
+            self.norm_scale_map = np.full((self.Y, self.X), np.nan)
+        if not hasattr(self, "residual_map"):
+            self.residual_map = np.full((self.Y, self.X), np.nan)
+
+        # main loop
+        p0_current = p0_base.copy()
 
         for j in range(self.Y):
+
+            # IMPORTANT: prevents a bad seed at end of previous row from contaminating next row
+            if warm_start and row_reset:
+                p0_current = p0_base.copy()
+
             for i in range(self.X):
+                raw_spec = self.spectra[j, i, :][mask]
+
+                spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
+                if spec_norm is None:
+                    self.norm_scale_map[j, i] = np.nan
+                    self.residual_map[j, i] = np.nan
+                    if reset_on_fail:
+                        p0_current = p0_base.copy()
+                    continue
+
+                self.norm_scale_map[j, i] = scale
+
                 try:
-                    # Get raw data
-                    wavenumber = self.wavenumber[self.data_range[0]:self.data_range[1]]
-                    spectra = self.spectra[j][i][self.data_range[0]:self.data_range[1]]
-
-                    # 1. Normalize if enabled
-                    if self.normalize:
-                        spectra_min = np.min(spectra)
-                        spectra = spectra - spectra_min
-                        spectra_max = np.max(spectra)
-                        if spectra_max != 0:
-                            spectra = spectra / spectra_max
-
-                    # 2. Background removal if enabled
-                    if self.background_remove:
-                        spectra = self.remove_background(wavenumber, spectra)
-
-                    # 3. Smoothing if enabled
-                    if self.smoothing:
-                        spectra = savgol_filter(spectra, self.smooth_window, self.smooth_poly)
                     params, _ = optimize.curve_fit(
-                        self.lorentzian_raman, wavenumber, spectra,
-                        p0=p0, maxfev=6400, bounds=(lower_bound, upper_bound)
+                        self.lorentzian_raman,
+                        xdata,
+                        spec_norm,
+                        p0=p0_current,
+                        bounds=(lower_bound, upper_bound),
+                        maxfev=maxfev
                     )
 
-                    # Store parameters and calculate intensities
-                    for k, peak in enumerate(self.peak_params):
-                        self.peak_positions[j, i, k] = params[k*3]
-                        scale = params[k*3+1]
-                        amp = params[k*3+2]
-                        self.peak_intensities[j, i, k] = amp / (np.pi * scale)
+                    # residual in fit space (normalised)
+                    model_norm = self.lorentzian_raman(xdata, *params)
+                    residual_norm = spec_norm - model_norm
+                    rmse_norm = np.sqrt(np.mean(residual_norm ** 2))
+                    self.residual_map[j, i] = rmse_norm
 
-                    # Calculate residual
-                    fitted_curve = self.lorentzian_raman(wavenumber, *params)
-                    self.residual_map[j, i] = np.sum((spectra - fitted_curve)**2) / np.sum(spectra**2)
+                    fitted_params[j, i, :] = params
 
-                    # Calculate E2g-A1g distance and ratios if present
-                    if ('E2g' in self.peak_params) and ('A1g' in self.peak_params):
-                        e2g_idx = self.peak_params.index('E2g')
-                        a1g_idx = self.peak_params.index('A1g')
-                        self.Peaks_distance[j, i] = self.peak_positions[j, i, a1g_idx] - self.peak_positions[j, i, e2g_idx]
-                        
-                        e2g_int = self.peak_intensities[j, i, e2g_idx]
-                        a1g_int = self.peak_intensities[j, i, a1g_idx]
-                        
-                        self.ratio_A1g_E2g[j, i] = a1g_int / e2g_int if e2g_int != 0 else np.nan
-                        self.ratio_E2g_A1g[j, i] = e2g_int / a1g_int if a1g_int != 0 else np.nan
+                    # store peak centre + intensity (height)
+                    for k in range(n_peaks):
+                        idx = 3 * k
+                        center, width, amp = params[idx:idx + 3]
+                        self.peak_positions[j, i, k] = center
 
-                    self.fitted_params[j, i, :] = params
+                        peak_height_norm = amp / (np.pi * width)
+                        if self.normalize:
+                            self.peak_intensities[j, i, k] = peak_height_norm
+                        else:
+                            self.peak_intensities[j, i, k] = peak_height_norm * scale
+
+                    # derived maps: compute ONCE per pixel (not inside the peak loop)
+                    idx_a1g = self._find_peak_index("A1g")
+                    idx_e2g = self._find_peak_index("E2g")
+                    if idx_e2g is None:
+                        idx_e2g = self._find_peak_index("E12g")
+
+                    if (idx_a1g is not None) and (idx_e2g is not None):
+                        a1g_pos = self.peak_positions[j, i, idx_a1g]
+                        e2g_pos = self.peak_positions[j, i, idx_e2g]
+                        a1g_I = self.peak_intensities[j, i, idx_a1g]
+                        e2g_I = self.peak_intensities[j, i, idx_e2g]
+
+                        self.Peaks_distance[j, i] = (a1g_pos - e2g_pos) if (np.isfinite(a1g_pos) and np.isfinite(e2g_pos)) else np.nan
+                        self.ratio_A1g_E2g[j, i] = (a1g_I / e2g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and e2g_I > 0) else np.nan
+                        self.ratio_E2g_A1g[j, i] = (e2g_I / a1g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and a1g_I > 0) else np.nan
+                    else:
+                        self.Peaks_distance[j, i] = np.nan
+                        self.ratio_A1g_E2g[j, i] = np.nan
+                        self.ratio_E2g_A1g[j, i] = np.nan
+
+                    # gated warm-start: RMSE + plausibility
+                    if warm_start:
+                        ok_rmse = (rmse_norm <= warm_start_rmse_gate)
+                        ok_params = _params_plausible(params, lower_bound, upper_bound, n_peaks, tol=bound_tol)
+
+                        if ok_rmse and ok_params:
+                            p0_current = params
+                        else:
+                            if reset_on_fail:
+                                p0_current = p0_base.copy()
 
                 except RuntimeError:
+                    self.residual_map[j, i] = np.nan
+                    if reset_on_fail:
+                        p0_current = p0_base.copy()
                     continue
+
+        self.fitted_params = fitted_params
+        n_fit = np.sum(~np.isnan(self.residual_map))
+        print(f"Successful fits: {n_fit} / {self.X * self.Y}")
+        return fitted_params
+
+    
+    def plot_spectrum_fit(self, x, y):
+        """Plot raw data and fitting results for a single map point.
+
+        Display logic (PL-equivalent):
+            - Fitting is always done in normalised space.
+            - normalize=True  -> show normalised, background-removed spectrum + fit
+            - normalize=False -> show raw spectrum + fit (+ background overlay if enabled)
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from scipy.signal import savgol_filter
+
+        if x < 0 or x >= self.X or y < 0 or y >= self.Y:
+            raise ValueError("Invalid coordinates. Please ensure x and y are within the mapping range.")
+
+        # --- Extract full spectrum
+        x_full = np.asarray(self.wavenumber, dtype=float)
+        y_full = np.asarray(self.spectra[y, x, :], dtype=float)
+
+        # --- Mask by wavenumber range (cm^-1)
+        wn_min, wn_max = self.data_range
+        mask = (x_full >= wn_min) & (x_full <= wn_max)
+        xdata = x_full[mask]
+        raw_intensity = y_full[mask]
+
+        # --- Preprocessing consistent with fitting (except final normalisation)
+        proc = raw_intensity.copy()
+
+        if self.smoothing:
+            proc = savgol_filter(proc, self.smooth_window, self.smooth_poly)
+
+        if self.background_remove:
+            bg_removed = self.remove_background(xdata, proc)
+            background = proc - bg_removed
+        else:
+            bg_removed = proc
+            background = None
+
+        # --- Scale used for fitting normalisation
+        # Prefer stored scale if available (ensures exact match to fit_spectra)
+        scale = None
+        if hasattr(self, "norm_scale_map"):
+            scale = self.norm_scale_map[y, x]
+
+        if scale is None or not np.isfinite(scale) or scale <= 0:
+            scale = np.max(bg_removed)
+
+        if scale <= 0:
+            raise ValueError(f"No positive signal at (X={x}, Y={y}); cannot scale fitted curve.")
+
+        # --- Load fitted parameters (normalised space)
+        params = np.asarray(self.fitted_params[y, x, :], dtype=float)
+        if np.any(np.isnan(params)):
+            raise ValueError(f"Fit parameters are NaN at (X={x}, Y={y}). Fit may have failed.")
+
+        fitted_norm = self.lorentzian_raman(xdata, *params)
+        fitted_raw = fitted_norm * scale
+
+        # --- Plot
+        plt.figure(figsize=(10, 6))
+
+        if self.normalize:
+            # Normalised display (background-removed)
+            spectrum_norm = bg_removed / scale
+            plt.plot(xdata, spectrum_norm, "k-", label="Background-removed (normalised)")
+            plt.plot(xdata, fitted_norm, "g--", linewidth=2, label="Fitted Curve")
+            plt.ylabel("Normalised Intensity (a.u.)")
+        else:
+            # Raw display
+            plt.plot(xdata, raw_intensity, "k-", label="Raw Spectrum")
+
+            if self.background_remove:
+                plt.plot(xdata, background, "r--", label="Estimated Background")
+                plt.plot(xdata, bg_removed, "b-", alpha=0.8, label="Background Removed (smoothed)")
+
+                # Peak-only fit (raw units)
+                plt.plot(xdata, fitted_raw, "g--", linewidth=2, label="Fitted Curve (peak only)")
+
+                # Overlay vs raw spectrum: (peak fit + estimated background)
+                fitted_plus_bg = fitted_raw + background
+                plt.plot(xdata, fitted_plus_bg, "-", linewidth=2, label="Fit + Estimated Background")
+            else:
+                # No background removal → show fit only once
+                plt.plot(xdata, fitted_raw, "g--", linewidth=2, label="Fitted Curve")
+
+            plt.ylabel("Intensity (a.u.)")
+
+        plt.xlabel("Wavenumber (cm⁻¹)")
+        title = f"Spectrum Fit at (X={x}, Y={y})"
+        if hasattr(self, "residual_map") and np.isfinite(self.residual_map[y, x]):
+            title += f" | RMSE(norm)={self.residual_map[y, x]:.4g}"
+        plt.title(title)
+
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    def plot_residual_distribution(
+        self,
+        filter_threshold=None,
+        robust=True,
+        p_low=5,
+        p_high=95,
+        hist_bins=50,
+        cmap="inferno"
+                                    ):
+        """
+        Visualise spatial distribution of fitting residuals and their histogram.
+
+        Behaviour:
+        - If filter_threshold is None:
+            show full residual heatmap (optionally robust-scaled) + histogram.
+        - If filter_threshold is set:
+            ONLY show pixels with residual >= filter_threshold (others masked out) + histogram.
+
+        Notes:
+        - residual_map is RMSE computed in the *normalised fit space* (dimensionless).
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        residuals = np.asarray(self.residual_map, dtype=float)
+        valid = ~np.isnan(residuals)
+        residuals_flat = residuals[valid]
+
+        if residuals_flat.size == 0:
+            raise ValueError("Residual map contains no valid values to plot.")
+
+        # Determine colour scaling
+        if robust:
+            vmin = np.percentile(residuals_flat, p_low)
+            vmax = np.percentile(residuals_flat, p_high)
+            if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+                vmin, vmax = None, None
+        else:
+            vmin, vmax = None, None
+
+        # If thresholding, focus colour scale on the thresholded region for contrast
+        if filter_threshold is not None:
+            above = residuals_flat[residuals_flat >= filter_threshold]
+            if above.size == 0:
+                raise ValueError(
+                    f"No pixels found with residual >= {filter_threshold:g}. "
+                    "Try lowering filter_threshold."
+                )
+            vmin = filter_threshold
+            vmax_thr = np.percentile(above, 99) if above.size > 5 else np.max(above)
+            vmax = vmax_thr if (np.isfinite(vmax_thr) and vmax_thr > vmin) else np.max(above)
+
+        # Layout
+        fig, (ax_map, ax_hist) = plt.subplots(
+            1, 2, figsize=(12, 5),
+            gridspec_kw={"width_ratios": [3, 1]}
+        )
+
+        # ---- Map panel ----
+        if filter_threshold is None:
+            data_masked = np.ma.masked_invalid(residuals)
+            title = "Residual Distribution (higher = worse fit)"
+        else:
+            keep = (residuals >= filter_threshold) & valid
+            data_masked = np.ma.masked_where(~keep, residuals)
+            title = f"Residual Distribution (≥ {filter_threshold:g})"
+
+        im = ax_map.imshow(
+            data_masked,
+            cmap=cmap,
+            origin="upper",
+            vmin=vmin,
+            vmax=vmax
+        )
+        cbar = fig.colorbar(im, ax=ax_map)
+        cbar.set_label("Residual Error (RMSE, normalised)")
+
+        ax_map.set_title(title)
+        ax_map.set_xlabel("X Position")
+        ax_map.set_ylabel("Y Position")
+
+        # ---- Histogram panel ----
+        ax_hist.hist(
+            residuals_flat,
+            bins=hist_bins,
+            orientation="horizontal",
+            color="darkred",
+            edgecolor="black"
+        )
+        ax_hist.set_xlabel("Count")
+        ax_hist.set_ylabel("Residual RMSE (normalised)")
+        ax_hist.set_title("Residual Histogram")
+
+        if filter_threshold is not None:
+            ax_hist.axhline(filter_threshold, linestyle="--", linewidth=1)
+            upper = residuals_flat[residuals_flat >= filter_threshold]
+            y_lo = max(filter_threshold * 0.98, np.min(upper))
+            y_hi = np.max(upper)
+            if np.isfinite(y_lo) and np.isfinite(y_hi) and y_hi > y_lo:
+                ax_hist.set_ylim(y_lo, y_hi)
+        else:
+            if vmin is not None and vmax is not None:
+                ax_hist.set_ylim(vmin, vmax)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_ratio_heatmap(self, ratio_type='A1g/E2g', cmap='viridis', filter_range=None, x_range=None, y_range=None):
+        """Visualize 2D map of peak intensity ratios.
+        
+        Args:
+            ratio_type: 'A1g/E2g' or 'E2g/A1g'
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
+            
+        Raises:
+            ValueError: For invalid ratio types or missing peaks
+        """
+        # Ensure derived maps exist (in case user calls this before fit_spectra)
+        if not hasattr(self, "ratio_A1g_E2g") or not hasattr(self, "ratio_E2g_A1g"):
+            raise ValueError("Ratio maps not initialised. Run fit_spectra() first.")
+
+        # Choose ratio map
+        if ratio_type == 'A1g/E2g':
+            data = self.ratio_A1g_E2g
+            label = 'A1g/E2g Intensity Ratio'
+        elif ratio_type == 'E2g/A1g':
+            data = self.ratio_E2g_A1g
+            label = 'E2g/A1g Intensity Ratio'
+        else:
+            raise ValueError("Invalid ratio_type. Choose from 'A1g/E2g' or 'E2g/A1g'.")
+
+        # Filter range: clip outliers only if requested
+        if filter_range is not None:
+            data = np.where((data >= filter_range[0]) & (data <= filter_range[1]), data, np.nan)
+
+        # Crop
+        if x_range is not None and y_range is not None:
+            x_start, x_end = x_range
+            y_start, y_end = y_range
+            data = data[y_start:y_end+1, x_start:x_end+1]
+            x_length = (x_end - x_start + 1) * self.step_size
+            y_length = (y_end - y_start + 1) * self.step_size
+        else:
+            x_length = self.X * self.step_size
+            y_length = self.Y * self.step_size
+
+        cm = plt.get_cmap(cmap).copy()
+        cm.set_bad('gray')
+
+        plt.figure(figsize=(8, 6))
+        im = plt.imshow(
+            data,
+            cmap=cm,
+            vmin=filter_range[0] if filter_range else None,
+            vmax=filter_range[1] if filter_range else None,
+            extent=[0, x_length, y_length, 0]
+        )
+        plt.colorbar(im, label=label)
+        plt.xlabel("X Position (μm)")
+        plt.ylabel("Y Position (μm)")
+        plt.title(f"Heatmap of {label}")
+        plt.tight_layout()
+        plt.show()
+
+    ### END UPDATED METHOD ###
 
     def plot_heatmap(self, data_type='position', cmap='viridis', filter_range=None, 
                     x_range=None, y_range=None, specific_wavenumber=None, peak_name=None):
@@ -1171,13 +1634,33 @@ class RamanMapping:
         else:
             raise ValueError(f"Invalid data_type: {data_type}")
 
+        ### Updated in v0.2.4 ###
         # Generate data based on data_type
         if data_type == 'specific_intensity':
-            data = np.zeros((self.Y, self.X))
+            data = np.full((self.Y, self.X), np.nan, dtype=float)
+
             for j in range(self.Y):
                 for i in range(self.X):
-                    data[j, i] = self.lorentzian_raman(specific_wavenumber, *self.fitted_params[j, i])
-            label = f'Intensity at {specific_wavenumber} cm⁻¹'
+                    params = self.fitted_params[j, i, :]
+                    if np.any(np.isnan(params)):
+                        continue  # fit failed / not available
+
+                    y_norm = self.lorentzian_raman(specific_wavenumber, *params)
+
+                    if self.normalize:
+                        # display normalised model intensity
+                        data[j, i] = y_norm
+                    else:
+                        # display raw model intensity using stored scale
+                        if not hasattr(self, "norm_scale_map") or np.isnan(self.norm_scale_map[j, i]):
+                            continue
+                        data[j, i] = y_norm * self.norm_scale_map[j, i]
+
+            label = (f'Normalised intensity at {specific_wavenumber} cm⁻¹'
+                    if self.normalize else
+                    f'Intensity at {specific_wavenumber} cm⁻¹')
+        ### End UPDATED METHOD ###
+
         elif data_type == 'distance':
             data = self.Peaks_distance
             label = 'A1g - E2g Distance (cm⁻¹)'
@@ -1215,131 +1698,6 @@ class RamanMapping:
         plt.xlabel("X Position (μm)")
         plt.ylabel("Y Position (μm)")
         plt.title(f"Heatmap of {label}")
-        plt.show()
-
-    def plot_ratio_heatmap(self, ratio_type='A1g/E2g', cmap='viridis', filter_range=None, x_range=None, y_range=None):
-        """Visualize 2D map of peak intensity ratios.
-        
-        Args:
-            ratio_type: 'A1g/E2g' or 'E2g/A1g'
-            cmap: Matplotlib colormap name
-            filter_range: Data display range [min, max]
-            x_range: X display range [start, end]
-            y_range: Y display range [start, end]
-            
-        Raises:
-            ValueError: For invalid ratio types or missing peaks
-        """
-        if ratio_type == 'A1g/E2g':
-            if 'A1g' not in self.peak_params or 'E2g' not in self.peak_params:
-                raise ValueError("Both 'A1g' and 'E2g' peaks are required for ratio calculation.")
-            data = self.ratio_A1g_E2g
-            label = 'A1g/E2g Intensity Ratio'
-        elif ratio_type == 'E2g/A1g':
-            if 'A1g' not in self.peak_params or 'E2g' not in self.peak_params:
-                raise ValueError("Both 'A1g' and 'E2g' peaks are required for ratio calculation.")
-            data = self.ratio_E2g_A1g
-            label = 'E2g/A1g Intensity Ratio'
-        else:
-            raise ValueError("Invalid ratio_type. Choose from 'A1g/E2g' or 'E2g/A1g'.")
-
-        # Filter data range
-        if filter_range is not None:
-            # Replace outliers with filter_range[0] instead of NaN
-            data = np.where((data >= filter_range[0]) & (data <= filter_range[1]), data, filter_range[0])
-        # If x_range and y_range are specified, only plot data within the specified region
-        if x_range is not None and y_range is not None:
-            x_start, x_end = x_range
-            y_start, y_end = y_range
-            data = data[y_start:y_end+1, x_start:x_end+1]
-            # Calculate actual length range
-            x_length = (x_end - x_start + 1) * self.step_size
-            y_length = (y_end - y_start + 1) * self.step_size
-        else:
-            # Calculate actual length range
-            x_length = self.X * self.step_size
-            y_length = self.Y * self.step_size
-
-        plt.figure(figsize=(8, 6))
-        im = plt.imshow(
-            data,
-            cmap=cmap,
-            vmin=filter_range[0] if filter_range else None,  # Anchor color scale
-            vmax=filter_range[1] if filter_range else None,  # to filter range
-            extent=[0, x_length, y_length, 0])
-        cbar = plt.colorbar(im, label=label)
-        plt.xlabel("X Position (μm)")
-        plt.ylabel("Y Position (μm)")
-        plt.title(f"Heatmap of {label}")
-        plt.show()
-
-    def plot_spectrum_fit(self, x, y):
-        """Plot raw data and fitting results for single map point.
-        
-        Args:
-            x (int): X coordinate (0-indexed)
-            y (int): Y coordinate (0-indexed)
-        Shows:
-            - Raw spectrum
-            - Estimated background
-            - Background-removed data
-            - Fitted curve
-        """
-        if x < 0 or x >= self.X or y < 0 or y >= self.Y:
-            raise ValueError("Invalid coordinates.")
-
-        # Get full spectra and intensity
-        full_wavenumber = self.wavenumber[:]
-        full_intensity = self.spectra[y][x][:]
-
-        # Apply mask to both wavenumber and intensity
-        mask = (full_wavenumber >= self.data_range[0]) & (full_wavenumber <= self.data_range[1])
-        wavenumber = full_wavenumber[mask]
-        intensity = full_intensity[mask]
-
-        # Process background removal on MASKED data
-        if self.background_remove:
-            bg_removed_intensity = self.remove_background(wavenumber, intensity)
-        else:
-            bg_removed_intensity = intensity.copy()
-
-        # Calculate background from MASKED data
-        background = intensity - bg_removed_intensity
-
-        # Get fitted parameters and calculate curve
-        params = self.fitted_params[y, x, :]
-        fitted_curve = self.lorentzian_raman(wavenumber, *params)
-        if self.normalize:
-            fitted_curve = fitted_curve*max(bg_removed_intensity)
-
-        # Plotting
-        plt.figure(figsize=(10, 6))
-        plt.plot(wavenumber, intensity, 'k-', label='Raw Spectrum')
-        if self.background_remove:
-            plt.plot(wavenumber, background, 'r--', label='Estimated Background')
-            plt.plot(wavenumber, bg_removed_intensity, 'b-', label='Background Removed')
-        plt.plot(wavenumber, fitted_curve, 'g--', label='Fitted Curve')
-        plt.xlabel("Wavenumber (cm⁻¹)")
-        plt.ylabel("Intensity (a.u.)")
-        plt.title(f"Spectrum Fit at (X={x}, Y={y})")
-        plt.legend()
-        plt.show()
-
-    def plot_residual_distribution(self, threshold=None):
-        """Visualize spatial distribution of fitting residuals.
-        
-        Args:
-            threshold (float): Highlight residuals above this value
-        """
-        plt.figure(figsize=(10, 6))
-        plt.imshow(self.residual_map, cmap='viridis', origin='upper')
-        plt.colorbar(label='Normalized Residual')
-        plt.title('Fitting Residual Distribution')
-        plt.xlabel('X Position')
-        plt.ylabel('Y Position')
-        if threshold > 0:
-            mask = self.residual_map > threshold
-            plt.imshow(mask, cmap='binary', alpha=0.1, origin='upper')
         plt.show()
 
 

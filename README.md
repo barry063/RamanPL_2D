@@ -1,4 +1,4 @@
-# RamanPL_2D (version 0.2.3)
+# RamanPL_2D (version 0.2.4)
 
 **RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
 
@@ -17,6 +17,15 @@
 
 ### Change log
 
+**Version 0.2.4 (2025-12-26):**
+
+    1. Updated `RamanFit.py` to fix a bug where the fitting was incorrectly performed on unnormalised data when `normalize` was set to False. Now, fitting is always done on normalised data, and the `normalize` option only affects display and output scaling. 
+    2. Updated `Mapping.py` to ensure that Raman mapping fitting is performed on normalised data regardless of the `normalize` setting. The `normalize` option now only influences the display and output scaling of heatmaps and spectra. And updated specific intensity heatmap plotting, ratio heatmap plotting, and distance heatmap plotting methods to reflect this change.
+    3. Updated example notebooks `Mapping Raman Example.ipynb` and `Mapping Raman txt Example.ipynb` to reflect the changes in fitting behaviour and clarify the purpose of the `normalize` option.
+    4. Optimise the fitting speed in `Mapping.py` by improving the warm-start logic and reducing redundant computations.
+
+    *All changes are backward compatible with previous version (0.2.3).*
+
 **Version 0.2.3 (2025-12-25):**
 
     1. Changed `normalize` option in `Mapping.py` to control whether to display normalised data for heatmap display. This option does not affect the fitting process.
@@ -25,7 +34,7 @@
     4. Added `export_p0()` method in `PLfit.py` to export the fitted parameters after fitting for further analysis.
     5. Updated Mapping examples in `Mapping PL Example.ipynb`, `PL_component.ipynb`, and `Mapping PL txt Example.ipynb` to reflect the changes in `normalize` option, added residual distribution plotting, `p0_pkg` for better `p0` guess in the example.
 
-    All changes are backward compatible with previous version (0.2.0).
+    *All changes are backward compatible with previous version (0.2.0).*
 
 **Version 0.2.0 (2025-6-6):**
 

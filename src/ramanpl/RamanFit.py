@@ -123,7 +123,8 @@ class RamanFit:
     def __init__(self, spectra, wavenumber, materials=None, substrate=None,
                  background_remove=False, baseline_method='poly',
                  poly_degree=3, gaussian_sigma=50, smoothing=False, 
-                 smooth_window=11, smooth_order=3, normalize=False):
+                 smooth_window=11, smooth_order=3, normalize=False, 
+                 custom_peaks=None, peak_order=None):
         """Initialize RamanFit analyzer with data and processing parameters.
 
         Parameters
@@ -159,30 +160,32 @@ class RamanFit:
             For unrecognized baseline methods or invalid material/substrate IDs
         """
         
-        # Initialize default parameters (WS2 core peaks)
-        self.lower_bound = [
-            353, 0, 0,   # E12g(Γ)
-            418, 0, 0,    # A1g(Γ)
-        ]
-        self.upper_bound = [
-            358, 5, 10,   # E12g(Γ)
-            424, 5, 10,   # A1g(Γ)
-        ]
-        self.peak_labels = [
-            'E12g(Γ)', 'A1g(Γ)'
-        ]
+        ### Updated in v.0.2.4 ###
+        # ------------------------------
+        # Peak model definition (library-driven)
+        # ------------------------------
+        # Start empty; populate from library to avoid duplicated / inconsistent defaults.
+        self.lower_bound = []
+        self.upper_bound = []
+        self.peak_labels = []
 
-        # Load material parameters if specified
+        # If user did not specify materials, default to WS2 core peaks via library
+        # (keeps your previous behaviour but makes it consistent and portable).
+        if materials is None:
+            materials = ['WS2']
+
+        # Load material peaks from library (in the order provided by 'materials')
         if materials is not None:
             self.load_material_parameters(materials)
-        else:
-            # Keep default WS2 parameters but clear them if no materials wanted
-            # (Add this if you want empty defaults when materials=None)
-            pass
 
-        # Load substrate parameters if specified
+        # Load substrate peaks if specified (appended after material peaks)
         if substrate is not None:
             self.load_substrate(substrate)
+
+        # Optional: enforce deterministic ordering (see Step 1.4)
+        self._enforce_peak_order_if_requested(peak_order=None)
+        # ------------------------------
+        ### End of v.0.2.4 update ###
 
         # Set initial parameters
         self.p0 = [(low + high) / 2 
@@ -213,10 +216,16 @@ class RamanFit:
             else:
                 raise ValueError(f"Baseline method '{baseline_method}' not recognized. Use 'poly' or 'gaussian'.")
 
-        # Normalization
+        ### Updated in v.0.2.4 ###
+        # Fit is ALWAYS performed in peak-normalised space.
+        # normalize controls DISPLAY/OUTPUT scaling only.
         self.normalize = normalize
+
         self.peak_intensity = np.max(self.processed_spectra)
+        if self.peak_intensity <= 0:
+            raise ValueError("Peak intensity is non-positive after preprocessing; cannot normalise for fitting.")
         self.intensity_normal = self.processed_spectra / self.peak_intensity
+        ### End of v.0.2.4 update ###
 
     def _get_material_lib_path(self):
         """Get absolute path to raman_materials.json in module directory."""
@@ -243,26 +252,85 @@ class RamanFit:
         except FileNotFoundError:
             raise ValueError(f"Material library file not found at: {json_path}")
         
-        # Clear defaults when materials are specified
-        self.lower_bound = []
-        self.upper_bound = []
-        self.peak_labels = []
+        # # Clear defaults when materials are specified
+        # self.lower_bound = []
+        # self.upper_bound = []
+        # self.peak_labels = []
         
         for material in materials:
             if material not in material_lib:
                 raise ValueError(f"Material '{material}' not found in library")
             
+            ### Updated in v.0.2.4 ###
             params = material_lib[material]['peaks']
-            self.lower_bound.extend(params['lower_bound'])
-            self.upper_bound.extend(params['upper_bound'])
-            self.peak_labels.extend(params['peak_labels'])
-        
+            lb = params['lower_bound']
+            ub = params['upper_bound']
+            labels = params['peak_labels']
+
+            # Append peaks but avoid duplicated peak labels (prevents WS2 double-loading etc.)
+            for k, name in enumerate(labels):
+                if name in self.peak_labels:
+                    continue
+                self.peak_labels.append(name)
+                self.lower_bound.extend(lb[3*k:3*k+3])
+                self.upper_bound.extend(ub[3*k:3*k+3])
+            ### End of v.0.2.4 update ###
+
         # Verify parameter consistency
         param_count = len(self.lower_bound)
         if (len(self.upper_bound) != param_count or 
             3 * len(self.peak_labels) != param_count):
             raise ValueError("Invalid parameter dimensions in material library")
+
+    ### Added in v.0.2.4 ###
+    def _enforce_peak_order_if_requested(self, peak_order=None):
+        """
+        Reorder bounds/labels to match a user-provided peak_order (case-insensitive).
+        If peak_order is None, do nothing.
+        """
+        if peak_order is None:
+            return
+
+        peak_order = list(peak_order)
+        labels_lower = [p.lower() for p in self.peak_labels]
+        order_lower = [p.lower() for p in peak_order]
+
+        if sorted(order_lower) != sorted(labels_lower):
+            raise ValueError(
+                "peak_order must be a permutation of the loaded peak labels.\n"
+                f"Loaded: {self.peak_labels}\n"
+                f"Requested: {peak_order}"
+            )
+
+        def block(arr, idx):
+            return arr[3*idx:3*idx+3]
+
+        new_lb, new_ub, new_labels = [], [], []
+        for name_lower in order_lower:
+            old_idx = labels_lower.index(name_lower)
+            new_labels.append(self.peak_labels[old_idx])
+            new_lb += block(self.lower_bound, old_idx)
+            new_ub += block(self.upper_bound, old_idx)
+
+        self.peak_labels = new_labels
+        self.lower_bound = new_lb
+        self.upper_bound = new_ub
     
+    def export_p0(self):
+        """
+        Export mapping-ready initial guess (normalised fit space) + ordering metadata.
+
+        Returns:
+            dict: {"p0": np.ndarray, "peak_order": list[str]}
+        """
+        import numpy as np
+        if not hasattr(self, "params_fit") or self.params_fit is None:
+            raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
+        return {"p0": np.asarray(self.params_fit, dtype=float).copy(),
+                "peak_order": list(self.peak_labels)}
+    
+    ### End of v.0.2.4 update ###
+
     def load_substrate(self, substrate):
         """Load substrate parameters from JSON material library.
 
@@ -398,6 +466,11 @@ class RamanFit:
             bounds=(self.lower_bound, self.upper_bound), 
             maxfev=6400
         )
+
+        ### Updated in v.0.2.4 ###
+        self.params_fit = params
+        self.params_cov = params_cov
+        ### End of v.0.2.4 update ###
         return params, params_cov
 
     # Method to plot the fitted spectrum along with components
