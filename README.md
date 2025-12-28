@@ -18,6 +18,7 @@
 ### Change log
 
 **Version 0.2.5 (2025-12-27):**
+
     1. Added a few new examples in PLfit and Ramanfit example foldders to demonstrate background subtraction using various fitting methods.
     2. Updated `PLfit.py` and `RamanFit.py` to include a new `baseline_method` parameter in the constructor, allowing users to choose between 'poly' (polynomial fitting) and 'gaussian' (Gaussian fitting) for background removal.
     3. Created a new module `baselineAPI.py` to handle baseline correction methods, which is now imported and used in both `PLfit.py`,`RamanFit.py` and `Mapping.py`.
