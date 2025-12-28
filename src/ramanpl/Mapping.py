@@ -20,76 +20,46 @@ from scipy.signal import savgol_filter
 from scipy.integrate import simpson
 from renishawWiRE import WDFReader
 from ramanpl.baselineAPI import BaselineAPI
+from ramanpl.dataImporter import DataImporter
+
 #########################################################################################################################
 
 
 class MappingFileLoader:
     """Loader for spectroscopic mapping data from .wdf and .txt files.
-    
+
+    After refactor:
+    - delegates file IO to ramanpl.dataImporter.DataImporter.map_import
+    - optionally trims the spectral axis using x_range to reduce memory usage
+
     Attributes:
         filename (str): Path to input file
         data_format (str): File format ('txt' or 'wdf')
-        reader (WDFReader): Renishaw file reader object (for .wdf only)
         X (int): Number of points in X-direction
         Y (int): Number of points in Y-direction
-        xdata (ndarray): Spectral axis values
+        xdata (ndarray): Spectral axis values (eV for PL, cm^-1 for Raman)
         spectra (ndarray): 3D array of spectra [Y, X, spectral_points]
     """
-    def __init__(self, filename):
-        """Initialize file loader and detect file format.
-        
-        Args:
-            filename (str): Path to input file (.wdf or .txt)
-        
-        Raises:
-            ValueError: For unsupported file formats
-        """
+
+    def __init__(self, filename, x_range=None, axis="auto", txt_skiprows=1):
         self.filename = filename
-        self.reader = None
-        if filename.endswith(".txt"):
-            self.data_format = "txt"
-            self._load_txt()
-        elif filename.endswith(".wdf"):
-            self.data_format = "wdf"
-            self._load_wdf()
-        else:
-            raise ValueError("Unsupported file format. Only '.txt' and '.wdf' are supported.")
+        self.axis = axis
+        self.data_format = "wdf" if filename.lower().endswith(".wdf") else "txt" if filename.lower().endswith(".txt") else "unknown"
 
-    def _load_txt(self):
-        """Load mapping data from ASCII text file.
-        
-        Expected format:
-        - First row: Headers (skipped)
-        - Columns: [X, Y, Wavenumber, Intensity]
-        """
-        data = np.loadtxt(self.filename, skiprows=1)
-        x_coords = np.unique(data[:, 0])
-        y_coords = np.unique(data[:, 1])
-        self.X = len(x_coords)
-        self.Y = len(y_coords)
-        points_per_location = np.sum((data[:, 0] == x_coords[0]) & (data[:, 1] == y_coords[0]))
-        self.xdata = data[:points_per_location, 2]
+        if self.data_format == "unknown":
+            raise RuntimeError("Unsupported mapping file format. Supported formats: .wdf, .txt")
 
-        spectra = np.zeros((self.Y, self.X, points_per_location))
-        index = 0
-        for j in range(self.Y):
-            for i in range(self.X):
-                spectra[j, i, :] = data[index:index+points_per_location, 3]
-                index += points_per_location
+        spectra_cube, xdata, X, Y = DataImporter.map_import(
+            filename=filename,
+            x_range=x_range,
+            axis=axis,
+            txt_skiprows=txt_skiprows,
+        )
 
-        self.spectra = spectra
-
-    def _load_wdf(self):
-        """Load mapping data from Renishaw .wdf file using renishawWiRE library."""
-        self.reader = WDFReader(self.filename)
-        self.X = self.reader.map_shape[0]
-        self.Y = self.reader.map_shape[1]
-        self.xdata = self.reader.xdata[:]
-        spectra = np.zeros((self.Y, self.X, len(self.xdata)))
-        for j in range(self.Y):
-            for i in range(self.X):
-                spectra[j, i, :] = self.reader.spectra[j][i][:]
-        self.spectra = spectra
+        self.X = X
+        self.Y = Y
+        self.xdata = xdata
+        self.spectra = spectra_cube
 
 
 class MappingImage:
@@ -204,15 +174,23 @@ class PLMapping:
             gaussian_sigma=gaussian_sigma
         )
 
-        loader = MappingFileLoader(filename)
+        # If user supplied a data_range, trim at load-time to reduce memory and speed downstream work.
+        if self.data_range is not None:
+            loader = MappingFileLoader(filename, x_range=self.data_range, axis="energy")
+            self._x_trimmed_on_load = True
+        else:
+            loader = MappingFileLoader(filename, axis="energy")
+            self._x_trimmed_on_load = False
+
         self.X = loader.X
         self.Y = loader.Y
         self.xdata = loader.xdata
         self.spectra = loader.spectra
-        self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None       
+        self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
 
+        # If not provided, default to the full (possibly already trimmed) x-range
         if self.data_range is None:
-            self.data_range = (min(self.xdata), max(self.xdata))
+            self.data_range = (float(np.min(self.xdata)), float(np.max(self.xdata)))
 
         num_peaks = len(self.custom_peaks)
         self.peak_positions = np.zeros((self.Y, self.X, num_peaks))
@@ -328,9 +306,13 @@ class PLMapping:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
 
         # --- Build spectral mask from energy range (eV)
-        e_min, e_max = self.data_range
-        mask = (self.xdata >= e_min) & (self.xdata <= e_max)
-        xdata = self.xdata[mask]
+        # If trimmed at load, no need to remask.
+        if getattr(self, "_x_trimmed_on_load", False):
+            xdata = self.xdata
+            mask = None
+        else:
+            mask = DataImporter.mask_by_xrange(self.xdata, self.data_range)
+            xdata = self.xdata[mask]
 
         # --- Build bounds from custom_peaks (in insertion order)
         lower_bound, upper_bound = [], []
@@ -385,7 +367,7 @@ class PLMapping:
 
         for j in range(self.Y):
             for i in range(self.X):
-                raw_spec = self.spectra[j, i, :][mask]
+                raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
                 spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
 
@@ -470,8 +452,7 @@ class PLMapping:
         y_full = np.asarray(self.spectra[y, x, :], dtype=float)
 
         # --- Mask by energy range (eV)
-        e_min, e_max = self.data_range
-        mask = (x_full >= e_min) & (x_full <= e_max)
+        mask = DataImporter.mask_by_xrange(self.xdata, self.data_range)
         xdata = x_full[mask]
         raw_intensity = y_full[mask]
 
@@ -791,7 +772,10 @@ class PL_Integration:
             poly_degree=poly_degree
         )
 
-        loader = MappingFileLoader(filename)
+        # integration_range is known here; trim at load-time.
+        loader = MappingFileLoader(filename, x_range=self.integration_range, axis="energy")
+        self._x_trimmed_on_load = True
+
         self.X = loader.X
         self.Y = loader.Y
         self.energy = loader.xdata
@@ -819,28 +803,25 @@ class PL_Integration:
 
     def calculate_integration(self):
         """Calculate integrated area under spectra across all map points.
-        
-        Uses Simpson's rule for integration
-        Stores results in integration_area array
+
+        Uses Simpson's rule for integration.
+        Stores results in integration_area array.
         """
-        energy = self.energy
-        mask = (energy >= self.integration_range[0]) & (energy <= self.integration_range[1])
+        energy = np.asarray(self.energy, dtype=float).ravel()
+
+        mask = DataImporter.mask_by_xrange(energy, self.integration_range)
         energy_subset = energy[mask]
 
         for j in range(self.Y):
             for i in range(self.X):
-                # Get the spectrum data
-                spectra = self.spectra[j][i][:]
+                spectra = np.asarray(self.spectra[j, i, :], dtype=float).ravel()
                 spectra_subset = spectra[mask]
 
-                # If background removal is enabled, remove the background signal
                 if self.background_remove:
-                    ## Updated in v0.2.5 ##
                     spectra_subset = self.remove_background(energy_subset, spectra_subset)
 
-
-                # Calculate the integration area
                 self.integration_area[j, i] = np.abs(simpson(spectra_subset, energy_subset))
+
 
     def plot_integration_heatmap(self, cmap='viridis', filter_range=None, x_range=None, y_range=None):
         """Visualize 2D map of integrated intensities.
@@ -902,20 +883,21 @@ class PL_Integration:
         spectra = self.spectra[y][x][:]
 
         # Get data within the integration range
-        mask = (energy >= self.integration_range[0]) & (energy <= self.integration_range[1])
+        mask = DataImporter.mask_by_xrange(energy, self.integration_range)
         energy_subset = energy[mask]
         spectra_subset = spectra[mask]
 
+
         # If background removal is enabled, remove the background signal
+        spectra_raw = spectra_subset.copy()
+
         if self.background_remove:
-            ## Updated in v0.2.5 ##
-            spectra_subset = self.remove_background(energy_subset, spectra_subset)
+            spectra_bg_removed = self.remove_background(energy_subset, spectra_subset)
         else:
             spectra_bg_removed = spectra_subset
 
-        # Plot the original spectrum and background-removed spectrum (if enabled)
         plt.figure(figsize=(10, 6))
-        plt.plot(energy_subset, spectra_subset, 'b-', label='Original Spectrum')
+        plt.plot(energy_subset, spectra_raw, 'b-', label='Original Spectrum')
         if self.background_remove:
             plt.plot(energy_subset, spectra_bg_removed, 'r--', label='Background Removed')
         plt.xlabel("Energy (eV)")
@@ -999,7 +981,10 @@ class RamanMapping:
             gaussian_sigma=gaussian_sigma
         )
 
-        loader = MappingFileLoader(filename)
+        # data_range is mandatory for RamanMapping in your current signature; trim at load-time.
+        loader = MappingFileLoader(filename, x_range=self.data_range, axis="wavenumber")
+        self._x_trimmed_on_load = True
+
         self.X = loader.X
         self.Y = loader.Y
         self.wavenumber = loader.xdata
@@ -1195,9 +1180,13 @@ class RamanMapping:
             return True
 
         # ---------- mask + x-axis ----------
-        wn_min, wn_max = self.data_range
-        mask = (self.wavenumber >= wn_min) & (self.wavenumber <= wn_max)
-        xdata = self.wavenumber[mask]
+        if getattr(self, "_x_trimmed_on_load", False):
+            xdata = self.wavenumber
+            mask = None
+        else:
+            mask = DataImporter.mask_by_xrange(self.wavenumber, self.data_range)
+            xdata = self.wavenumber[mask]
+
 
         # ---------- bounds ----------
         lower_bound, upper_bound = [], []
@@ -1257,7 +1246,7 @@ class RamanMapping:
                 p0_current = p0_base.copy()
 
             for i in range(self.X):
-                raw_spec = self.spectra[j, i, :][mask]
+                raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
                 spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
                 if spec_norm is None:
@@ -1362,10 +1351,10 @@ class RamanMapping:
         y_full = np.asarray(self.spectra[y, x, :], dtype=float)
 
         # --- Mask by wavenumber range (cm^-1)
-        wn_min, wn_max = self.data_range
-        mask = (x_full >= wn_min) & (x_full <= wn_max)
+        mask = DataImporter.mask_by_xrange(x_full, self.data_range)
         xdata = x_full[mask]
         raw_intensity = y_full[mask]
+
 
         # --- Preprocessing consistent with fitting (except final normalisation)
         proc = raw_intensity.copy()
@@ -1742,7 +1731,10 @@ class Raman_Integration:
         self.poly_degree = poly_degree
         self.background_remove = background_remove
 
-        loader = MappingFileLoader(filename)
+        # integration_range is known here; trim at load-time.
+        loader = MappingFileLoader(filename, x_range=self.integration_range, axis="wavenumber")
+        self._x_trimmed_on_load = True
+
         self.X = loader.X
         self.Y = loader.Y
         self.wavenumber = loader.xdata
@@ -1772,32 +1764,28 @@ class Raman_Integration:
             **self._baseline_kwargs
         )
         return result.y_corrected
-
-
-
+    
+    ## Updated in v0.2.6 ##
     def calculate_integration(self):
         """Calculate integrated area using Simpson's rule.
-        
+
         Stores results in integration_area array.
         """
-        wavenumber = self.wavenumber[:]
-        mask = (wavenumber >= self.integration_range[0]) & (wavenumber <= self.integration_range[1])
+        wavenumber = np.asarray(self.wavenumber, dtype=float).ravel()
+
+        mask = DataImporter.mask_by_xrange(wavenumber, self.integration_range)
         wavenumber_subset = wavenumber[mask]
 
         for j in range(self.Y):
             for i in range(self.X):
-                # Get the spectrum data
-                spectra = self.spectra[j][i][:]
+                spectra = np.asarray(self.spectra[j, i, :], dtype=float).ravel()
                 spectra_subset = spectra[mask]
 
-                # If background removal is enabled, remove the background signal
                 if self.background_remove:
-                    ## new in v0.2.5 ##
                     spectra_subset = self.remove_background(wavenumber_subset, spectra_subset)
 
-
-                # Calculate the integration area
                 self.integration_area[j, i] = np.abs(simpson(spectra_subset, wavenumber_subset))
+
 
     def plot_integration_heatmap(self, cmap='viridis', filter_range=None, x_range=None, y_range=None):
         """Visualize 2D map of integrated intensities.
@@ -1857,9 +1845,11 @@ class Raman_Integration:
         spectra = self.spectra[y][x][:]
 
         # Get data within the integration range
-        mask = (wavenumber >= self.integration_range[0]) & (wavenumber <= self.integration_range[1])
+        mask = DataImporter.mask_by_xrange(wavenumber, self.integration_range)
         wavenumber_subset = wavenumber[mask]
         spectra_subset = spectra[mask]
+
+
 
         # If background removal is enabled, remove the background signal
         if self.background_remove:

@@ -16,65 +16,22 @@ from scipy.signal import savgol_filter
 import json
 import os
 from ramanpl.baselineAPI import BaselineAPI
-
+from ramanpl.dataImporter import DataImporter
 
 
 class DataImporter:
-    """Class for importing Raman data from .wdf and .txt files (single spectrum only)"""
+    """
+    Compatibility shim: keeps RamanFit.DataImporter.data_import(...) working,
+    while delegating to the shared importer.
+
+    Preferred usage going forward:
+        from ramanpl.dataImporter import DataImporter
+    """
     @staticmethod
-    def data_import(filename, readlines=[300, 780]):
-        """Import Raman data from single spectrum files
-        
-        Parameters
-        ----------
-        filename : str
-            Path to .wdf or .txt file
-        readlines : list, optional
-            Data range indices [start, end] to select subset of data points
-            
-        Returns
-        -------
-        tuple
-            (spectra, xdata) as numpy arrays
-            
-        Raises
-        ------
-        RuntimeError
-            If file cannot be imported
-        ValueError
-            For unsupported formats or invalid data
-        """
-        try:
-            if filename.lower().endswith('.wdf'):
-                
-                # Handle WDF files
-                reader = WDFReader(filename)               
-                spectra = reader.spectra
-                xdata = reader.xdata
+    def data_import(filename, readlines=(300, 780), x_range=None):
+        from ramanpl.dataImporter import DataImporter as _Shared
+        return _Shared.data_import(filename=filename, readlines=readlines, x_range=x_range, axis="wavenumber")
 
-            elif filename.lower().endswith('.txt'):
-                # Handle text files with numpy
-                data = np.loadtxt(filename, delimiter="\t", skiprows=1)
-                
-                # Validate text file format
-                if data.shape[1] != 2:
-                    raise ValueError("Text file must contain exactly 2 columns: xdata and intensity")
-                
-                xdata = data[:, 0]
-                spectra = data[:, 1]
-
-            else:
-                raise ValueError("Supported formats: .wdf, .txt")
-
-            # Apply safe range selection
-            n_points = len(spectra)
-            start = max(0, min(readlines[0], n_points))
-            end = max(start, min(readlines[1], n_points))
-            
-            return spectra[start:end], xdata[start:end]
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to import {filename}: {str(e)}")
 
 
 class RamanFit:
