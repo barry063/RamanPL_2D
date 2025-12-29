@@ -1,4 +1,4 @@
-# RamanPL_2D (version 0.2.6)
+# RamanPL_2D (version 0.2.7)
 
 **RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
 
@@ -13,9 +13,22 @@
 - Heatmaps of intensity at specific wavenumber/energy by fitted spectra
 - Auto-calculation of important data for 2D materials: **A1g - E2g peak difference** and **FWHM** of peaks
 - Heatmaps of Raman spectrum **A1g - E2g Peak difference** and **E2g/A1g peak ratio**
+- Arithmetic processing of the mapping data or single point data for flexible operation.
 - Sanity check: normalised residual calculation and distribution, dynamical spectrum fitting view
 
 ### Change log
+
+**Version 0.2.7 (2025-12-29):**
+    
+    1. Added spectrum data subtraction and addition options via new `operation.py` to improve fitting accuracy for spectra with low signal-to-noise ratios. Users can now enable background removal during the fitting process.
+    2. Updated example notebook `Raman_component.ipynb` to demonstrate the usage of background removal during Raman spectrum fitting.
+    3. Fixed data trimming options in `DataImporter.data_import()` method to ensure that when `x_range` is specified, the `readlines` parameter is ignored, allowing for accurate data import within the desired range.
+    4. Updated `Mapping.py` to allow intermediate array type data for fitting, enabling more flexible data handling during mapping analysis.
+    5. Added arithmetic processing ability for a mapped raw data to subtract a reference data.
+    6. Deleted .txt example data files that are no longer used in the updated example notebooks to streamline the repository.
+    7. Make other optimisations and code clean-up for better performance and readability.
+
+*All changes are backward compatible with previous version (0.2.6).*
 
 **Version 0.2.6 (2025-12-28):**
     1. Added `mask_by_xrange()` static method in `DataImporter` class to create boolean masks for selecting data within specified x-axis ranges. This method is now used in `Mapping.py` for both Raman and PL data processing.
@@ -70,15 +83,18 @@
 ```bash
 RamanPL_2D/
     ├── example-usage/ # Sample spectral data files and demonstrated usage of python codes by jupyter-notebook (`.ipynb`files)
-    │ ├── Mapping/     # PL, Raman data mapping using `Mapping.py`
-    │ ├── PLfit/       # PL component curve fitting using `PLfit.py`
-    │ └── Ramanfit/    # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
+    │ ├── Mapping/      # PL, Raman data mapping using `Mapping.py`
+    │ ├── PLfit/        # PL component curve fitting using `PLfit.py`
+    │ └── Ramanfit/     # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
     ├── src/                # Source code for data processing and analysis DON'T CHANGE THE FOLDER STRUCTURE!
     │ ├── ramanpl/          # header of the pacakage name, so you should use "from ramanpl import RamanFit" forspecific module
     │ │ ├── __init__.py               # For package installation only, header to indicate this is a folder of python packages
     │ │ ├── RamanFit.py               # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
     │ │ ├── raman_materials.json      # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
     │ │ ├── PLfit.py                  # Class modules for Raman spectra fitting and plotting
+    │ │ ├── baselinAPI.py             # Helper codes for Raman/PL background subtration
+    │ │ ├── dataImporter.py           # Helper codes for importing .wdf/.txt data files
+    │ │ ├── operation.py              # Classs modules for making math operations of multiple data files.
     │ │ └── Mapping.py                # Mapping of Raman, PL and integration of spectra
     │ ├── install.ipynb     # A jupyter-notebook run to install  our package
     │ └── setup.py          # For package installation only, include some required python packages for using
@@ -173,13 +189,11 @@ from ramanpl import RamanFit
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
 
----
 
 ## To-do
 
-- (v0.2.7) Add peak arithmatic processing (subtraction / addition)
-- (v0.2.8) Add a batch processing and batch visualisation tools or functionalities
-... ...
+- (v0.2.8) Add a batch processing and batch visualisation tools or functionalities and migrate WDRfileReader from `dataImporter.py` to a separate module for better code organisation.
+- (v0.2.9) Add output functionalities to export fitted parameters and heatmap data to CSV or Excel files for further analysis.
 - (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
 ## License

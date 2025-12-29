@@ -19,8 +19,9 @@ from scipy import optimize
 from scipy.signal import savgol_filter
 from scipy.integrate import simpson
 from renishawWiRE import WDFReader
-from ramanpl.baselineAPI import BaselineAPI
-from ramanpl.dataImporter import DataImporter
+from ramanpl import BaselineAPI
+from ramanpl import DataImporter
+from typing import Optional, Tuple
 
 #########################################################################################################################
 
@@ -202,6 +203,126 @@ class PLMapping:
         self.norm_scale_map = np.full((self.Y, self.X), np.nan)
         ### END UPDATED INITIALIZATION ###
 
+    ### NEW METHOD IN v0.2.7 ###
+    @classmethod
+    def from_arrays(
+        cls,
+        spectra,
+        xdata,
+        X,
+        Y,
+        *,
+        custom_peaks,
+        data_range=None,
+        step_size=0.3,
+        poly_degree=3,
+        normalize=True,
+        background_remove=True,
+        baseline_method='poly',
+        smoothing=True,
+        smooth_window=11,
+        smooth_poly=3,
+        gaussian_sigma=10,
+    ):
+        """
+        Create a PLMapping instance from in-memory mapping arrays (no file IO).
+
+        Parameters
+        ----------
+        spectra : ndarray
+            Mapping cube with shape [Y, X, N]
+        xdata : ndarray
+            Spectral axis with shape [N] (energy in eV)
+        X, Y : int
+            Map dimensions
+        """
+
+        obj = cls.__new__(cls)
+
+        # ---- mirror __init__ fields ----
+        obj.filename = None
+        obj.custom_peaks = custom_peaks
+        obj.data_range = data_range
+        obj.step_size = step_size
+        obj.poly_degree = poly_degree
+        obj.normalize = normalize
+        obj.background_remove = background_remove
+        obj.baseline_method = baseline_method
+        obj.smoothing = smoothing
+        obj.smooth_window = smooth_window
+        obj.smooth_poly = smooth_poly
+        obj.gaussian_sigma = gaussian_sigma
+        obj.peak_params = list(custom_peaks.keys())
+
+        # Baseline config (same as __init__)
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma
+        )
+
+        # ---- assign data ----
+        obj.X = int(X)
+        obj.Y = int(Y)
+        obj.xdata = np.asarray(xdata, dtype=float).ravel()
+        obj.spectra = np.asarray(spectra, dtype=float)
+
+        # Validate shapes
+        if obj.spectra.ndim != 3:
+            raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
+        if obj.spectra.shape[0] != obj.Y or obj.spectra.shape[1] != obj.X:
+            raise ValueError(f"spectra shape {obj.spectra.shape[:2]} inconsistent with (Y,X)=({obj.Y},{obj.X}).")
+        if obj.spectra.shape[2] != obj.xdata.size:
+            raise ValueError("spectra third dimension (N) must match len(xdata).")
+
+        # No optical image when constructed from arrays
+        obj.image_viewer = None
+
+        # Load-time trimming flag: False, because we did not trim during import here
+        obj._x_trimmed_on_load = False
+
+        # Default range: full axis if not supplied
+        if obj.data_range is None:
+            obj.data_range = (float(np.min(obj.xdata)), float(np.max(obj.xdata)))
+
+        # Allocate output arrays (same as __init__)
+        num_peaks = len(obj.custom_peaks)
+        obj.peak_positions = np.zeros((obj.Y, obj.X, num_peaks))
+        obj.peak_intensities = np.zeros((obj.Y, obj.X, num_peaks))
+        obj.fitted_params = np.zeros((obj.Y, obj.X, num_peaks * 3))
+        obj.residual_map = np.full((obj.Y, obj.X), np.nan)
+        obj.norm_scale_map = np.full((obj.Y, obj.X), np.nan)
+
+        return obj
+
+    ### New in v0.2.7 ###
+    def get_reference_spectrum(self, *, x: int, y: int, roi: Optional[Tuple[int, int, int, int]] = None):
+        """
+        Return a reference spectrum from this already-loaded mapping object.
+
+        Parameters
+        ----------
+        x, y : int
+            Pixel coordinate (0-indexed)
+        roi : (x0, x1, y0, y1) inclusive, optional
+            If provided, returns the mean spectrum over the ROI.
+
+        Returns
+        -------
+        (y_ref, xdata)
+        """
+        if roi is not None:
+            x0, x1, y0, y1 = roi
+            if not (0 <= x0 <= x1 < self.X and 0 <= y0 <= y1 < self.Y):
+                raise ValueError("ROI out of bounds.")
+            y_ref = np.nanmean(self.spectra[y0:y1+1, x0:x1+1, :], axis=(0, 1))
+        else:
+            if not (0 <= x < self.X and 0 <= y < self.Y):
+                raise ValueError("Pixel out of bounds.")
+            y_ref = self.spectra[y, x, :]
+
+        return np.asarray(y_ref, dtype=float).ravel(), np.asarray(self.xdata, dtype=float).ravel()
+
     ## NEW METHOD ADDED in v0.2.3 ##
     def _preprocess_single_spectrum(self, xdata, spec):
         """
@@ -296,8 +417,11 @@ class PLMapping:
 
         Returns
         -------
-        fitted_parameters : np.ndarray
-            Array with shape (Y, X, n_params), NaN where fitting failed.
+        params_map : ndarray
+            Fitted parameter cube with shape [Y, X, n_params].
+            In notebooks, assign the return value or use `_ = fit_spectra(...)`
+            to avoid auto-display.
+
         """
         import numpy as np
         from scipy import optimize
@@ -783,6 +907,90 @@ class PL_Integration:
         self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
         self.integration_area = np.zeros((self.Y, self.X))
 
+    ### NEW METHOD in v0.2.7 ###
+    @classmethod
+    def from_arrays(
+        cls,
+        spectra,
+        xdata,
+        X,
+        Y,
+        *,
+        integration_range,
+        step_size=0.3,
+        poly_degree=3,
+        background_remove=True,
+        baseline_method="poly",
+        clip_nonnegative=False,
+    ):
+        """
+        Construct PL_Integration from in-memory arrays (no file IO).
+
+        Parameters
+        ----------
+        spectra : ndarray
+            Mapping cube with shape [Y, X, N]
+        xdata : ndarray
+            Energy axis (eV) with shape [N]
+        X, Y : int
+            Map dimensions
+        integration_range : tuple(float, float)
+            (min, max) eV; applied immediately (trim at construction, consistent with __init__)
+        """
+        obj = cls.__new__(cls)
+
+        # Mirror __init__ fields
+        obj.filename = None
+        obj.integration_range = integration_range
+        obj.step_size = step_size
+        obj.poly_degree = poly_degree
+        obj.background_remove = background_remove
+
+        # Baseline configuration (same pattern as __init__)
+        obj.baseline_method = baseline_method
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree
+        )
+
+        obj.X = int(X)
+        obj.Y = int(Y)
+
+        energy = np.asarray(xdata, dtype=float).ravel()
+        cube = np.asarray(spectra, dtype=float)
+
+        # Validate shapes
+        if cube.ndim != 3:
+            raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
+        if cube.shape[0] != obj.Y or cube.shape[1] != obj.X:
+            raise ValueError(f"spectra shape {cube.shape[:2]} inconsistent with (Y,X)=({obj.Y},{obj.X}).")
+        if cube.shape[2] != energy.size:
+            raise ValueError("spectra third dimension (N) must match len(xdata).")
+
+        # Trim at load-time (same semantics as filename-based __init__)
+        emin, emax = integration_range
+        mask = (energy >= emin) & (energy <= emax)
+        if not np.any(mask):
+            raise ValueError(
+                f"integration_range {integration_range} does not overlap provided energy axis "
+                f"[{float(np.min(energy)):.3g}, {float(np.max(energy)):.3g}]."
+            )
+
+        obj.energy = energy[mask]
+        obj.spectra = cube[:, :, mask]
+        obj._x_trimmed_on_load = True
+
+        if clip_nonnegative:
+            obj.spectra = np.clip(obj.spectra, a_min=0.0, a_max=None)
+
+        # No optical image when constructed from arrays
+        obj.image_viewer = None
+
+        # Output
+        obj.integration_area = np.zeros((obj.Y, obj.X), dtype=float)
+
+        return obj
+
     def show_optical_image(self):
         """Display the optical image."""
         if self.image_viewer:
@@ -1007,6 +1215,118 @@ class RamanMapping:
         self.ratio_E2g_A1g = np.full((self.Y, self.X), np.nan, dtype=float)
         #####################
 
+    ### New in v0.2.7 ###
+    @classmethod
+    def from_arrays(
+        cls,
+        spectra,
+        xdata,
+        X,
+        Y,
+        *,
+        custom_peaks,
+        data_range,
+        step_size=0.3,
+        poly_degree=3,
+        normalize=False,
+        background_remove=True,
+        smoothing=True,
+        baseline_method='poly',
+        smooth_window=11,
+        smooth_poly=3,
+        gaussian_sigma=10,
+    ):
+        """
+        Create a RamanMapping instance from in-memory mapping arrays (no file IO).
+
+        Parameters
+        ----------
+        spectra : ndarray
+            Mapping cube with shape [Y, X, N]
+        xdata : ndarray
+            Spectral axis with shape [N] (wavenumber in cm^-1)
+        X, Y : int
+            Map dimensions
+        data_range : tuple
+            (min, max) in cm^-1 (kept as in the filename-based API)
+        """
+        obj = cls.__new__(cls)
+
+        obj.filename = None
+        obj.custom_peaks = custom_peaks
+        obj.data_range = data_range
+        obj.step_size = step_size
+        obj.poly_degree = poly_degree
+        obj.normalize = normalize
+        obj.background_remove = background_remove
+        obj.smoothing = smoothing
+        obj.baseline_method = baseline_method
+        obj.smooth_window = smooth_window
+        obj.smooth_poly = smooth_poly
+        obj.gaussian_sigma = gaussian_sigma
+        obj.peak_params = list(custom_peaks.keys())
+
+        # Baseline config (same as __init__)
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma
+        )
+
+        obj.X = int(X)
+        obj.Y = int(Y)
+        obj.wavenumber = np.asarray(xdata, dtype=float).ravel()
+        obj.spectra = np.asarray(spectra, dtype=float)
+
+        # Validate shapes
+        if obj.spectra.ndim != 3:
+            raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
+        if obj.spectra.shape[0] != obj.Y or obj.spectra.shape[1] != obj.X:
+            raise ValueError(f"spectra shape {obj.spectra.shape[:2]} inconsistent with (Y,X)=({obj.Y},{obj.X}).")
+        if obj.spectra.shape[2] != obj.wavenumber.size:
+            raise ValueError("spectra third dimension (N) must match len(xdata).")
+
+        obj.image_viewer = None
+
+        # Not trimmed at load time when built from arrays
+        obj._x_trimmed_on_load = False
+
+        # Allocate arrays (same as __init__)
+        num_peaks = len(obj.custom_peaks)
+        obj.peak_positions = np.full((obj.Y, obj.X, num_peaks), np.nan)
+        obj.peak_intensities = np.full((obj.Y, obj.X, num_peaks), np.nan)
+        obj.fitted_params = np.full((obj.Y, obj.X, num_peaks * 3), np.nan)
+
+        obj.residual_map = np.full((obj.Y, obj.X), np.nan)
+        obj.norm_scale_map = np.full((obj.Y, obj.X), np.nan)
+
+        obj.Peaks_distance = np.full((obj.Y, obj.X), np.nan, dtype=float)
+        obj.ratio_A1g_E2g = np.full((obj.Y, obj.X), np.nan, dtype=float)
+        obj.ratio_E2g_A1g = np.full((obj.Y, obj.X), np.nan, dtype=float)
+
+        return obj
+
+    ### New in v0.2.7 ###
+    def get_reference_spectrum(self, *, x: int, y: int, roi: Optional[Tuple[int, int, int, int]] = None):
+        """
+        Return a reference spectrum from this already-loaded mapping object.
+
+        Returns
+        -------
+        (y_ref, wavenumber)
+        """
+        if roi is not None:
+            x0, x1, y0, y1 = roi
+            if not (0 <= x0 <= x1 < self.X and 0 <= y0 <= y1 < self.Y):
+                raise ValueError("ROI out of bounds.")
+            y_ref = np.nanmean(self.spectra[y0:y1+1, x0:x1+1, :], axis=(0, 1))
+        else:
+            if not (0 <= x < self.X and 0 <= y < self.Y):
+                raise ValueError("Pixel out of bounds.")
+            y_ref = self.spectra[y, x, :]
+
+        return np.asarray(y_ref, dtype=float).ravel(), np.asarray(self.wavenumber, dtype=float).ravel()
+
     ### NEW METHOD IN v0.2.4 ###
     def _preprocess_single_spectrum(self, xdata, spec):
         """
@@ -1141,12 +1461,20 @@ class RamanMapping:
         """
         Fit all map spectra using self.custom_peaks as bounds.
 
-        Behaviour (PL-equivalent):
+        Behaviour notes:
         - fitting is ALWAYS performed in peak-normalised space
         - self.normalize affects DISPLAY only (intensity maps)
         - supports initial_p0 as vector or dict package {"p0":..., "peak_order":...}
         - warm-start propagation is gated (RMSE + plausibility) to reduce scanline ledges
         - optional row_reset prevents row-to-row propagation artefacts
+
+        Returns
+        -------
+        params_map : ndarray
+            Fitted parameter cube with shape [Y, X, n_params].
+            In notebooks, assign the return value or use `_ = fit_spectra(...)`
+            to avoid auto-display.
+
         """
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising RamanMapping.")
@@ -1748,6 +2076,86 @@ class Raman_Integration:
             baseline_method,
             poly_degree=poly_degree
         )
+
+    ### New classmethod in v0.2.7 ###
+    @classmethod
+    def from_arrays(
+        cls,
+        spectra,
+        xdata,
+        X,
+        Y,
+        *,
+        integration_range,
+        step_size=0.3,
+        poly_degree=3,
+        background_remove=True,
+        baseline_method="poly",
+        clip_nonnegative=False,
+    ):
+        """
+        Construct Raman_Integration from in-memory arrays (no file IO).
+
+        Parameters
+        ----------
+        spectra : ndarray
+            Mapping cube with shape [Y, X, N]
+        xdata : ndarray
+            Wavenumber axis (cm^-1) with shape [N]
+        X, Y : int
+            Map dimensions
+        integration_range : tuple(float, float)
+            (min, max) cm^-1; applied immediately (trim at construction, consistent with __init__)
+        """
+        obj = cls.__new__(cls)
+
+        obj.filename = None
+        obj.integration_range = integration_range
+        obj.step_size = step_size
+        obj.poly_degree = poly_degree
+        obj.background_remove = background_remove
+
+        # Baseline configuration (same pattern as __init__)
+        obj.baseline_method = baseline_method
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree
+        )
+
+        obj.X = int(X)
+        obj.Y = int(Y)
+
+        wn = np.asarray(xdata, dtype=float).ravel()
+        cube = np.asarray(spectra, dtype=float)
+
+        # Validate shapes
+        if cube.ndim != 3:
+            raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
+        if cube.shape[0] != obj.Y or cube.shape[1] != obj.X:
+            raise ValueError(f"spectra shape {cube.shape[:2]} inconsistent with (Y,X)=({obj.Y},{obj.X}).")
+        if cube.shape[2] != wn.size:
+            raise ValueError("spectra third dimension (N) must match len(xdata).")
+
+        # Trim at load-time (same semantics as filename-based __init__)
+        wmin, wmax = integration_range
+        mask = (wn >= wmin) & (wn <= wmax)
+        if not np.any(mask):
+            raise ValueError(
+                f"integration_range {integration_range} does not overlap provided wavenumber axis "
+                f"[{float(np.min(wn)):.3g}, {float(np.max(wn)):.3g}]."
+            )
+
+        obj.wavenumber = wn[mask]
+        obj.spectra = cube[:, :, mask]
+        obj._x_trimmed_on_load = True
+
+        if clip_nonnegative:
+            obj.spectra = np.clip(obj.spectra, a_min=0.0, a_max=None)
+
+        obj.image_viewer = None
+        obj.integration_area = np.zeros((obj.Y, obj.X), dtype=float)
+
+        return obj
 
     def show_optical_image(self):
         if self.image_viewer:

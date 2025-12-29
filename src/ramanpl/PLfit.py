@@ -13,8 +13,8 @@ import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
-from ramanpl.baselineAPI import BaselineAPI
-from ramanpl.dataImporter import DataImporter
+from ramanpl import BaselineAPI
+from ramanpl import DataImporter
 
 class DataImporter:
     """

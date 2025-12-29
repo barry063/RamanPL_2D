@@ -35,17 +35,12 @@ class DataImporter:
     @staticmethod
     def data_import(
         filename: str,
-        readlines=(300, 780),
+        readlines=None,
         x_range=None,
         axis: str = "auto",
         txt_delimiter: str = "\t",
         txt_skiprows: int = 1,
     ):
-        """
-        Import a single spectrum from .wdf or .txt.
-
-        Returns (spectra, xdata) as 1D arrays.
-        """
         spectra, xdata = DataImporter._read_single_file(
             filename=filename,
             txt_delimiter=txt_delimiter,
@@ -56,32 +51,27 @@ class DataImporter:
         xdata = np.asarray(xdata, dtype=float).ravel()
 
         if spectra.size != xdata.size:
-            raise RuntimeError(
-                f"Imported spectra and xdata length mismatch: {spectra.size} vs {xdata.size}"
-            )
+            raise RuntimeError("Imported spectrum and x-axis must have the same length.")
 
+        # Prefer physical trimming if x_range is provided
         if x_range is not None:
-            x_sel, y_sel = DataImporter.select_by_xrange(
-                xdata=xdata,
-                ydata=spectra,
-                x_range=x_range,
-                axis=axis,
-            )
+            x_sel, y_sel = DataImporter.select_by_xrange(xdata, spectra, x_range, axis=axis)
             return y_sel, x_sel
 
-        warnings.warn(
-            "DataImporter.data_import(..., readlines=...) is deprecated and will be removed in a future version. "
-            "Please use x_range=(xmin, xmax) in physical units instead.",
-            category=FutureWarning,
-            stacklevel=2,
-        )
+        # Legacy trimming only if readlines is not None
+        if readlines is not None:
+            import warnings
+            warnings.warn(
+                "DataImporter.data_import(..., readlines=...) is deprecated and will be removed in a future version. "
+                "Please use x_range=(xmin, xmax) in physical units instead.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
+            x_sel, y_sel = DataImporter._select_by_readlines(xdata=xdata, ydata=spectra, readlines=readlines)
+            return y_sel, x_sel
 
-        x_sel, y_sel = DataImporter._select_by_readlines(
-            xdata=xdata,
-            ydata=spectra,
-            readlines=readlines,
-        )
-        return y_sel, x_sel
+        # No trimming
+        return spectra, xdata
 
     # --------------------------------------------------------------------------------------
     # Public API: mapping import
