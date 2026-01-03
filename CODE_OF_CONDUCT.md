@@ -1,12 +1,12 @@
-# Raman PL 2 D Code of Conduct
+# RamanPL_2D Code of Conduct
 
-Like the technical community as a whole, the Raman Pl 2 D team and community is made up of a mixture of professionals and volunteers from all over the world, working on every aspect of the mission - including mentorship, teaching, and connecting people.
+Like the technical community as a whole, the RamanPL_2D team and community is made up of a mixture of professionals and volunteers from all over the world, working on every aspect of the mission - including mentorship, teaching, and connecting people.
 
 Diversity is one of our huge strengths, but it can also lead to communication issues and unhappiness. To that end, we have a few ground rules that we ask people to adhere to. This code applies equally to founders, mentors and those seeking help and guidance.
 
 This isn’t an exhaustive list of things that you can’t do. Rather, take it in the spirit in which it’s intended - a guide to make it easier to enrich all of us and the technical communities in which we participate.
 
-This code of conduct applies to all spaces managed by the Raman Pl 2 D project or . This includes IRC, the mailing lists, the issue tracker, DSF events, and any other forums created by the project team which the community uses for communication. In addition, violations of this code outside these spaces may affect a person's ability to participate within them.
+This code of conduct applies to all spaces managed by the RamanPL_2D project or . This includes IRC, the mailing lists, the issue tracker, DSF events, and any other forums created by the project team which the community uses for communication. In addition, violations of this code outside these spaces may affect a person's ability to participate within them.
 
 If you believe someone is violating the code of conduct, we ask that you report it by emailing [hy377@cam.ac.uk](mailto:hy377@cam.ac.uk). For more details please see our 
 
@@ -23,7 +23,7 @@ If you believe someone is violating the code of conduct, we ask that you report 
  - Unwelcome sexual attention.
  - Advocating for, or encouraging, any of the above behavior.
  - Repeated harassment of others. In general, if someone asks you to stop, then stop.
-- **When we disagree, try to understand why.** Disagreements, both social and technical, happen all the time and Raman Pl 2 D is no exception. It is important that we resolve disagreements and differing views constructively. Remember that we’re different. The strength of Raman Pl 2 D comes from its varied community, people from a wide range of backgrounds. Different people have different perspectives on issues. Being unable to understand why someone holds a viewpoint doesn’t mean that they’re wrong. Don’t forget that it is human to err and blaming each other doesn’t get us anywhere. Instead, focus on helping to resolve issues and learning from mistakes.
+- **When we disagree, try to understand why.** Disagreements, both social and technical, happen all the time and RamanPL_2D is no exception. It is important that we resolve disagreements and differing views constructively. Remember that we’re different. The strength of RamanPL_2D comes from its varied community, people from a wide range of backgrounds. Different people have different perspectives on issues. Being unable to understand why someone holds a viewpoint doesn’t mean that they’re wrong. Don’t forget that it is human to err and blaming each other doesn’t get us anywhere. Instead, focus on helping to resolve issues and learning from mistakes.
 
 Original text courtesy of the [Speak Up! project](http://web.archive.org/web/20141109123859/http://speakup.io/coc.html).
 
