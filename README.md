@@ -31,6 +31,7 @@
 *All changes are backward compatible with previous version (0.2.6).*
 
 **Version 0.2.6 (2025-12-28):**
+
     1. Added `mask_by_xrange()` static method in `DataImporter` class to create boolean masks for selecting data within specified x-axis ranges. This method is now used in `Mapping.py` for both Raman and PL data processing.
     2. Updated `DataImporter.data_import()` method in both `RamanFit.py` and `PLfit.py` to include a new `x_range` parameter, allowing users to specify the range of x-axis values (wavenumber for Raman, energy for PL) to read from the data files. The previous `readlines` parameter is deprecated but still functional for backward compatibility.
     3. Updated example notebooks `Raman Example.ipynb` and `PL Example.ipynb` to reflect the changes in data import method and demonstrate the usage of the new `x_range` parameter.
