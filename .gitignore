@@ -4,3 +4,7 @@ __pycache__/
 .code-workspace
 *.gitignore
 *.egg-info
+
+# Generated mapping outputs (too large for GitHub)
+example-usage/Mapping/*_subtracted.txt
+example-usage/Mapping/*.txt
