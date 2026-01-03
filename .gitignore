@@ -8,3 +8,4 @@ __pycache__/
 # Generated mapping outputs (too large for GitHub)
 example-usage/Mapping/*_subtracted.txt
 example-usage/Mapping/*.txt
+example-usage/Mapping/*_subtracted.txt
