@@ -18,7 +18,7 @@
 
 ### Change log
 
-See CHANGELOG
+See [CHANGELOG](CHANGELOG)
 
 ## Repository Structure
 
