@@ -18,73 +18,7 @@
 
 ### Change log
 
-**Version 0.2.7.1 (2026-1-6):**
-
-    1. Added plotting comparison curve of processed data (background subtraction or smoothing) if those options applied to RamanFit.py and PLfit.py
-    2. Modified Raman_component.ipynb and PL_component.ipynb to reflect those changes.
-
-*All changes are backward compatible with previous version (0.2.7).*
-
-**Version 0.2.7 (2025-12-29):**
-    
-    1. Added spectrum data subtraction and addition options via new `operation.py` to improve fitting accuracy for spectra with low signal-to-noise ratios. Users can now enable background removal during the fitting process.
-    2. Updated example notebook `Raman_component.ipynb` to demonstrate the usage of background removal during Raman spectrum fitting.
-    3. Fixed data trimming options in `DataImporter.data_import()` method to ensure that when `x_range` is specified, the `readlines` parameter is ignored, allowing for accurate data import within the desired range.
-    4. Updated `Mapping.py` to allow intermediate array type data for fitting, enabling more flexible data handling during mapping analysis.
-    5. Added arithmetic processing ability for a mapped raw data to subtract a reference data.
-    6. Deleted .txt example data files that are no longer used in the updated example notebooks to streamline the repository.
-    7. Make other optimisations and code clean-up for better performance and readability.
-
-*All changes are backward compatible with previous version (0.2.6).*
-
-**Version 0.2.6 (2025-12-28):**
-
-    1. Added `mask_by_xrange()` static method in `DataImporter` class to create boolean masks for selecting data within specified x-axis ranges. This method is now used in `Mapping.py` for both Raman and PL data processing.
-    2. Updated `DataImporter.data_import()` method in both `RamanFit.py` and `PLfit.py` to include a new `x_range` parameter, allowing users to specify the range of x-axis values (wavenumber for Raman, energy for PL) to read from the data files. The previous `readlines` parameter is deprecated but still functional for backward compatibility.
-    3. Updated example notebooks `Raman Example.ipynb` and `PL Example.ipynb` to reflect the changes in data import method and demonstrate the usage of the new `x_range` parameter.
-    4. Optimised data import process to read only the necessary data range, improving efficiency when dealing with large datasets.
-
-*All changes are backward compatible with previous version (0.2.5).*
-
-**Version 0.2.5 (2025-12-27):**
-
-    1. Added a few new examples in PLfit and Ramanfit example foldders to demonstrate background subtraction using various fitting methods.
-    2. Updated `PLfit.py` and `RamanFit.py` to include a new `baseline_method` parameter in the constructor, allowing users to choose between 'poly' (polynomial fitting) and 'gaussian' (Gaussian fitting) for background removal.
-    3. Created a new module `baselineAPI.py` to handle baseline correction methods, which is now imported and used in both `PLfit.py`,`RamanFit.py` and `Mapping.py`.
-    4. Deprecating the previous `poly_degree` and `gaussian_sigma` parameters in favour of the new `baseline_method` parameter. Warnings are issued if the old parameters are used.
-    5. Added new background removal options in `baselineAPI.py`: `airpls`, `asls`, `arpls`, which are now utilised in the fitting classes.
-
-*All changes are backward compatible with previous version (0.2.4).*
-
-**Version 0.2.4 (2025-12-26):**
-
-    1. Updated `RamanFit.py` to fix a bug where the fitting was incorrectly performed on unnormalised data when `normalize` was set to False. Now, fitting is always done on normalised data, and the `normalize` option only affects display and output scaling. 
-    2. Updated `Mapping.py` to ensure that Raman mapping fitting is performed on normalised data regardless of the `normalize` setting. The `normalize` option now only influences the display and output scaling of heatmaps and spectra. And updated specific intensity heatmap plotting, ratio heatmap plotting, and distance heatmap plotting methods to reflect this change.
-    3. Updated example notebooks `Mapping Raman Example.ipynb` and `Mapping Raman txt Example.ipynb` to reflect the changes in fitting behaviour and clarify the purpose of the `normalize` option.
-    4. Optimise the fitting speed in `Mapping.py` by improving the warm-start logic and reducing redundant computations.
-
-*All changes are backward compatible with previous version (0.2.3).*
-
-**Version 0.2.3 (2025-12-25):**
-
-    1. Changed `normalize` option in `Mapping.py` to control whether to display normalised data for heatmap display. This option does not affect the fitting process.
-    2. Added `warm_start` and `reset_on_fail` options in `Mapping.py`'s `fit_spectra()` method to improve fitting stability.
-    3. Updated `plot_residual_distribution()`, `plot_heatmap()`, `plot_spectrum()_fit` method in `Mapping.py` to visualise the distribution of fitting residuals for quality check.
-    4. Added `export_p0()` method in `PLfit.py` to export the fitted parameters after fitting for further analysis.
-    5. Updated Mapping examples in `Mapping PL Example.ipynb`, `PL_component.ipynb`, and `Mapping PL txt Example.ipynb` to reflect the changes in `normalize` option, added residual distribution plotting, `p0_pkg` for better `p0` guess in the example.
-
-*All changes are backward compatible with previous version (0.2.0).*
-
-**Version 0.2.0 (2025-6-6):**
-
-    1. Move source code to `ramanpl` folder, create package installation manuals for local library installation and usage
-    2. Modified the jupyter-notebook codes in example for local library usage.
-
-**Version 0.1.5 (2025-6-5):**
-
-    1. Added *Gr* and *2L-Gr* for graphene/bilayer-graphene library file `raman_materials.json`
-    2. Added new sample bilayer graphene data (`Raman Sample 532nm 2L-Graphene.txt`) into example folders
-    3. Modify the doc-strings in `Mapping.py`
+See CHANGELOG
 
 ## Repository Structure
 
