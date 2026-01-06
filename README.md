@@ -1,4 +1,4 @@
-# RamanPL_2D (version 0.2.7)
+# RamanPL_2D (version 0.2.7.1)
 
 **RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
 
@@ -17,6 +17,13 @@
 - Sanity check: normalised residual calculation and distribution, dynamical spectrum fitting view
 
 ### Change log
+
+**Version 0.2.7.1 (2026-1-6):**
+
+    1. Added plotting comparison curve of processed data (background subtraction or smoothing) if those options applied to RamanFit.py and PLfit.py
+    2. Modified Raman_component.ipynb and PL_component.ipynb to reflect those changes.
+
+*All changes are backward compatible with previous version (0.2.7).*
 
 **Version 0.2.7 (2025-12-29):**
     

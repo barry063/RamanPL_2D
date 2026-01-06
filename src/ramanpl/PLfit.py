@@ -79,13 +79,19 @@ class PLfit:
         self.raw_spectra = np.array(spectra)
         self.energy = np.array(energy)
         self.processed_spectra = np.array(spectra.copy())
+        
+        # Added in build v0.2.7.1
+        self._smoothed_spectra = None
+        self._baseline = None
+        self._corrected_spectra = None
 
+        ## Modified in build v0.2.7.1
         # Apply smoothing
         if smoothing:
             self.processed_spectra = savgol_filter(self.processed_spectra,
                                                 smooth_window, smooth_order)
+            self._smoothed_spectra = self.processed_spectra.copy()
 
-        # New in v0.2.5
         # Background subtraction (smoothing happens before this; unchanged)
         if background_remove:
             method, bkwargs = BaselineAPI.parse_spec(
@@ -101,10 +107,16 @@ class PLfit:
                 clip_nonnegative=True,  # always clip
                 **bkwargs,
             )
+
+            # --- store intermediates for comparison plotting ---
+            self._baseline = np.asarray(result.baseline, dtype=float).ravel()
+            self._corrected_spectra = np.asarray(result.y_corrected, dtype=float).ravel()
+
+            # existing behaviour
             self.processed_spectra = result.y_corrected
-
-
-
+        else:
+            if smoothing:
+                self._corrected_spectra = self.processed_spectra.copy()
 
         # DISPLAY flag (fit is always normalised)
         self.normalize = normalize
@@ -273,6 +285,9 @@ class PLfit:
         Note:
             Automatically handles unit scaling based on normalization setting
         """
+        ## Added in v0.2.7.1
+        self._plot_preprocessing_comparison()
+        
         plt.figure()
 
         # Calculate peak amplitudes in original units
@@ -327,4 +342,32 @@ class PLfit:
         plt.ylabel('Intensity (a.u.)' if self.normalize else 'Intensity (counts)')
         plt.xlim(x_lim)
         plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+        plt.show()
+    
+    ## Added in build v0.2.7.1
+    def _plot_preprocessing_comparison(self):
+        """
+        Plot raw vs preprocessing outputs on one figure when smoothing/background_remove is enabled.
+        """
+        do_smooth = self._smoothed_spectra is not None
+        do_bg = self._baseline is not None and self._corrected_spectra is not None
+
+        if not (do_smooth or do_bg):
+            return
+
+        plt.figure()
+        plt.plot(self.energy, self.raw_spectra, label="raw")
+
+        if do_smooth:
+            plt.plot(self.energy, self._smoothed_spectra, label="smoothed")
+
+        if do_bg:
+            plt.plot(self.energy, self._baseline, label="baseline")
+            plt.plot(self.energy, self._corrected_spectra, label="corrected")
+
+        plt.xlabel("Energy (eV)")
+        plt.ylabel("Intensity (counts)")
+        plt.title("Preprocessing comparison")
+        plt.legend()
+        plt.tight_layout()
         plt.show()
