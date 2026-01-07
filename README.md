@@ -66,16 +66,29 @@ Download and install VS Code from: <https://code.visualstudio.com/>
 
 ### 4. Clone the Repository
 
+Press the `code` button on the webpage to find your best way to clone th repository, enter the bash command in the terminal. An example of clone it via http can be like:
+
 ```bash
 git clone https://github.com/barry063/RamanPL_2D.git
+```
+
+This will clone the open version of `RamanPL_2D` codes.
+
+### 5. Install Dependencies
+
+After you clone it, first go to the directory of your local `RamanPL_2D`, enter the bash command:
+
+ ```bash
 cd RamanPL_2D
 ```
 
-### 5. Install Dependencies
+Then in the same directory, enter the bash command:
 
  ```bash
 pip install -r requirements.txt
 ```
+
+This will automatically check all the required python packages required and install them in your local environment. 
 
 ### 6. **(Optional)** Installing the Library Locally (for VSCode & Jupyter Notebook)
 
@@ -134,8 +147,8 @@ from ramanpl import RamanFit
 
 ## To-do
 
-- (v0.2.8) Add a batch processing and batch visualisation tools or functionalities and migrate WDRfileReader from `dataImporter.py` to a separate module for better code organisation.
-- (v0.2.9) Add output functionalities to export fitted parameters and heatmap data to CSV or Excel files for further analysis.
+- (v0.2.8) Add output functionalities to export fitted parameters and heatmap data to CSV or Excel files for further analysis.
+- (v0.2.9) Add a batch processing and batch visualisation tools or functionalities
 - (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
 ## License
