@@ -1,3 +1,7 @@
+**Version 0.2.7.2 (2026-1-18):**
+
+    1. Modified `raman_materials.json`: updated WS2, WO3 and SiO2 subtrate peaks; added "Si-true" subtrate to distinguish from "Si" with more lower intensity existing peaks of Si
+
 **Version 0.2.7.2 (2026-1-16):**
 
     1. Added new material group 'GrO' to represent Graphene Oxides

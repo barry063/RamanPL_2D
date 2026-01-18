@@ -8,14 +8,46 @@
         "substrate": true
     },
 
-    "SiO2": {
+
+    "Si-true": {
         "peaks": {
-            "lower_bound": [519, 0, 0],
-            "upper_bound": [522, 10, 10],
-            "peak_labels": ["Si"]
+            "lower_bound": [
+                519, 0, 0,
+                295, 0, 0,
+                930, 0, 0,
+                610, 0, 0
+        ],
+            "upper_bound": [
+                522, 10, 10,
+                305, 10, 5,
+                990, 50, 5,
+                670, 20, 5
+        ],
+            "peak_labels": ["Si-LO","Si-2TA", "Si-2TO", "Si-mixed"]
         },
         "substrate": true
     },
+
+
+    "SiO2": {
+        "peaks": {
+            "lower_bound": [
+                519, 0, 0,
+                440, 0, 0,
+                485, 0, 0,
+                595, 0, 0
+        ],
+            "upper_bound": [
+                522, 10, 10,
+                480, 20, 5,
+                495, 10, 5,
+                610, 10, 5
+            ],
+            "peak_labels": ["Si-LO","Si-O-Si","SiO2-D1","SiO2-D2"]
+        },
+        "substrate": true
+    },
+
 
     "WS2": {
         "peaks": {
@@ -29,7 +61,8 @@
                 318, 0, 0, 
                 583, 0, 0, 
                 697, 0, 0,  
-                413, 0, 0
+                413, 0, 0,
+                570, 0, 0
             ],
             "upper_bound": [
                 358, 5, 10, 
@@ -41,11 +74,12 @@
                 328, 10, 10, 
                 587, 10, 10, 
                 710, 10, 10, 
-                418, 5, 5
+                418, 5, 5,
+                580, 5, 5
             ],
             "peak_labels": ["E12g", "A1g", "LA(M)", "2LA(M)",
                 "A1g(M)-LA(M)", "2LA(M)-2E22g", "2LA(M)-E22g",
-                "A1g(M)+LA(M)", "4LA(M)", "B1/u"]
+                "A1g(M)+LA(M)", "4LA(M)", "B1/u", "3LA(K)"]
         },
         "substrate": false  
     },
@@ -57,15 +91,22 @@
                 250, 0, 0,
                 290, 0, 0, 
                 800, 0, 0,
-                690, 0, 0
+                690, 0, 0,
+                365, 0, 0,
+                430, 0, 0
             ],
             "upper_bound": [
                 280, 10, 10,
                 310, 10, 10, 
                 810, 5, 10,
-                710, 5, 10
+                710, 5, 10,
+                385, 10, 5,
+                450, 10, 5
             ],
-            "peak_labels": ["W=O bending1", "W=O bending2", "W=O stretching1", "W=O stretching2"]
+            "peak_labels": ["O-W-O bending1", "O-W-O bending2", 
+                            "O-W-O stretching1", "O-W-O stretching2",
+                            "h-WO3 W-OH bending", "m-WO3 W-OH bending"
+                            ]
         },
         "substrate": false 
     },
