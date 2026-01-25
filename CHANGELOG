@@ -1,3 +1,10 @@
+**Version 0.2.8 (2026-1-25):**
+
+    1. Added new functionality of exporting fitted parameters to CSV file in `RamanFit.py` and `PLfit.py` via new method `export_fit_parameters()`. This allows users to easily save and analyse the fitted parameters after fitting.
+    2. Updated example notebooks `Raman_component.ipynb` and `PL_component.ipynb` to demonstrate the usage of the new `export_fit_parameters()` method for exporting fitted parameters to CSV files.
+    3. Fixed a bug in `Mapping.py` where the sanity-check plot of `plot_spectrum()`for Raman integration was not correctly shown.
+
+
 **Version 0.2.7.2 (2026-1-18):**
 
     1. Modified `raman_materials.json`: updated WS2, WO3 and SiO2 subtrate peaks; added "Si-true" subtrate to distinguish from "Si" with more lower intensity existing peaks of Si

@@ -1,0 +1,19 @@
+# RamanPL_2D fit export
+# spectrum_type: Photoluminescence
+# x_quantity: Photon energy
+# x_unit: eV
+# background_remove: False
+# baseline_method: poly
+# poly_degree: 3
+# gaussian_sigma: 50
+# smoothing: False
+# smooth_window: 11
+# smooth_order: 3
+# normalize: False
+# intensity_scale(peak_intensity): 1152.0439453125
+# peak_labels: ['trion', 'exciton']
+# custom_peaks: False
+#
+Peak	Centre	FWHM	Scale	Amp	Height_norm	Height_scaled
+trion	1.8085957233272778	0.06882505842134964	0.03441252921067482	0.04999999999966652	0.462491269143518	532.8102663766838
+exciton	1.834077936686178	0.05317969408509458	0.02658984704254729	0.05250959413906687	0.6285979346634932	724.1724446650198

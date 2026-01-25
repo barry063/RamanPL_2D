@@ -37,10 +37,12 @@ __all__ = [
     "operation",
     "dataImporter",
     "baselineAPI",
+    "exporter",
+
 ]
 
 # Optional: version string (set manually)
-__version__ = "0.2.7.3"
+__version__ = "0.2.8"
 
 
 # -----------------------
@@ -70,6 +72,8 @@ _LAZY_MAP = {
     "operation": ("ramanpl", "operation"),
     "dataImporter": ("ramanpl", "dataImporter"),
     "baselineAPI": ("ramanpl", "baselineAPI"),
+    "exporter": ("ramanpl", "exporter"),
+
 }
 
 

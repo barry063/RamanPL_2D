@@ -17,6 +17,8 @@ import json
 import os
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
+from ramanpl.exporter import params_to_rows, write_rows
+
 
 
 class DataImporter:
@@ -157,6 +159,24 @@ class RamanFit:
         self._smoothed_spectra = None
         self._baseline = None
         self._corrected_spectra = None
+
+        # Added in v0.2.8
+        # --- store preprocessing settings for reproducibility / export metadata ---
+        self.spectrum_type = "Raman"
+        self.x_quantity = "Raman shift"
+        self.x_unit = "cm^-1"
+
+        self.materials = materials
+        self.substrate = substrate
+
+        self.background_remove = background_remove
+        self.baseline_method = baseline_method
+        self.poly_degree = poly_degree
+        self.gaussian_sigma = gaussian_sigma
+
+        self.smoothing = smoothing
+        self.smooth_window = smooth_window
+        self.smooth_order = smooth_order
 
         # Apply smoothing
         if smoothing:
@@ -305,6 +325,116 @@ class RamanFit:
                 "peak_order": list(self.peak_labels)}
     
     ### End of v.0.2.4 update ###
+
+    ### Added in v.0.2.8 ###
+    def fit_table(self, params=None, *, scaled: bool = True):
+        """
+        Return per-peak fitted parameters as a list of dicts.
+
+        scaled=True:
+            height_scaled is reported in approximate original units by multiplying
+            normalised peak height by self.peak_intensity (if available).
+            This matches your plotting logic where you scale fitted curves back
+            using peak_intensity when not displaying purely normalised output. :contentReference[oaicite:8]{index=8}
+        """
+        if params is None:
+            if not hasattr(self, "params_fit") or self.params_fit is None:
+                raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
+            params = self.params_fit
+
+        # Best-effort scale factor: if you always fit in normalised space, this should be peak_intensity.
+        intensity_scale = 1.0
+        if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
+            intensity_scale = float(self.peak_intensity)
+
+        rows = params_to_rows(
+            peak_labels=self.peak_labels,
+            params=params,
+            intensity_scale=intensity_scale,
+        )
+
+        # Convert to plain dicts (easy to consume / unit test)
+        return [
+            {
+                "Peak": r.peak,
+                "Position(cm^-1)": r.centre,
+                "FWHM(cm^-1)": r.fwhm,
+                "Scale": r.scale,
+                "Amp": r.amp,
+                "Height_norm": r.height_norm,
+                "Height_scaled": r.height_scaled,
+            }
+            for r in rows
+        ]
+
+
+    def export_fit(
+        self,
+        out_path: str,
+        *,
+        params=None,
+        delimiter: str | None = None,
+        include_header: bool = True,
+        scaled: bool = True,
+        headers: bool = True,
+    ) -> str:
+        """
+        Export fitted parameters to CSV or TXT/TSV.
+
+        headers:
+            If True, write a metadata header block in TXT/TSV outputs.
+            Ignored for CSV.
+        """
+        if params is None:
+            if not hasattr(self, "params_fit") or self.params_fit is None:
+                raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
+            params = self.params_fit
+
+        intensity_scale = 1.0
+        if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
+            intensity_scale = float(self.peak_intensity)
+
+        rows = params_to_rows(
+            peak_labels=self.peak_labels,
+            params=params,
+            intensity_scale=intensity_scale,
+        )
+
+        # Build metadata (best-effort: only include fields that exist)
+        meta = {
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+
+            "materials": getattr(self, "materials", None),
+            "substrate": getattr(self, "substrate", None),
+
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+            "poly_degree": getattr(self, "poly_degree", None),
+            "gaussian_sigma": getattr(self, "gaussian_sigma", None),
+
+            "smoothing": getattr(self, "smoothing", None),
+            "smooth_window": getattr(self, "smooth_window", None),
+            "smooth_order": getattr(self, "smooth_order", None),
+
+            "normalize": getattr(self, "normalize", None),
+            "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
+            
+            "peak_labels": getattr(self, "peak_labels", None),
+            "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_rows(
+            rows,
+            out_path,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+    ### End of v.0.2.8 ###
 
     def load_substrate(self, substrate):
         """Load substrate parameters from JSON material library.

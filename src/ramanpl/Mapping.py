@@ -22,6 +22,7 @@ from renishawWiRE import WDFReader
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
 from typing import Optional, Tuple
+from ramanpl.exporter import params_to_rows, write_table
 
 #########################################################################################################################
 
@@ -167,6 +168,13 @@ class PLMapping:
         self.smooth_poly = smooth_poly
         self.gaussian_sigma = gaussian_sigma
         self.peak_params = list(custom_peaks.keys())
+
+        # --- identity metadata for exports (added in v0.2.8) ---
+        self.spectrum_type = "Photoluminescence"
+        self.x_quantity = "Photon energy"
+        self.x_unit = "eV"
+        self.step_unit = "um"  # keep consistent with your plotting labels "μm"
+
 
         # New in v0.2.5: Baseline configuration (single source of truth)
         self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
@@ -849,7 +857,110 @@ class PLMapping:
         plt.tight_layout()
         plt.show()
 
-    ### END UPDATED METHOD ###
+    ### Added in v0.2.8
+    def _iter_coords(self, coord_mode: str = "pixel"):
+        """
+        Yield (x, y, j, i) for every pixel.
+
+        coord_mode:
+        - "pixel": x,y are integer pixel indices
+        - "real":  x,y are physical coordinates using step_size
+        """
+        step = float(self.step_size)
+        for j in range(self.Y):
+            for i in range(self.X):
+                if coord_mode == "real":
+                    yield (i * step, j * step, j, i)
+                else:
+                    yield (i, j, j, i)
+
+    ### Added in v0.2.8
+    def export_fit_map(
+        self,
+        out_path: str,
+        *,
+        coord_mode: str = "pixel",
+        scaled: bool = True,
+        headers: bool = True,
+        include_header: bool = True,
+        delimiter: str | None = None,
+    ) -> str:
+        """
+        Export fit results for every pixel in wide format:
+        x, y, then per-peak parameters on the same row.
+
+        Per-peak columns:
+        <peak>_centre, <peak>_fwhm, <peak>_height_scaled, <peak>_height_norm, <peak>_amp, <peak>_scale
+        """
+        if not hasattr(self, "fitted_params") or self.fitted_params is None:
+            raise ValueError("No fitted_params found. Run fit_spectra() first.")
+
+        peak_labels = list(self.peak_params)  # authoritative ordering in your mapping class :contentReference[oaicite:14]{index=14}
+        fields = ["x", "y"]
+
+        per_peak_fields = ["centre", "fwhm", "height_scaled", "height_norm", "amp", "scale"]
+        for p in peak_labels:
+            for f in per_peak_fields:
+                fields.append(f"{p}_{f}")
+
+        rows = []
+        for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
+            params = np.asarray(self.fitted_params[j, i, :], dtype=float)
+            if np.any(np.isnan(params)):
+                # keep row but leave values empty to preserve grid
+                rows.append({"x": x, "y": y})
+                continue
+
+            intensity_scale = 1.0
+            if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
+                intensity_scale = float(self.norm_scale_map[j, i])
+
+            peak_rows = params_to_rows(
+                peak_labels=peak_labels,
+                params=params,
+                intensity_scale=intensity_scale,
+            )
+
+            r = {"x": x, "y": y}
+            for pr in peak_rows:
+                name = pr.peak
+                r[f"{name}_centre"] = pr.centre
+                r[f"{name}_fwhm"] = pr.fwhm
+                r[f"{name}_height_scaled"] = pr.height_scaled
+                r[f"{name}_height_norm"] = pr.height_norm
+                r[f"{name}_amp"] = pr.amp
+                r[f"{name}_scale"] = pr.scale
+
+            rows.append(r)
+
+        meta = {
+            "map_kind": "fit_params",
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+            "coord_mode": coord_mode,
+            "step_size": getattr(self, "step_size", None),
+            "step_unit": getattr(self, "step_unit", "um"),
+            "scaled": scaled,
+            "peak_labels": peak_labels,
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+            "smoothing": getattr(self, "smoothing", None),
+            "smooth_window": getattr(self, "smooth_window", None),
+            "smooth_poly": getattr(self, "smooth_poly", None),
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_table(
+            rows,
+            out_path,
+            fieldnames=fields,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+
     
 #########################################################################################################################
 ############################################## PL Integration Mapping ###################################################
@@ -888,6 +999,13 @@ class PL_Integration:
         self.step_size = step_size
         self.poly_degree = poly_degree
         self.background_remove = background_remove
+
+        # --- identity metadata for exports (added in v0.2.8) ---
+        self.spectrum_type = "Photoluminescence"
+        self.x_quantity = "Photon energy"
+        self.x_unit = "eV"
+        self.step_unit = "um"  # keep consistent with your plotting labels "μm"
+
 
         # New in v0.2.5 Baseline configuration (single source of truth; backward compatible)
         self.baseline_method = baseline_method
@@ -1114,6 +1232,57 @@ class PL_Integration:
         plt.legend()
         plt.show()
 
+    ### Added in v0.2.8
+    def export_integration_map(
+        self,
+        out_path: str,
+        *,
+        coord_mode: str = "pixel",
+        headers: bool = True,
+        include_header: bool = True,
+        delimiter: str | None = None,
+        column_name: str = "integration_area",
+    ) -> str:
+        """
+        Export integration_area in wide format:
+        x, y, integration_area
+        """
+        if not hasattr(self, "integration_area") or self.integration_area is None:
+            raise ValueError("No integration_area found. Run calculate_integration() first.")
+
+        # coordinate iterator local to this class
+        step = float(self.step_size)
+        rows = []
+        for j in range(self.Y):
+            for i in range(self.X):
+                x, y = (i * step, j * step) if coord_mode == "real" else (i, j)
+                rows.append({"x": x, "y": y, column_name: float(self.integration_area[j, i])})
+
+        fields = ["x", "y", column_name]
+
+        meta = {
+            "map_kind": "integration",
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_unit": getattr(self, "x_unit", None),
+            "coord_mode": coord_mode,
+            "step_size": getattr(self, "step_size", None),
+            "step_unit": getattr(self, "step_unit", "um"),
+            "integration_range": getattr(self, "integration_range", None),
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_table(
+            rows,
+            out_path,
+            fieldnames=fields,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+    
 
 ########################################################################################################################
 #################################################### Raman Mapping #####################################################
@@ -1181,6 +1350,13 @@ class RamanMapping:
         self.smooth_poly = smooth_poly
         self.gaussian_sigma = gaussian_sigma
         self.peak_params = list(custom_peaks.keys())
+
+        # --- identity metadata for exports (added in v0.2.8) ---
+        self.spectrum_type = "Raman"
+        self.x_quantity = "Raman shift"
+        self.x_unit = "cm^-1"
+        self.step_unit = "um"
+
 
         # New in v0.2.5: Baseline configuration (single source of truth)
         self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
@@ -1923,8 +2099,110 @@ class RamanMapping:
         plt.tight_layout()
         plt.show()
 
-    ### END UPDATED METHOD ###
+    ### Added in v0.2.8
+    def _iter_coords(self, coord_mode: str = "pixel"):
+        """
+        Yield (x, y, j, i) for every pixel.
 
+        coord_mode:
+        - "pixel": x,y are integer pixel indices
+        - "real":  x,y are physical coordinates using step_size
+        """
+        step = float(self.step_size)
+        for j in range(self.Y):
+            for i in range(self.X):
+                if coord_mode == "real":
+                    yield (i * step, j * step, j, i)
+                else:
+                    yield (i, j, j, i)
+
+    ### Added in v0.2.8
+    def export_fit_map(
+        self,
+        out_path: str,
+        *,
+        coord_mode: str = "pixel",
+        scaled: bool = True,
+        headers: bool = True,
+        include_header: bool = True,
+        delimiter: str | None = None,
+    ) -> str:
+        """
+        Export fit results for every pixel in wide format:
+        x, y, then per-peak parameters on the same row.
+
+        Per-peak columns:
+        <peak>_centre, <peak>_fwhm, <peak>_height_scaled, <peak>_height_norm, <peak>_amp, <peak>_scale
+        """
+        if not hasattr(self, "fitted_params") or self.fitted_params is None:
+            raise ValueError("No fitted_params found. Run fit_spectra() first.")
+
+        peak_labels = list(self.peak_params)  # authoritative ordering in your mapping class :contentReference[oaicite:14]{index=14}
+        fields = ["x", "y"]
+
+        per_peak_fields = ["centre", "fwhm", "height_scaled", "height_norm", "amp", "scale"]
+        for p in peak_labels:
+            for f in per_peak_fields:
+                fields.append(f"{p}_{f}")
+
+        rows = []
+        for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
+            params = np.asarray(self.fitted_params[j, i, :], dtype=float)
+            if np.any(np.isnan(params)):
+                # keep row but leave values empty to preserve grid
+                rows.append({"x": x, "y": y})
+                continue
+
+            intensity_scale = 1.0
+            if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
+                intensity_scale = float(self.norm_scale_map[j, i])
+
+            peak_rows = params_to_rows(
+                peak_labels = list(self.peak_params),
+                params=params,
+                intensity_scale=intensity_scale,
+            )
+
+            r = {"x": x, "y": y}
+            for pr in peak_rows:
+                name = pr.peak
+                r[f"{name}_centre"] = pr.centre
+                r[f"{name}_fwhm"] = pr.fwhm
+                r[f"{name}_height_scaled"] = pr.height_scaled
+                r[f"{name}_height_norm"] = pr.height_norm
+                r[f"{name}_amp"] = pr.amp
+                r[f"{name}_scale"] = pr.scale
+
+            rows.append(r)
+
+        meta = {
+            "map_kind": "fit_params",
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+            "coord_mode": coord_mode,
+            "step_size": getattr(self, "step_size", None),
+            "step_unit": getattr(self, "step_unit", "um"),
+            "scaled": scaled,
+            "peak_labels": peak_labels,
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+            "smoothing": getattr(self, "smoothing", None),
+            "smooth_window": getattr(self, "smooth_window", None),
+            "smooth_poly": getattr(self, "smooth_poly", None),
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_table(
+            rows,
+            out_path,
+            fieldnames=fields,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+    
     def plot_heatmap(self, data_type='position', cmap='viridis', filter_range=None, 
                     x_range=None, y_range=None, specific_wavenumber=None, peak_name=None):
         """Visualize 2D map of spectral features.
@@ -2058,6 +2336,13 @@ class Raman_Integration:
         self.step_size = step_size
         self.poly_degree = poly_degree
         self.background_remove = background_remove
+
+        # --- identity metadata for exports (added in v0.2.8) ---
+        self.spectrum_type = "Raman"
+        self.x_quantity = "Raman shift"
+        self.x_unit = "cm^-1"
+        self.step_unit = "um"
+
 
         # integration_range is known here; trim at load-time.
         loader = MappingFileLoader(filename, x_range=self.integration_range, axis="wavenumber")
@@ -2252,27 +2537,79 @@ class Raman_Integration:
         wavenumber = self.wavenumber[:]
         spectra = self.spectra[y][x][:]
 
-        # Get data within the integration range
+        # Subset within integration range
         mask = DataImporter.mask_by_xrange(wavenumber, self.integration_range)
         wavenumber_subset = wavenumber[mask]
         spectra_subset = spectra[mask]
 
+        # Keep raw copy for plotting
+        spectra_raw = spectra_subset.copy()
 
-
-        # If background removal is enabled, remove the background signal
+        # Background removal (define spectra_bg_removed in all cases)
         if self.background_remove:
-            ## new in v0.2.5 ##
-            spectra_subset = self.remove_background(wavenumber_subset, spectra_subset)
+            spectra_bg_removed = self.remove_background(wavenumber_subset, spectra_subset)
         else:
             spectra_bg_removed = spectra_subset
 
-        # Plot the original spectrum and background-removed spectrum (if enabled)
+        # Plot
         plt.figure(figsize=(10, 6))
-        plt.plot(wavenumber_subset, spectra_subset, 'b-', label='Original Spectrum')
+        plt.plot(wavenumber_subset, spectra_raw, 'b-', label='Original Spectrum')
         if self.background_remove:
             plt.plot(wavenumber_subset, spectra_bg_removed, 'r--', label='Background Removed')
         plt.xlabel("Wavenumber (cm⁻¹)")
         plt.ylabel("Intensity (a.u.)")
         plt.title(f"Spectrum at (X={x}, Y={y})")
         plt.legend()
-        plt.sh
+        plt.show()
+
+
+    ### Added in v0.2.8
+    def export_integration_map(
+        self,
+        out_path: str,
+        *,
+        coord_mode: str = "pixel",
+        headers: bool = True,
+        include_header: bool = True,
+        delimiter: str | None = None,
+        column_name: str = "integration_area",
+    ) -> str:
+        """
+        Export integration_area in wide format:
+        x, y, integration_area
+        """
+        if not hasattr(self, "integration_area") or self.integration_area is None:
+            raise ValueError("No integration_area found. Run calculate_integration() first.")
+
+        # coordinate iterator local to this class
+        step = float(self.step_size)
+        rows = []
+        for j in range(self.Y):
+            for i in range(self.X):
+                x, y = (i * step, j * step) if coord_mode == "real" else (i, j)
+                rows.append({"x": x, "y": y, column_name: float(self.integration_area[j, i])})
+
+        fields = ["x", "y", column_name]
+
+        meta = {
+            "map_kind": "integration",
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_unit": getattr(self, "x_unit", None),
+            "coord_mode": coord_mode,
+            "step_size": getattr(self, "step_size", None),
+            "step_unit": getattr(self, "step_unit", "um"),
+            "integration_range": getattr(self, "integration_range", None),
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_table(
+            rows,
+            out_path,
+            fieldnames=fields,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )

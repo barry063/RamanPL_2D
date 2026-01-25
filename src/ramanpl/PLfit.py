@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
+from ramanpl.exporter import params_to_rows, write_rows
 
 class DataImporter:
     """
@@ -84,6 +85,25 @@ class PLfit:
         self._smoothed_spectra = None
         self._baseline = None
         self._corrected_spectra = None
+
+        ## New in v0.2.8: store preprocessing settings
+        # --- store preprocessing settings for reproducibility / export metadata ---
+        self.spectrum_type = "Photoluminescence"
+        self.x_quantity = "Photon energy"
+        self.x_unit = "eV"
+
+        self.background_remove = background_remove
+        self.baseline_method = baseline_method
+        self.poly_degree = poly_degree
+        self.gaussian_sigma = gaussian_sigma
+
+        self.smoothing = smoothing
+        self.smooth_window = smooth_window
+        self.smooth_order = smooth_order
+
+        self.custom_peaks = custom_peaks
+        self.peak_order = peak_order
+
 
         ## Modified in build v0.2.7.1
         # Apply smoothing
@@ -219,6 +239,109 @@ class PLfit:
         return params, params_cov
     ### END UPDATED METHOD ###
     
+    ### New in v0.2.8 ###
+    def fit_table(self, params=None, *, scaled: bool = True):
+        """
+        Return per-peak fitted parameters as a list of dicts.
+
+        scaled=True:
+            height_scaled is reported in approximate original units by multiplying
+            normalised peak height by self.peak_intensity (if available).
+        """
+        if params is None:
+            if not hasattr(self, "params_fit") or self.params_fit is None:
+                raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
+            params = self.params_fit
+
+        intensity_scale = 1.0
+        if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
+            intensity_scale = float(self.peak_intensity)
+
+        rows = params_to_rows(
+            peak_labels=self.peak_labels,
+            params=params,
+            intensity_scale=intensity_scale,
+        )
+
+        return [
+            {
+                "Peak": r.peak,
+                "Position(eV)": r.centre,
+                "FWHM(eV)": r.fwhm,
+                "Scale": r.scale,
+                "Amp": r.amp,
+                "Height_norm": r.height_norm,
+                "Height_scaled": r.height_scaled,
+            }
+            for r in rows
+        ]
+
+
+    def export_fit(
+        self,
+        out_path: str,
+        *,
+        params=None,
+        delimiter: str | None = None,
+        include_header: bool = True,
+        scaled: bool = True,
+        headers: bool = True,
+    ) -> str:
+        """
+        Export fitted parameters to CSV or TXT/TSV.
+
+        headers:
+            If True, write a metadata header block in TXT/TSV outputs.
+            Ignored for CSV.
+        """
+        if params is None:
+            if not hasattr(self, "params_fit") or self.params_fit is None:
+                raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
+            params = self.params_fit
+
+        intensity_scale = 1.0
+        if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
+            intensity_scale = float(self.peak_intensity)
+
+        rows = params_to_rows(
+            peak_labels=self.peak_labels,
+            params=params,
+            intensity_scale=intensity_scale,
+        )
+
+        # Metadata (parallel to RamanFit)
+        meta = {
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+            "poly_degree": getattr(self, "poly_degree", None),
+            "gaussian_sigma": getattr(self, "gaussian_sigma", None),
+
+            "smoothing": getattr(self, "smoothing", None),
+            "smooth_window": getattr(self, "smooth_window", None),
+            "smooth_order": getattr(self, "smooth_order", None),
+
+            "normalize": getattr(self, "normalize", None),
+            "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
+
+            "peak_labels": getattr(self, "peak_labels", None),
+            "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_rows(
+            rows,
+            out_path,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+
+
     ### NEW METHOD in v0.2.3 ###
     def export_p0(self):
         """
@@ -240,7 +363,7 @@ class PLfit:
         peak_order = list(self.peak_labels)  # authoritative ordering used in params vector
         return {"p0": np.asarray(self.params_fit, dtype=float).copy(),
                 "peak_order": peak_order}
-    ### END NEW METHOD ###
+
 
     # Lorentzian function to fit each peak
     @staticmethod
