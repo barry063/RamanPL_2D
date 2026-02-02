@@ -239,6 +239,85 @@ class PLfit:
         return params, params_cov
     ### END UPDATED METHOD ###
     
+    ### NEW METHOD in v0.2.9 ###
+    def get_fitted_spectrum(self):
+        """
+        Return fitted spectrum on the same x-grid as the input data.
+
+        Returns
+        -------
+        x : np.ndarray
+            Energy axis (eV)
+        y_fit : np.ndarray
+            Fitted intensity in the SAME units as self.processed_spectra.
+        """
+        if not hasattr(self, "params_fit") or self.params_fit is None:
+            raise RuntimeError("PLfit has not been fitted yet. Run fit_spectrum() first.")
+
+        x = np.asarray(self.energy, dtype=float).ravel()
+
+        y_fit_norm = self.lorentzian_pl(x, *self.params_fit)     # normalised fit space
+        y_fit = y_fit_norm * float(self.peak_intensity)          # back to processed intensity scale
+
+        return x.copy(), np.asarray(y_fit, dtype=float).ravel().copy()
+
+    ### NEW METHOD in v0.2.9 ###
+    def get_fitted_parameters(self):
+        """
+        Return fitted peak parameters as a structured dict.
+
+        Returns
+        -------
+        dict
+            {
+                "<peak_name>": {"position": float, "fwhm": float, "intensity": float},
+                ...
+            }
+
+        Notes
+        -----
+        Parameter vector layout is (loc, scale, amp) repeated for each peak
+        in the same order as self.peak_labels.
+        Intensity reported here is the *peak height* in processed intensity units:
+            intensity = (amp / (pi * scale)) * peak_intensity
+        """
+        if not hasattr(self, "params_fit") or self.params_fit is None:
+            raise RuntimeError("Fit not available. Run fit_spectrum() first.")
+
+        if not hasattr(self, "peak_labels") or not self.peak_labels:
+            raise RuntimeError("No peak labels found; cannot map parameters to peaks.")
+
+        p = np.asarray(self.params_fit, dtype=float).ravel()
+
+        expected = 3 * len(self.peak_labels)
+        if p.size < expected:
+            raise RuntimeError(
+                f"params_fit has length {p.size}, but expected at least {expected} "
+                f"for {len(self.peak_labels)} peaks."
+            )
+
+        out = {}
+        fit_scale = float(self.peak_intensity) if hasattr(self, "peak_intensity") else 1.0
+
+        for i, name in enumerate(self.peak_labels):
+            idx = 3 * i
+            loc = float(p[idx])
+            scale = float(p[idx + 1])
+            amp = float(p[idx + 2])
+
+            fwhm = 2.0 * scale
+            height_norm = (amp / (np.pi * scale)) if scale != 0 else np.nan
+            height_scaled = height_norm * fit_scale
+
+            out[name] = {
+                "position": loc,
+                "fwhm": fwhm,
+                "intensity": float(height_scaled),
+            }
+
+        return out
+
+
     ### New in v0.2.8 ###
     def fit_table(self, params=None, *, scaled: bool = True):
         """

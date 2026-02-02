@@ -157,6 +157,8 @@ def write_table(
     include_header: bool = True,
     meta: Optional[Dict[str, Any]] = None,
     headers: bool = True,
+    meta_in_csv: bool = False,
+    meta_prefix: str = "# ",
 ) -> str:
     """
     Generic table writer for wide-format exports (e.g., mapping results).
@@ -178,11 +180,12 @@ def write_table(
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
-        if headers and meta and ext in (".txt", ".tsv"):
-            f.write("# RamanPL_2D map export\n")
+        write_meta = headers and meta and (ext in (".txt", ".tsv") or (meta_in_csv and ext == ".csv"))
+        if write_meta:
+            f.write(f"{meta_prefix}RamanPL_2D export\n")
             for k, v in meta.items():
-                f.write(f"# {k}: {v}\n")
-            f.write("#\n")
+                f.write(f"{meta_prefix}{k}: {v}\n")
+            f.write(f"{meta_prefix}\n")
 
         w = csv.DictWriter(f, fieldnames=list(fieldnames), delimiter=delimiter, extrasaction="ignore")
         if include_header:

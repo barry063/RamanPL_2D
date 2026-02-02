@@ -26,6 +26,7 @@ See [CHANGELOG](CHANGELOG)
 RamanPL_2D/
     ├── example-usage/ # Sample spectral data files and demonstrated usage of python codes by jupyter-notebook (`.ipynb`files)
     │ ├── Mapping/      # PL, Raman data mapping using `Mapping.py`
+    │ ├── multi-plot/   # Demonstrate batch plotting of multiple spectra using `batch.py`
     │ ├── PLfit/        # PL component curve fitting using `PLfit.py`
     │ └── Ramanfit/     # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
     ├── src/                # Source code for data processing and analysis DON'T CHANGE THE FOLDER STRUCTURE!
@@ -147,9 +148,11 @@ from ramanpl import RamanFit
 
 ## To-do
 
-- (v0.2.8) Add output functionalities to export fitted parameters and heatmap data to CSV or Excel files for further analysis.
-- (v0.2.9) Add a batch processing and batch visualisation tools or functionalities
-- (v0.3.0+) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
+- (v0.2.9.5) Add a few useful functionalities for `Batch` class:
+    1. Add `Batch.summary_by_peak()`
+    2. Add `Batch.compare(peaks=[...])`
+ 
+- (v0.3.0) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
 ## License
 

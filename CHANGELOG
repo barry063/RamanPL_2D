@@ -1,3 +1,13 @@
+**Version 0.2.9 (2026-02-02):**
+
+    1. Added batch-processing utilities in `batch.py` for loading multiple spectra (Raman/PL), batch fitting, and producing overlay/waterfall comparison plots.
+    2. Added fitted-parameter aggregation helpers (long and wide formats), including wide-table pivoting (e.g. `E12g_position`, `E12g_fwhm`, `E12g_intensity`) for downstream analysis.
+    3. Added robust CSV/TXT/TSV table export with optional metadata header blocks (reusing `exporter.py` table writers).
+    4. Harmonised fitted-parameter extraction between `RamanFit.py` and `PLfit.py` (consistent accessors for per-peak position/FWHM/intensity).
+    5. Bug fixes and usability improvements across batch plotting and exporting (safer defaults, clearer error messages, reduced boilerplate for common workflows).
+
+*All changes are backward compatible with previous version (0.2.8).*
+
 **Version 0.2.8 (2026-1-25):**
 
     1. Added new functionality of exporting fitted parameters to CSV file in `RamanFit.py` and `PLfit.py` via new method `export_fit_parameters()`. This allows users to easily save and analyse the fitted parameters after fitting.
