@@ -13,6 +13,8 @@ Public API
 - align_spectra(...)
 - plot_overlay(...)
 - plot_waterfall(...)
+- Batch.RamanBatch / Batch.PLBatch convenience wrappers (fit, export, summary_by_peak)
+  including peak control via custom_peaks (replaces defaults) and remove_peaks.
 """
 
 from __future__ import annotations
@@ -597,6 +599,13 @@ def _infer_metadata_from_fitters(
         merged = _merge(vals)
         if merged is not None:
             meta["custom_peaks"] = merged
+    
+    # Removed peaks (list / mixed)
+    if any(hasattr(f, "remove_peaks_list") for f in fitters):
+        vals = [getattr(f, "remove_peaks_list", None) for f in fitters]
+        merged = _merge(vals)
+        if merged is not None:
+            meta["remove_peaks"] = merged
 
     # Fitter identity
     fitter_names = [type(f).__name__ for f in fitters]
@@ -1215,21 +1224,335 @@ class _BaseBatch:
         ax.set_xlabel(x_label)
         return fig, ax
 
+    def summary_by_peak(
+        self,
+        *,
+        metrics: tuple[str, ...] = ("position", "fwhm", "intensity"),
+        percentiles: tuple[float, ...] = (0.05, 0.25, 0.50, 0.75, 0.95),
+        dropna: bool = True,
+        print_summary: bool = True,
+        print_mode: str = "table",  # NEW: "table" or "blocks"
+        interval: tuple[float, float] = (0.05, 0.95),  # NEW (for blocks)
+        show_minmax_in_blocks: bool = False,           # NEW
+        export_path: str | None = None,
+        include_metadata: bool = True,
+        meta_in_csv: bool = True,
+        float_format: str | None = "%.6g",
+    ):
+        """
+        Summarise fitted peak parameters across the batch (per-peak statistics).
+
+        Requires:
+            .fit(return_fitters=True) called first (so self.rows exists).
+
+        Parameters
+        ----------
+        metrics
+            Which columns to summarise (must exist in the long-format df).
+            Default: ("position","fwhm","intensity")
+        percentiles
+            Percentiles to include (0..1). Default: (5%,25%,50%,75%,95%)
+        print_mode
+            "table" (default) or "blocks". "blocks" shows each peak in a separate block with min/max values.
+        interval
+            For "blocks" mode, the interval to show in each block (e.g., (0.05, 0.95) for 5th to 95th percentiles).
+        show_minmax_in_blocks
+            If True, show min and max values in each block.
+        dropna
+            If True, ignore NaNs when computing stats (recommended).
+        print_summary
+            If True, print a readable summary to stdout.
+        export_path
+            If provided, export the summary table to .csv/.txt/.tsv.
+            Uses export_table() to keep metadata behaviour consistent.
+        include_metadata, meta_in_csv
+            Passed through to export_table().
+        float_format
+            Numeric formatting for printing and export (export uses pandas float_format if supported).
+
+        Returns
+        -------
+        stats_df : pandas.DataFrame
+            Per-peak statistics in a wide, easy-to-read format.
+        """
+        import numpy as np
+        import pandas as pd
+
+        df = self.to_dataframe()
+
+        # Validate requested metrics
+        missing = [m for m in metrics if m not in df.columns]
+        if missing:
+            raise ValueError(f"summary_by_peak: metrics not found in dataframe: {missing}")
+
+        # Preserve the "first appearance" peak order (matches your plotting/groupby(sort=False) flow)
+        peak_order = list(dict.fromkeys(df["peak"].tolist()))
+
+        # Ensure numeric types
+        dff = df.copy()
+        for m in metrics:
+            dff[m] = pd.to_numeric(dff[m], errors="coerce")
+
+        # Optionally drop rows where all requested metrics are NaN
+        if dropna:
+            dff = dff.dropna(subset=list(metrics), how="all")
+
+        if dff.empty:
+            raise ValueError("summary_by_peak: no numeric data available after filtering/NaN handling.")
+
+        # Build per-peak stats
+        groups = dff.groupby("peak", sort=False)
+
+        # Core stats
+        agg = {}
+        for m in metrics:
+            agg[m] = ["count", "mean", "std", "min", "median", "max"]
+
+        core = groups.agg(agg)
+
+        # Percentiles (quantiles)
+        q = []
+        for p in percentiles:
+            if not (0.0 <= p <= 1.0):
+                raise ValueError(f"summary_by_peak: invalid percentile {p}; must be within [0,1].")
+            # groupby.quantile returns a Series with MultiIndex
+            qq = groups[list(metrics)].quantile(p).copy()
+            qq["quantile"] = p
+            q.append(qq.reset_index())
+
+        if q:
+            qdf = pd.concat(q, ignore_index=True)
+            # pivot quantiles to columns: (metric, qXX)
+            qdf["q_label"] = qdf["quantile"].map(lambda x: f"q{int(round(100*x)):02d}")
+            q_wide = (
+                qdf.pivot_table(index="peak", columns="q_label", values=list(metrics), aggfunc="first")
+                .sort_index()
+            )
+            # Combine core + quantiles
+            stats = pd.concat([core, q_wide], axis=1)
+        else:
+            stats = core
+
+        # Re-order peaks deterministically (first appearance)
+        stats = stats.reindex(peak_order)
+
+        # Flatten MultiIndex columns for export/readability: "<metric>_<stat>"
+        stats.columns = [
+            f"{col[0]}_{col[1]}" if isinstance(col, tuple) else str(col) for col in stats.columns
+        ]
+        stats.index.name = "peak"
+        stats_df = stats.reset_index()
+
+        # Pretty printing
+        if print_summary:
+            if print_mode.lower() == "blocks":
+                # Block-style printing only
+                self._print_peak_blocks(
+                    stats_df,
+                    metrics=metrics,
+                    interval=interval,
+                    float_format=float_format or "%.6g",
+                    show_minmax=show_minmax_in_blocks,
+                )
+
+            else:
+                # Table-style printing
+                ordered_cols = ["peak"]
+                for m in metrics:
+                    for s in ("count", "mean", "std", "min", "median", "max"):
+                        c = f"{m}_{s}"
+                        if c in stats_df.columns:
+                            ordered_cols.append(c)
+                    for p in percentiles:
+                        qlab = f"q{int(round(100*p)):02d}"
+                        c = f"{m}_{qlab}"
+                        if c in stats_df.columns:
+                            ordered_cols.append(c)
+
+                printable = stats_df.loc[
+                    :, [c for c in ordered_cols if c in stats_df.columns]
+                ].copy()
+
+                with pd.option_context("display.max_columns", None, "display.width", 120):
+                    if float_format is not None:
+                        pd.set_option(
+                            "display.float_format",
+                            lambda x: float_format % x if np.isfinite(x) else "nan",
+                        )
+                    print("\nPer-peak summary statistics:")
+                    print(printable.to_string(index=False))
+                    if float_format is not None:
+                        pd.reset_option("display.float_format")
+
+        # Optional export
+        if export_path is not None:
+            if self.fits is None:
+                raise RuntimeError("summary_by_peak export requires cached fitters. Run .fit(return_fitters=True) first.")
+
+            # Use your existing export_table() helper for consistent metadata behaviour
+            # (handles .csv vs .txt/.tsv, metadata headers, etc.)
+            export_table(
+                stats_df,
+                out_path=export_path,
+                metadata={"table_kind": "summary_by_peak"},
+                fits_with_fitters=self.fits,
+                include_metadata=include_metadata,
+                meta_in_csv=meta_in_csv,
+                float_format=float_format,
+            )
+
+        return stats_df
+
+    def _print_peak_blocks(
+        self,
+        stats_df,
+        *,
+        metrics=("position", "fwhm", "intensity"),
+        interval=(0.05, 0.95),
+        float_format="%.6g",
+        show_minmax=False,
+    ) -> None:
+        """
+        Pretty-print per-peak summary statistics as blocks.
+
+        Expects stats_df produced by summary_by_peak() (with flattened columns like
+        'position_mean', 'position_std', 'position_median', 'position_q05', etc.).
+        """
+        import math
+
+        def fmt(x):
+            if x is None:
+                return "—"
+            try:
+                if isinstance(x, float) and (math.isnan(x) or math.isinf(x)):
+                    return "—"
+            except Exception:
+                pass
+            try:
+                return float_format % float(x)
+            except Exception:
+                return str(x)
+
+        qlo = f"q{int(round(100 * interval[0])):02d}"
+        qhi = f"q{int(round(100 * interval[1])):02d}"
+
+        for _, row in stats_df.iterrows():
+            peak = row.get("peak", "UNKNOWN")
+            print(f"\n{peak}")
+            print("-" * len(str(peak)))
+
+            for m in metrics:
+                c_count = f"{m}_count"
+                c_mean  = f"{m}_mean"
+                c_std   = f"{m}_std"
+                c_med   = f"{m}_median"
+                c_qlo   = f"{m}_{qlo}"
+                c_qhi   = f"{m}_{qhi}"
+                c_min   = f"{m}_min"
+                c_max   = f"{m}_max"
+
+                if c_mean not in stats_df.columns:
+                    continue  # metric absent
+
+                count = row.get(c_count, None)
+                mean  = row.get(c_mean, None)
+                std   = row.get(c_std, None)
+                med   = row.get(c_med, None)
+                lo    = row.get(c_qlo, None)
+                hi    = row.get(c_qhi, None)
+
+                line = f"  {m:<10} n={int(count) if count is not None else '—'} | "
+                line += f"mean±std {fmt(mean)} ± {fmt(std)} | median {fmt(med)}"
+
+                # Interval (only if quantiles exist)
+                if c_qlo in stats_df.columns and c_qhi in stats_df.columns:
+                    line += f" | {qlo}–{qhi} {fmt(lo)}–{fmt(hi)}"
+
+                # Optional min/max
+                if show_minmax and c_min in stats_df.columns and c_max in stats_df.columns:
+                    line += f" | min–max {fmt(row.get(c_min))}–{fmt(row.get(c_max))}"
+
+                print(line)
+
 
 # -------------------------
 # Public classes: Raman / PL
 # -------------------------
 class RamanBatch(_BaseBatch):
     """
-    Convenience class for Raman batch processing.
+    Convenience class for Raman batch processing (multiple single spectra).
 
-    Example:
-        b = RamanBatch(files, materials=["WS2"], substrate="Si", baseline_method="arPLS")
-        b.fit()
-        b.plot_overlay(normalise="max", raw_fit=True)
-        wide = b.wide_table(add_condition=True, condition_name="temperature_C", condition=[765,805,830])
-        b.export("raman_fit_wide.csv", wide=True, add_condition=True, condition_name="temperature_C", condition=[765,805,830])
+    This is a thin orchestration wrapper around:
+      - load_spectra(...)
+      - fit_spectra_batch(...)
+      - collect_fit_parameters_from_fitters(...)
+      - plotting helpers and export_table(...)
 
+    Peak definition (recommended behaviour)
+    --------------------------------------
+    The fitter supports both library-driven defaults and user-defined peaks.
+
+    Precedence is deterministic and matches single-spectrum fitting:
+      1) If custom_peaks is provided (dict), it REPLACES any defaults derived from
+         materials/substrate.
+      2) remove_peaks (if provided) is applied last and always wins.
+
+    Parameters (selected)
+    ---------------------
+    files : Sequence[str]
+        Input file paths (e.g. .wdf or .txt depending on your importer).
+    materials : list[str] | None
+        Used only when custom_peaks is None. Determines default peak set.
+    substrate : str | None
+        Used only when custom_peaks is None. Adds substrate peaks if applicable.
+    custom_peaks : dict | None
+        User-defined peak bounds; replaces defaults when provided.
+
+        Format:
+            {peak_name: ([pos_lb, fwhm_lb, amp_lb], [pos_ub, fwhm_ub, amp_ub])}
+
+        Example:
+            custom_peaks = {
+                "E2g": ([380, 1, 0], [392, 20, 50]),
+                "A1g": ([402, 1, 0], [410, 20, 50]),
+            }
+    remove_peaks : list[str] | tuple[str, ...] | None
+        Peak labels to remove after peak-definition is resolved. Useful for
+        suppressing unwanted peaks (e.g. substrate peaks).
+    peak_order : list[str] | None
+        Optional deterministic ordering for peaks when applicable.
+        If custom_peaks is provided and peak_order is None, insertion order is used.
+
+    Other kwargs are passed directly to RamanFit.RamanFit (baseline, smoothing, etc.).
+
+    Examples
+    --------
+    (A) Default library peaks (materials/substrate) with removal
+        >>> from ramanpl import Batch
+        >>> b = Batch.RamanBatch(
+        ...     files,
+        ...     materials=["MoS2"],
+        ...     substrate="Si",
+        ...     remove_peaks=["Si"],
+        ...     baseline_method="arPLS",
+        ... )
+        >>> b.fit()
+        >>> b.plot_overlay(normalise="max", raw_fit=True)
+
+    (B) Custom peaks (replaces defaults) + optional removal
+        >>> custom_peaks = {
+        ...     "E2g": ([380, 1, 0], [392, 20, 50]),
+        ...     "A1g": ([402, 1, 0], [410, 20, 50]),
+        ... }
+        >>> b = Batch.RamanBatch(files, custom_peaks=custom_peaks, remove_peaks=["A1g"])
+        >>> b.fit()
+        >>> stats = b.summary_by_peak(print_mode="blocks")
+        >>> b.export("raman_fit_wide.csv", wide=True)
+
+    Notes
+    -----
+    - .fit(return_fitters=True) is required for parameter tables and summary_by_peak().
+    - Export metadata will reflect custom_peaks/remove_peaks when supported by the fitter.
     """
 
     def __init__(self, files: Sequence[str], **fitter_kwargs):
@@ -1244,7 +1567,56 @@ class RamanBatch(_BaseBatch):
 
 class PLBatch(_BaseBatch):
     """
-    Convenience class for PL batch processing.
+    Convenience class for PL batch processing (multiple single spectra).
+
+    Peak definition
+    ---------------
+    The fitter supports both default peak sets and user-defined peaks.
+
+    Precedence is deterministic and matches single-spectrum fitting:
+      1) If custom_peaks is provided (dict), it REPLACES defaults.
+      2) remove_peaks (if provided) is applied last and always wins.
+
+    Parameters (selected)
+    ---------------------
+    files : Sequence[str]
+        Input file paths.
+    custom_peaks : dict | None
+        User-defined peak bounds; replaces defaults when provided.
+
+        Format:
+            {peak_name: ([pos_lb, gamma_lb, amp_lb], [pos_ub, gamma_ub, amp_ub])}
+
+        Example:
+            custom_peaks = {
+                "Trion":   ([1.88, 0.01, 0], [1.96, 0.20, 10]),
+                "Exciton": ([1.96, 0.01, 0], [2.05, 0.20, 10]),
+            }
+    remove_peaks : list[str] | tuple[str, ...] | None
+        Peak labels to remove after peak-definition is resolved.
+    peak_order : list[str] | None
+        Optional deterministic ordering for peaks when applicable.
+
+    Other kwargs are passed directly to PLfit.PLfit (normalise, background removal, etc.).
+
+    Examples
+    --------
+    (A) Custom peaks (replaces defaults) + removal
+        >>> from ramanpl import Batch
+        >>> custom_peaks = {
+        ...     "Trion":   ([1.88, 0.01, 0], [1.96, 0.20, 10]),
+        ...     "Exciton": ([1.96, 0.01, 0], [2.05, 0.20, 10]),
+        ... }
+        >>> b = Batch.PLBatch(files, custom_peaks=custom_peaks, remove_peaks=["Trion"])
+        >>> b.fit()
+        >>> b.plot_waterfall(raw_fit=True)
+
+    (B) Export wide table
+        >>> b.export("pl_fit_wide.csv", wide=True)
+
+    Notes
+    -----
+    - .fit(return_fitters=True) is required for parameter tables and summary_by_peak().
     """
 
     def __init__(self, files: Sequence[str], **fitter_kwargs):

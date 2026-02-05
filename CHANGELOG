@@ -1,9 +1,52 @@
-**Version 0.2.9.1 (2026-2-5):**
+## v0.2.9.5 — Batch peak control, statistics, and robustness improvements
+
+### Added
+- **Batch-level peak control**
+  - Added support for `custom_peaks` and `remove_peaks` in `RamanBatch` and `PLBatch`.
+  - Behaviour is consistent with single-spectrum fitting:
+    - `custom_peaks` replaces all default/library peaks.
+    - `remove_peaks` is applied last and always takes precedence.
+- **Per-peak statistical analysis for batch fitting**
+  - Added `summary_by_peak()` to `RamanBatch` and `PLBatch`.
+  - Computes descriptive statistics (count, mean, standard deviation, median, min/max, and configurable percentiles) for each fitted peak across the batch.
+  - Supports two output modes:
+    - table-style summary
+    - block-style human-readable summary (per-peak reporting).
+- **Export of batch statistics**
+  - Batch peak statistics can be exported to `.csv`, `.txt`, or `.tsv`.
+  - Exported files include fitting metadata when available.
+
+### Improved
+- **Consistency across workflows**
+  - Peak-definition logic is now aligned across:
+    - single-spectrum fitting
+    - batch fitting
+    - mapping workflows
+  - Users may freely mix `materials`/`substrate` defaults with explicit peak overrides.
+- **Metadata propagation**
+  - Batch exports now record whether `custom_peaks` and/or `remove_peaks` were used.
+  - Removed peak labels are preserved in exported metadata for reproducibility.
+- **Batch API clarity**
+  - Updated class docstrings for `RamanBatch` and `PLBatch` to document peak precedence rules and advanced usage.
+  - README feature list updated to reflect expanded batch capabilities.
+
+### Fixed
+- Fixed an error in `summary_by_peak(print_mode="blocks")` where table-printing logic was incorrectly executed, causing an `UnboundLocalError`.
+- Improved internal handling of cached tables to prevent stale state after batch fitting updates.
+
+### Notes
+- No breaking changes to existing batch or single-spectrum workflows.
+- Existing scripts using `materials` and `substrate` continue to work unchanged.
+- Users relying on default peak libraries can now selectively suppress unwanted peaks without redefining the full peak set.
+
+------------------------
+
+## Version 0.2.9.1 (2026-2-5):
 
     1. Modified the `warm_start` logic in `Mapping.py` to ensure that the warm start fitting is now applied to a singple-point within the same mapping dataset
     2. Added a few new examples in `Mapping PL Example.ipynb` and `Mapping Raman Example.ipynb` to demonstrate the usage of warm start fitting for PL mapping and Raman mapping, respectively.
 
-**Version 0.2.9 (2026-2-3):**
+## Version 0.2.9 (2026-2-3):
 
     1. Added batch-processing utilities in `batch.py` for loading multiple spectra (Raman/PL), batch fitting, and producing overlay/waterfall comparison plots.
     2. Added fitted-parameter aggregation helpers (long and wide formats), including wide-table pivoting (e.g. `E12g_position`, `E12g_fwhm`, `E12g_intensity`) for downstream analysis.
@@ -13,29 +56,29 @@
 
 *All changes are backward compatible with previous version (0.2.8).*
 
-**Version 0.2.8 (2026-1-25):**
+## Version 0.2.8 (2026-1-25):
 
     1. Added new functionality of exporting fitted parameters to CSV file in `RamanFit.py` and `PLfit.py` via new method `export_fit_parameters()`. This allows users to easily save and analyse the fitted parameters after fitting.
     2. Updated example notebooks `Raman_component.ipynb` and `PL_component.ipynb` to demonstrate the usage of the new `export_fit_parameters()` method for exporting fitted parameters to CSV files.
     3. Fixed a bug in `Mapping.py` where the sanity-check plot of `plot_spectrum()`for Raman integration was not correctly shown.
 
 
-**Version 0.2.7.2 (2026-1-18):**
+## Version 0.2.7.2 (2026-1-18):
 
     1. Modified `raman_materials.json`: updated WS2, WO3 and SiO2 subtrate peaks; added "Si-true" subtrate to distinguish from "Si" with more lower intensity existing peaks of Si
 
-**Version 0.2.7.2 (2026-1-16):**
+## Version 0.2.7.2 (2026-1-16):
 
     1. Added new material group 'GrO' to represent Graphene Oxides
 
-**Version 0.2.7.1 (2026-1-6):**
+## Version 0.2.7.1 (2026-1-6):
 
     1. Added plotting comparison curve of processed data (background subtraction or smoothing) if those options applied to RamanFit.py and PLfit.py
     2. Modified Raman_component.ipynb and PL_component.ipynb to reflect those changes.
 
 *All changes are backward compatible with previous version (0.2.7).*
 
-**Version 0.2.7 (2025-12-29):**
+## Version 0.2.7 (2025-12-29):
     
     1. Added spectrum data subtraction and addition options via new `operation.py` to improve fitting accuracy for spectra with low signal-to-noise ratios. Users can now enable background removal during the fitting process.
     2. Updated example notebook `Raman_component.ipynb` to demonstrate the usage of background removal during Raman spectrum fitting.
@@ -47,7 +90,7 @@
 
 *All changes are backward compatible with previous version (0.2.6).*
 
-**Version 0.2.6 (2025-12-28):**
+## Version 0.2.6 (2025-12-28):
 
     1. Added `mask_by_xrange()` static method in `DataImporter` class to create boolean masks for selecting data within specified x-axis ranges. This method is now used in `Mapping.py` for both Raman and PL data processing.
     2. Updated `DataImporter.data_import()` method in both `RamanFit.py` and `PLfit.py` to include a new `x_range` parameter, allowing users to specify the range of x-axis values (wavenumber for Raman, energy for PL) to read from the data files. The previous `readlines` parameter is deprecated but still functional for backward compatibility.
@@ -56,7 +99,7 @@
 
 *All changes are backward compatible with previous version (0.2.5).*
 
-**Version 0.2.5 (2025-12-27):**
+## Version 0.2.5 (2025-12-27):
 
     1. Added a few new examples in PLfit and Ramanfit example foldders to demonstrate background subtraction using various fitting methods.
     2. Updated `PLfit.py` and `RamanFit.py` to include a new `baseline_method` parameter in the constructor, allowing users to choose between 'poly' (polynomial fitting) and 'gaussian' (Gaussian fitting) for background removal.
@@ -66,7 +109,7 @@
 
 *All changes are backward compatible with previous version (0.2.4).*
 
-**Version 0.2.4 (2025-12-26):**
+## Version 0.2.4 (2025-12-26):
 
     1. Updated `RamanFit.py` to fix a bug where the fitting was incorrectly performed on unnormalised data when `normalize` was set to False. Now, fitting is always done on normalised data, and the `normalize` option only affects display and output scaling. 
     2. Updated `Mapping.py` to ensure that Raman mapping fitting is performed on normalised data regardless of the `normalize` setting. The `normalize` option now only influences the display and output scaling of heatmaps and spectra. And updated specific intensity heatmap plotting, ratio heatmap plotting, and distance heatmap plotting methods to reflect this change.
@@ -75,7 +118,7 @@
 
 *All changes are backward compatible with previous version (0.2.3).*
 
-**Version 0.2.3 (2025-12-25):**
+## Version 0.2.3 (2025-12-25):
 
     1. Changed `normalize` option in `Mapping.py` to control whether to display normalised data for heatmap display. This option does not affect the fitting process.
     2. Added `warm_start` and `reset_on_fail` options in `Mapping.py`'s `fit_spectra()` method to improve fitting stability.
@@ -85,12 +128,12 @@
 
 *All changes are backward compatible with previous version (0.2.0).*
 
-**Version 0.2.0 (2025-6-6):**
+## Version 0.2.0 (2025-6-6):
 
     1. Move source code to `ramanpl` folder, create package installation manuals for local library installation and usage
     2. Modified the jupyter-notebook codes in example for local library usage.
 
-**Version 0.1.5 (2025-6-5):**
+## Version 0.1.5 (2025-6-5):
 
     1. Added *Gr* and *2L-Gr* for graphene/bilayer-graphene library file `raman_materials.json`
     2. Added new sample bilayer graphene data (`Raman Sample 532nm 2L-Graphene.txt`) into example folders

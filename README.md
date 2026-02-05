@@ -4,17 +4,33 @@
 
 ## Features
 
-- Compatible analysis tools with most ReinShaw Raman Spectroscopy equipment
-- Import and process Raman and PL spectra from `.txt`and `.wdf`
-- Peak fitting using Lorentzian models
-- Visualisation of raw and fitted spectra
-- Heatmaps of integrated spectra data in a selected range
-- Heatmaps of the data processed with a `filter_range` and `data_range` selection.
-- Heatmaps of intensity at specific wavenumber/energy by fitted spectra
-- Auto-calculation of important data for 2D materials: **A1g - E2g peak difference** and **FWHM** of peaks
-- Heatmaps of Raman spectrum **A1g - E2g Peak difference** and **E2g/A1g peak ratio**
-- Arithmetic processing of the mapping data or single point data for flexible operation.
-- Sanity check: normalised residual calculation and distribution, dynamical spectrum fitting view
+- Compatible analysis tools with most Renishaw Raman spectroscopy systems
+- Import and process Raman and PL spectra from `.txt` and `.wdf`
+- Single-spectrum **Lorentzian peak fitting** for Raman and PL
+- **Batch processing** of multiple spectra (RamanBatch / PLBatch):
+  - automated fitting across many spectra
+  - consistent peak parameter extraction (position, FWHM, intensity)
+  - summary statistics of fitted parameters **by peak**
+  - export of batch results to `.csv` / `.txt`
+- **Flexible peak definition system**:
+  - library-based default peaks using `materials` and `substrate`
+  - fully user-defined `custom_peaks` (replaces defaults)
+  - selective suppression of unwanted peaks via `remove_peaks`
+  - consistent behaviour across single fit, batch, and mapping
+- Visualisation of raw and fitted spectra (overlay & waterfall plots)
+- **Sanity checks for fitting quality**:
+  - normalised residual calculation
+  - residual distribution diagnostics
+  - dynamic spectrum fitting view
+- Raman and PL **mapping analysis**:
+  - heatmaps of integrated intensity within selected ranges
+  - heatmaps of fitted peak intensity, position, and FWHM
+  - heatmaps of Raman **A1g − E2g** peak separation
+  - heatmaps of **E2g / A1g** peak ratio
+- Arithmetic processing of spectra and mapping data for flexible operations
+
+Batch processing and mapping workflows share the same peak-definition logic as single-spectrum fitting. Users may rely on built-in material libraries for
+rapid analysis, or fully override peak definitions using `custom_peaks` and `remove_peaks` for advanced or non-standard systems.
 
 ### Change log
 
@@ -26,7 +42,7 @@ See [CHANGELOG](CHANGELOG)
 RamanPL_2D/
     ├── example-usage/ # Sample spectral data files and demonstrated usage of python codes by jupyter-notebook (`.ipynb`files)
     │ ├── Mapping/      # PL, Raman data mapping using `Mapping.py`
-    │ ├── multi-plot/   # Demonstrate batch plotting of multiple spectra using `batch.py`
+    │ ├── multi-plot/   # Demonstrate batch fitting, plotting, and parameter analysis using `batch.py`
     │ ├── PLfit/        # PL component curve fitting using `PLfit.py`
     │ └── Ramanfit/     # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
     ├── src/                # Source code for data processing and analysis DON'T CHANGE THE FOLDER STRUCTURE!
@@ -38,6 +54,8 @@ RamanPL_2D/
     │ │ ├── baselinAPI.py             # Helper codes for Raman/PL background subtration
     │ │ ├── dataImporter.py           # Helper codes for importing .wdf/.txt data files
     │ │ ├── operation.py              # Classs modules for making math operations of multiple data files.
+    │ │ ├── batch.py                  # Batch fitting, statistical analysis, plotting, and export of multiple spectra
+    │ │ ├── exporter.py               # Classs modules for exporting the fitted data and parameters into .csv files
     │ │ └── Mapping.py                # Mapping of Raman, PL and integration of spectra
     │ ├── install.ipynb     # A jupyter-notebook run to install  our package
     │ └── setup.py          # For package installation only, include some required python packages for using
@@ -148,10 +166,6 @@ from ramanpl import RamanFit
 
 ## To-do
 
-- (v0.2.9.5) Add a few useful functionalities for `Batch` class:
-    1. Add `Batch.summary_by_peak()`
-    2. Add `Batch.compare(peaks=[...])`
- 
 - (v0.3.0) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
 
 ## License

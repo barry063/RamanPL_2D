@@ -59,7 +59,7 @@ class PLfit:
     def __init__(self, spectra, energy, background_remove=False, baseline_method='poly',
              poly_degree=3, gaussian_sigma=50, smoothing=False,
              smooth_window=11, smooth_order=3, normalize=True,
-             custom_peaks=None, peak_order=None):
+             custom_peaks=None, remove_peaks=None, peak_order=None):
         """Initialize PLfit object with data and processing parameters.
 
         Parameters:
@@ -180,6 +180,12 @@ class PLfit:
 
         # Initial guess at midpoint of bounds
         self.p0 = [(low + high) / 2 for low, high in zip(self.lower_bound, self.upper_bound)]
+        ## Added in build v0.2.9.5
+        self.custom_peaks = custom_peaks  # already there in your code
+        self.remove_peaks_list = list(remove_peaks) if remove_peaks is not None else []
+
+        if self.remove_peaks_list:
+            self.remove_peaks(*self.remove_peaks_list)
 
         # ---- NEW in v0.2.3: slots for exporting to mapping
         self.params_fit = None
@@ -214,6 +220,39 @@ class PLfit:
 
             # Update p0 to the midpoint of the new bounds
             self.p0[3 * idx:3 * idx + 3] = [(new_bounds[0][i] + new_bounds[1][i]) / 2 for i in range(3)]
+
+    def remove_peaks(self, *peak_names):
+        """
+        Remove peaks from the fitting model.
+
+        Parameters
+        ----------
+        *peak_names : str
+            Peak names to remove (case-insensitive match allowed).
+
+        Raises
+        ------
+        ValueError
+            If a peak name is not present.
+        """
+        labels_lower = [p.lower() for p in self.peak_labels]
+
+        for peak_name in peak_names:
+            key = str(peak_name).lower()
+            if key not in labels_lower:
+                raise ValueError(
+                    f"Peak '{peak_name}' is not recognised. Available peaks: {self.peak_labels}"
+                )
+            idx = labels_lower.index(key)
+
+            # remove blocks
+            del self.p0[3 * idx:3 * idx + 3]
+            del self.lower_bound[3 * idx:3 * idx + 3]
+            del self.upper_bound[3 * idx:3 * idx + 3]
+            del self.peak_labels[idx]
+
+            # refresh lookup after mutation
+            labels_lower = [p.lower() for p in self.peak_labels]
 
     def fit_spectrum(self):
         """Perform curve fitting using specified bounds and initial parameters.
@@ -408,6 +447,8 @@ class PLfit:
 
             "peak_labels": getattr(self, "peak_labels", None),
             "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+            "remove_peaks": getattr(self, "remove_peaks_list", None),
+
         }
         meta = {k: v for k, v in meta.items() if v is not None}
 

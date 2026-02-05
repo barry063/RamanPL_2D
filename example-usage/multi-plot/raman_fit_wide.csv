@@ -12,12 +12,14 @@
 # smooth_window: 11
 # smooth_order: 3
 # normalize: False
-# peak_labels: ['E12g', 'A1g', 'LA(M)', '2LA(M)', 'A1g(M)-LA(M)', '2LA(M)-2E22g', '2LA(M)-E22g', 'A1g(M)+LA(M)', '4LA(M)', 'B1/u', '3LA(K)', 'Si']
+# peak_labels: ['E12g', 'A1g', '2LA(M)', '2LA(M)-2E22g', '2LA(M)-E22g', '4LA(M)', 'B1/u', '3LA(K)', 'Si']
 # peak_intensity: [np.float64(427.54123196369505), np.float64(1216.2424678990478), np.float64(4517.579200723515)]
+# custom_peaks: False
+# remove_peaks: ['A1g(M)+LA(M)', 'A1g(M)-LA(M)', 'LA(M)']
 # fitter_class: RamanFit
 # n_spectra: 3
 # 
-source,2LA(M)-2E22g_fwhm,2LA(M)-2E22g_intensity,2LA(M)-2E22g_position,2LA(M)-E22g_fwhm,2LA(M)-E22g_intensity,2LA(M)-E22g_position,2LA(M)_fwhm,2LA(M)_intensity,2LA(M)_position,3LA(K)_fwhm,3LA(K)_intensity,3LA(K)_position,4LA(M)_fwhm,4LA(M)_intensity,4LA(M)_position,A1g(M)+LA(M)_fwhm,A1g(M)+LA(M)_intensity,A1g(M)+LA(M)_position,A1g(M)-LA(M)_fwhm,A1g(M)-LA(M)_intensity,A1g(M)-LA(M)_position,A1g_fwhm,A1g_intensity,A1g_position,B1/u_fwhm,B1/u_intensity,B1/u_position,E12g_fwhm,E12g_intensity,E12g_position,LA(M)_fwhm,LA(M)_intensity,LA(M)_position,Si_fwhm,Si_intensity,Si_position,condition
-765C_Raman.txt,0.0624113,3789.34,300.922,20,5.98051,319.488,4.10335,29.7816,348.136,10,1.61233,570,20,3.34804,710,19.9996,1.29713,587,20,3.63492,234.995,9.99623,4.53265e-29,424,10,5.29758,413,3.18229,20.2796,356.885,20,3.78445,174.495,5.73691,454.303,520.044,765
-805C_Raman.txt,3.27222,90.6034,297.177,19.9576,197.195,325.195,10,632.24,348.714,5.93204,11.7574,580,20,49.5378,700.535,7.10905,69.3577,584.281,5.48791,36.7656,231.423,3.27492,268.536,419.969,3.3562,189.731,416.498,6.93125,987.257,354.685,14.7153,69.194,174.83,4.58571,1046.18,520.834,805
-830C_Raman.txt,10.9635,231.599,296.465,20,778.887,324.895,10,2875.98,349.65,8.05784,148.69,580,20,207.632,699.064,6.04118,262.696,585.233,20,182.502,232.131,4.59636,1367.64,420.491,4.18258,603.98,416.465,7.12423,2987.55,354.884,20,287.81,175.522,8.1856,772.394,521.313,830
+source,2LA(M)-2E22g_fwhm,2LA(M)-2E22g_intensity,2LA(M)-2E22g_position,2LA(M)-E22g_fwhm,2LA(M)-E22g_intensity,2LA(M)-E22g_position,2LA(M)_fwhm,2LA(M)_intensity,2LA(M)_position,3LA(K)_fwhm,3LA(K)_intensity,3LA(K)_position,4LA(M)_fwhm,4LA(M)_intensity,4LA(M)_position,A1g_fwhm,A1g_intensity,A1g_position,B1/u_fwhm,B1/u_intensity,B1/u_position,E12g_fwhm,E12g_intensity,E12g_position,Si_fwhm,Si_intensity,Si_position,condition
+765C_Raman.txt,20,2.90693,305,20,4.7327,322.379,4.04247,29.8678,348.146,10,2.3772,570,20,3.38343,710,10,1.77187e-07,424,10,5.32706,413,3.18601,20.2823,356.881,5.73859,454.296,520.044,765
+805C_Raman.txt,3.35787,89.5724,297.171,20,197.942,325.185,10,632.038,348.715,10,54.7433,580,20,49.599,700.532,3.281,268.035,419.97,3.3706,189.359,416.5,6.93665,987.021,354.685,4.58331,1046.24,520.834,805
+830C_Raman.txt,20,197.758,295.326,20,767.961,325.088,10,2875.98,349.66,10,272.106,580,20,208.066,699.062,4.59889,1364.65,420.495,4.22051,603.678,416.475,7.12983,2982.22,354.886,8.17021,772.332,521.311,830

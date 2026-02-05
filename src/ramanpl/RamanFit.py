@@ -79,11 +79,24 @@ class RamanFit:
     plot_fit(params, **kwargs)
         Visualize fitting results
     """
-    def __init__(self, spectra, wavenumber, materials=None, substrate=None,
-                 background_remove=False, baseline_method='poly',
-                 poly_degree=3, gaussian_sigma=50, smoothing=False, 
-                 smooth_window=11, smooth_order=3, normalize=False, 
-                 custom_peaks=None, peak_order=None):
+    def __init__(
+        self,
+        spectra,
+        wavenumber,
+        materials=None,
+        substrate=None,
+        background_remove=False,
+        baseline_method="poly",
+        poly_degree=3,
+        gaussian_sigma=50,
+        smoothing=False,
+        smooth_window=11,
+        smooth_order=3,
+        normalize=False,
+        custom_peaks=None,
+        remove_peaks=None,
+        peak_order=None,
+    ):
         """Initialize RamanFit analyzer with data and processing parameters.
 
         Parameters
@@ -119,7 +132,6 @@ class RamanFit:
             For unrecognized baseline methods or invalid material/substrate IDs
         """
         
-        ### Updated in v.0.2.4 ###
         # ------------------------------
         # Peak model definition (library-driven)
         # ------------------------------
@@ -128,23 +140,61 @@ class RamanFit:
         self.upper_bound = []
         self.peak_labels = []
 
-        # If user did not specify materials, default to WS2 core peaks via library
-        # (keeps your previous behaviour but makes it consistent and portable).
-        if materials is None:
-            materials = ['WS2']
+        # Store user intent for reproducibility/metadata
+        self.custom_peaks = custom_peaks
+        self.remove_peaks_list = list(remove_peaks) if remove_peaks is not None else []
 
-        # Load material peaks from library (in the order provided by 'materials')
-        if materials is not None:
-            self.load_material_parameters(materials)
+        # Store identity metadata even if custom_peaks replaces defaults
+        self.materials = materials
+        self.substrate = substrate
 
-        # Load substrate peaks if specified (appended after material peaks)
-        if substrate is not None:
-            self.load_substrate(substrate)
+        if custom_peaks is not None:
+            # "custom replaces defaults"
+            if not isinstance(custom_peaks, dict) or len(custom_peaks) == 0:
+                raise ValueError("custom_peaks must be a non-empty dict: {name: ([lb...],[ub...])}")
 
-        # Optional: enforce deterministic ordering (see Step 1.4)
-        self._enforce_peak_order_if_requested(peak_order=None)
+            if peak_order is None:
+                peak_order_eff = list(custom_peaks.keys())
+            else:
+                peak_order_eff = list(peak_order)
+                missing = [k for k in peak_order_eff if k not in custom_peaks]
+                if missing:
+                    raise ValueError(f"peak_order contains keys not in custom_peaks: {missing}")
+
+            self.peak_labels = list(peak_order_eff)
+
+            for name in self.peak_labels:
+                lb, ub = custom_peaks[name]
+                if len(lb) != 3 or len(ub) != 3:
+                    raise ValueError(f"Peak '{name}' bounds must be length-3 lists: [centre, width, amp]")
+                self.lower_bound += list(lb)
+                self.upper_bound += list(ub)
+
+        else:
+            # Backwards-compatible library behaviour
+            if materials is None:
+                materials = ["WS2"]
+
+            self.materials = materials
+            self.substrate = substrate
+
+            if materials is not None:
+                self.load_material_parameters(materials)
+            if substrate is not None:
+                self.load_substrate(substrate)
+
+            # Allow deterministic ordering if requested
+            self._enforce_peak_order_if_requested(peak_order=peak_order)
+
+        # Initial guess at midpoint of bounds
+        self.p0 = [(low + high) / 2 for low, high in zip(self.lower_bound, self.upper_bound)]
+
+        # Apply removals last (always wins)
+        if self.remove_peaks_list:
+            self.remove_peaks(*self.remove_peaks_list)
+
         # ------------------------------
-        ### End of v.0.2.4 update ###
+        ### End of v.0.2.9.5 update ###
 
         # Set initial parameters
         self.p0 = [(low + high) / 2 
@@ -499,6 +549,7 @@ class RamanFit:
             
             "peak_labels": getattr(self, "peak_labels", None),
             "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+            "remove_peaks": getattr(self, "remove_peaks_list", None),
         }
         meta = {k: v for k, v in meta.items() if v is not None}
 

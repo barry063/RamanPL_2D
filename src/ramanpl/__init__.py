@@ -42,7 +42,7 @@ __all__ = [
 ]
 
 # Optional: version string (set manually)
-__version__ = "0.2.9.1"
+__version__ = "0.2.9.5"
 
 
 # -----------------------
