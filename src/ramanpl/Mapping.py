@@ -24,6 +24,101 @@ from ramanpl import DataImporter
 from typing import Optional, Tuple
 from ramanpl.exporter import params_to_rows, write_table
 
+def seed_p0_from_coord(mapping_obj, coord, seed_roi=None, *, maxfev=6400):
+    """
+    Fit ONE spectrum from an already-loaded mapping object and return:
+        {"p0": <vector>, "peak_order": <list>}
+    """
+    if coord is None:
+        raise ValueError("coord must be provided as (x, y).")
+
+    x, y = int(coord[0]), int(coord[1])
+    if not (0 <= x < mapping_obj.X and 0 <= y < mapping_obj.Y):
+        raise ValueError(
+            f"coord {(x, y)} out of bounds for map size (X={mapping_obj.X}, Y={mapping_obj.Y})."
+        )
+
+    # ---- ROI normalisation ----
+    roi = None
+    if seed_roi is not None:
+        if isinstance(seed_roi, (int, np.integer)):
+            r = int(seed_roi)
+            x0 = max(0, x - r)
+            x1 = min(mapping_obj.X - 1, x + r)
+            y0 = max(0, y - r)
+            y1 = min(mapping_obj.Y - 1, y + r)
+            roi = (x0, x1, y0, y1)
+        else:
+            if (not isinstance(seed_roi, (tuple, list))) or len(seed_roi) != 4:
+                raise ValueError("seed_roi must be an int radius or a 4-tuple (x0, x1, y0, y1).")
+            roi = tuple(int(v) for v in seed_roi)
+
+    # ---- spectrum extraction ----
+    y_ref, xaxis = mapping_obj.get_reference_spectrum(x=x, y=y, roi=roi)
+
+    # Basic sanity
+    y_ref = np.asarray(y_ref, dtype=float).ravel()
+    xaxis = np.asarray(xaxis, dtype=float).ravel()
+    if y_ref.size != xaxis.size:
+        raise ValueError("Seed spectrum length mismatch with axis length.")
+    if not np.all(np.isfinite(xaxis)):
+        raise ValueError("Axis contains NaN/Inf; cannot seed.")
+    if not np.any(np.isfinite(y_ref)):
+        raise ValueError("Seed spectrum contains only NaN/Inf; cannot seed.")
+
+    # ---- preprocess (normalised fit space) ----
+    spec_norm, scale = mapping_obj._preprocess_single_spectrum(xaxis, y_ref)
+    if spec_norm is None or scale is None:
+        raise ValueError(f"Seed spectrum at {(x, y)} has no positive signal after preprocessing; cannot seed.")
+
+    spec_norm = np.asarray(spec_norm, dtype=float).ravel()
+    if not np.all(np.isfinite(spec_norm)):
+        raise ValueError("Preprocessed seed spectrum contains NaN/Inf; cannot seed.")
+
+    # ---- bounds ----
+    lower_bound, upper_bound = [], []
+    for params_range in mapping_obj.custom_peaks.values():
+        lower_bound.extend(params_range[0])
+        upper_bound.extend(params_range[1])
+
+    lower_bound = np.asarray(lower_bound, dtype=float)
+    upper_bound = np.asarray(upper_bound, dtype=float)
+
+    if lower_bound.size != upper_bound.size:
+        raise ValueError("custom_peaks bounds size mismatch.")
+    if lower_bound.size == 0:
+        raise ValueError("custom_peaks is empty; cannot seed.")
+    if np.any(lower_bound >= upper_bound):
+        raise ValueError("Invalid bounds in custom_peaks: found lower_bound >= upper_bound.")
+
+    # midpoint seed
+    p0_base = (lower_bound + upper_bound) / 2.0
+
+    # model selection
+    if hasattr(mapping_obj, "lorentzian"):
+        model = mapping_obj.lorentzian
+    elif hasattr(mapping_obj, "lorentzian_raman"):
+        model = mapping_obj.lorentzian_raman
+    else:
+        raise RuntimeError("mapping_obj must implement lorentzian (PL) or lorentzian_raman (Raman).")
+
+    # ---- fit ----
+    try:
+        params, _ = optimize.curve_fit(
+            model,
+            xaxis,
+            spec_norm,
+            p0=p0_base,
+            bounds=(lower_bound, upper_bound),
+            maxfev=maxfev,
+        )
+    except (RuntimeError, ValueError) as e:
+        raise RuntimeError(f"Seed fit failed at coord={(x, y)} (roi={roi}): {e}") from e
+
+    return {"p0": np.asarray(params, dtype=float), "peak_order": list(mapping_obj.peak_params)}
+
+
+
 #########################################################################################################################
 
 
@@ -210,6 +305,7 @@ class PLMapping:
         self.residual_map = np.full((self.Y, self.X), np.nan)
         self.norm_scale_map = np.full((self.Y, self.X), np.nan)
         ### END UPDATED INITIALIZATION ###
+
 
     ### NEW METHOD IN v0.2.7 ###
     @classmethod
@@ -403,8 +499,17 @@ class PLMapping:
 
 
     ## UPDATED METHOD in v0.2.3 ##
-    def fit_spectra(self, initial_p0=None, warm_start=False, reset_on_fail=True,
-                    maxfev=6400, warm_start_rmse_gate=0.06):
+    def fit_spectra(
+        self,
+        initial_p0=None,
+        warm_start=False,
+        seed_coord=None,
+        seed_roi=None,
+        reset_on_fail=True,
+        row_reset=True,
+        warm_start_rmse_gate=0.06,
+        maxfev = 6400
+    ):
         """
         Fit all map spectra using self.custom_peaks as bounds.
 
@@ -458,6 +563,14 @@ class PLMapping:
 
         # Default p0: midpoint of bounds
         p0_base = (lower_bound + upper_bound) / 2.0
+
+        # --- optional: seed from a coordinate inside this mapping object ---
+        if seed_coord is not None:
+            if initial_p0 is not None:
+                raise ValueError("Provide either initial_p0 or seed_coord, not both.")
+
+            initial_p0 = seed_p0_from_coord(self, seed_coord, seed_roi, maxfev=maxfev)
+            warm_start = True
 
         # Optional: seed from single-point PLfit
         if initial_p0 is not None:
@@ -551,7 +664,7 @@ class PLMapping:
                             if reset_on_fail:
                                 p0_current = p0_base.copy()
 
-                except RuntimeError:
+                except (RuntimeError, ValueError):
                     self.residual_map[j, i] = np.nan
                     # keep the scale (it was valid), but reset p0 if requested
                     if reset_on_fail:
@@ -1628,12 +1741,14 @@ class RamanMapping:
         self,
         initial_p0=None,
         warm_start=False,
+        seed_coord=None,
+        seed_roi=None,
         reset_on_fail=True,
-        maxfev=6400,
-        warm_start_rmse_gate=0.06,
         row_reset=True,
-        bound_tol=1e-10
+        warm_start_rmse_gate=0.06,
+        maxfev = 6400
     ):
+
         """
         Fit all map spectra using self.custom_peaks as bounds.
 
@@ -1682,6 +1797,9 @@ class RamanMapping:
                     return False
 
             return True
+        
+        # tolerance for "stuck at bound" detection
+        bound_tol = 1e-10
 
         # ---------- mask + x-axis ----------
         if getattr(self, "_x_trimmed_on_load", False):
@@ -1705,6 +1823,14 @@ class RamanMapping:
 
         # baseline p0
         p0_base = (lower_bound + upper_bound) / 2.0
+
+        # --- optional: seed from a coordinate inside this mapping object ---
+        if seed_coord is not None:
+            if initial_p0 is not None:
+                raise ValueError("Provide either initial_p0 or seed_coord, not both.")
+
+            initial_p0 = seed_p0_from_coord(self, seed_coord, seed_roi, maxfev=maxfev)
+            warm_start = True
 
         # ---------- optional: seed from RamanFit export ----------
         if initial_p0 is not None:
@@ -1815,7 +1941,7 @@ class RamanMapping:
                     # gated warm-start: RMSE + plausibility
                     if warm_start:
                         ok_rmse = (rmse_norm <= warm_start_rmse_gate)
-                        ok_params = _params_plausible(params, lower_bound, upper_bound, n_peaks, tol=bound_tol)
+                        ok_params = _params_plausible(params, lower_bound, upper_bound, n_peaks)
 
                         if ok_rmse and ok_params:
                             p0_current = params
@@ -1823,7 +1949,7 @@ class RamanMapping:
                             if reset_on_fail:
                                 p0_current = p0_base.copy()
 
-                except RuntimeError:
+                except (RuntimeError, ValueError):
                     self.residual_map[j, i] = np.nan
                     if reset_on_fail:
                         p0_current = p0_base.copy()

@@ -1,4 +1,9 @@
-**Version 0.2.9 (2026-02-02):**
+**Version 0.2.9.1 (2026-2-5):**
+
+    1. Modified the `warm_start` logic in `Mapping.py` to ensure that the warm start fitting is now applied to a singple-point within the same mapping dataset
+    2. Added a few new examples in `Mapping PL Example.ipynb` and `Mapping Raman Example.ipynb` to demonstrate the usage of warm start fitting for PL mapping and Raman mapping, respectively.
+
+**Version 0.2.9 (2026-2-3):**
 
     1. Added batch-processing utilities in `batch.py` for loading multiple spectra (Raman/PL), batch fitting, and producing overlay/waterfall comparison plots.
     2. Added fitted-parameter aggregation helpers (long and wide formats), including wide-table pivoting (e.g. `E12g_position`, `E12g_fwhm`, `E12g_intensity`) for downstream analysis.
