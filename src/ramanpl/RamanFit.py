@@ -34,6 +34,84 @@ class DataImporter:
         from ramanpl.dataImporter import DataImporter as _Shared
         return _Shared.data_import(filename=filename, readlines=readlines, x_range=x_range, axis="wavenumber")
 
+# ----------------------------
+# Multi-start + diagnostics helpers (Step 1)
+# ----------------------------
+def _rng(random_state=None):
+    if random_state is None:
+        return np.random.default_rng()
+    return np.random.default_rng(random_state)
+
+
+def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    r = np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float)
+    return float(np.sqrt(np.mean(r * r)))
+
+
+def _params_at_bounds(params: np.ndarray, lb: np.ndarray, ub: np.ndarray, *, rtol: float = 1e-6, atol: float = 1e-12) -> np.ndarray:
+    """
+    Return boolean mask of parameters that are effectively on their lower/upper bounds.
+    """
+    params = np.asarray(params, dtype=float).ravel()
+    lb = np.asarray(lb, dtype=float).ravel()
+    ub = np.asarray(ub, dtype=float).ravel()
+    on_lb = np.isclose(params, lb, rtol=rtol, atol=atol)
+    on_ub = np.isclose(params, ub, rtol=rtol, atol=atol)
+    return on_lb | on_ub
+
+
+def _generate_p0_trials(
+    lb: np.ndarray,
+    ub: np.ndarray,
+    *,
+    base_p0: np.ndarray,
+    n_starts: int,
+    strategy: str,
+    random_state=None
+) -> list:
+    """
+    Generate a list of p0 vectors within bounds.
+
+    strategy:
+        - "midpoint": (default) uses base_p0 only (unless n_starts>1, then jitter about base_p0)
+        - "random": uniform random within bounds
+        - "jitter": Gaussian jitter about base_p0, then clipped to bounds
+    """
+    lb = np.asarray(lb, dtype=float).ravel()
+    ub = np.asarray(ub, dtype=float).ravel()
+    base_p0 = np.asarray(base_p0, dtype=float).ravel()
+
+    if n_starts is None:
+        n_starts = 1
+    n_starts = int(n_starts)
+    if n_starts < 1:
+        n_starts = 1
+
+    strategy = (strategy or "midpoint").lower()
+    if strategy not in {"midpoint", "random", "jitter"}:
+        raise ValueError("p0_strategy must be one of: 'midpoint', 'random', 'jitter'.")
+
+    trials = [base_p0.copy()]
+    if n_starts == 1:
+        return trials
+
+    rng = _rng(random_state)
+    m = n_starts - 1
+
+    if strategy == "random":
+        for _ in range(m):
+            trials.append(rng.uniform(lb, ub))
+        return trials
+
+    # "midpoint" and "jitter" both jitter about base_p0 for extra starts
+    scale = 0.10 * (ub - lb)
+    scale = np.where(scale > 0, scale, 1.0)  # guard against zero ranges
+    for _ in range(m):
+        p = base_p0 + rng.normal(loc=0.0, scale=scale)
+        p = np.clip(p, lb, ub)
+        trials.append(p)
+
+    return trials
 
 
 class RamanFit:
@@ -674,36 +752,89 @@ class RamanFit:
             L += (scale / ((x - loc) ** 2 + scale ** 2)) * amp / np.pi
         return L
 
-    # Method to fit the spectrum
-    def fit_spectrum(self):
-        """Perform curve fitting using configured parameters.
-
-        Returns
-        -------
-        tuple
-            (params, params_cov) - Optimized parameters and covariance matrix
-
-        Notes
-        -----
-        Uses scipy.optimize.curve_fit with:
-        - Maximum 6400 function evaluations
-        - Bounds configured from material/substrate parameters
+    # Updated in v0.3.0
+    def fit_spectrum(
+        self,
+        *,
+        n_starts: int = 1,
+        p0_strategy: str = "midpoint",
+        random_state=None,
+        diagnose_bounds: bool = True,
+        bounds_tol: float = 1e-6,
+        return_diagnostics: bool = False,
+    ):
         """
-        # Perform curve fitting
-        params, params_cov = optimize.curve_fit(
-            self.lorentzian_raman, 
-            self.wavenumber, 
-            self.intensity_normal, 
-            p0=self.p0, 
-            bounds=(self.lower_bound, self.upper_bound), 
-            maxfev=6400
+        Perform Lorentzian curve fitting with bounded least squares.
+
+        Backwards-compatible default:
+            fit_spectrum() behaves as before (single start from self.p0) when n_starts=1.
+        """
+        lb = np.asarray(self.lower_bound, dtype=float).ravel()
+        ub = np.asarray(self.upper_bound, dtype=float).ravel()
+        base_p0 = np.asarray(self.p0, dtype=float).ravel()
+
+        p0_trials = _generate_p0_trials(
+            lb, ub, base_p0=base_p0,
+            n_starts=n_starts, strategy=p0_strategy,
+            random_state=random_state,
         )
 
-        ### Updated in v.0.2.4 ###
-        self.params_fit = params
-        self.params_cov = params_cov
-        ### End of v.0.2.4 update ###
-        return params, params_cov
+        best_params = None
+        best_cov = None
+        best_rmse = np.inf
+        best_p0 = None
+        n_fail = 0
+
+        for p0 in p0_trials:
+            try:
+                params, params_cov = optimize.curve_fit(
+                    self.lorentzian_raman,
+                    self.wavenumber,
+                    self.intensity_normal,
+                    p0=p0,
+                    bounds=(lb, ub),
+                    maxfev=6400,
+                )
+            except Exception:
+                n_fail += 1
+                continue
+
+            y_hat = self.lorentzian_raman(self.wavenumber, *params)
+            rmse = _rmse(self.intensity_normal, y_hat)
+
+            if rmse < best_rmse:
+                best_rmse = rmse
+                best_params = params
+                best_cov = params_cov
+                best_p0 = p0
+
+        if best_params is None:
+            raise RuntimeError(
+                f"RamanFit.fit_spectrum failed for all starts (n_starts={n_starts}). "
+                "Check bounds/preprocessing, or reduce model complexity."
+            )
+
+        self.params_fit = best_params
+        self.params_cov = best_cov
+
+        diagnostics = {
+            "rmse": float(best_rmse),
+            "n_starts": int(n_starts),
+            "n_fail": int(n_fail),
+            "p0_strategy": str(p0_strategy),
+            "best_p0": np.asarray(best_p0, dtype=float),
+        }
+
+        if diagnose_bounds:
+            at_bounds = _params_at_bounds(np.asarray(best_params, dtype=float), lb, ub, rtol=float(bounds_tol))
+            diagnostics["n_params_at_bounds"] = int(np.count_nonzero(at_bounds))
+            diagnostics["params_at_bounds_mask"] = at_bounds
+
+        self.fit_diagnostics = diagnostics
+
+        if return_diagnostics:
+            return best_params, best_cov, diagnostics
+        return best_params, best_cov
 
     # Method to plot the fitted spectrum along with components
     def plot_fit(self, params, offset=0, scale=1.0, x_lim = [250, 750], y_lim = [],

@@ -1,4 +1,4 @@
-# RamanPL_2D map export
+# RamanPL_2D export
 # map_kind: integration
 # spectrum_type: Photoluminescence
 # x_unit: eV
@@ -8,7 +8,7 @@
 # integration_range: (1.92, 2.02)
 # background_remove: False
 # baseline_method: poly
-#
+# 
 x	y	integration_area
 0.0	0.0	0.39077610185097417
 1.7	0.0	0.4678380208263288

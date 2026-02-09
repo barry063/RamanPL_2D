@@ -1,3 +1,35 @@
+## v0.3.0 — Multi-start mapping fits, diagnostics, and bound-sticking mitigation (2026-02-09)
+
+### Added
+- **Multi-start fitting in mapping (PLMapping / RamanMapping)**
+  - `fit_spectra(..., fit_spectrum_kwargs=...)` now supports running multiple initialisations (`n_starts`)
+    and selecting the best solution by a robust score.
+  - Supported strategies include `p0_strategy="midpoint" | "random" | "jitter"` plus `random_state`.
+- **Per-pixel fitter diagnostics for mapping**
+  - Mapping objects now store per-pixel diagnostics (e.g. `rmse`, `n_starts`, `n_fail`, best initial guess),
+    enabling quantitative QA rather than only visual inspection.
+- **Bound-sticking QA helpers (documented in README)**
+  - Suggested user-facing checks for how often parameters sit on upper/lower bounds, and per-peak breakdown.
+
+### Improved
+- **Normalisation semantics made explicit**
+  - Mapping fitting is performed in **peak-normalised fit space**; the `normalize` flag controls **display/output scaling** only.
+  - This mirrors the intended “fit in normalised space, show either normalised or raw” model used elsewhere.
+- **Robust peak selection for plotting**
+  - Peak name matching in mapping plotting was hardened (exact / case-insensitive / substring matching) to avoid
+    “empty heatmap” failures when peak labels differ slightly (e.g. `E2g` vs `E12g(Γ)`).
+
+### Fixed
+- Fixed PLMapping peak heatmap plotting where exciton/trion position/intensity could silently fail due to
+  label/index mismatch, resulting in blank plots.
+- Fixed mapping failure-mode bookkeeping so unsuccessful pixels are consistently marked and do not corrupt warm-start state.
+
+### Notes
+- `fit_spectrum_kwargs` is accepted by `fit_spectra()` (not `__init__()`), so existing construction code remains compatible.
+- No breaking changes intended for single-spectrum fitting or batch workflows.
+
+------------------------
+
 ## v0.2.9.5 — Batch peak control, statistics, and robustness improvements
 
 ### Added

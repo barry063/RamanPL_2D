@@ -38,11 +38,14 @@ __all__ = [
     "dataImporter",
     "baselineAPI",
     "exporter",
+    "Batch",
+    "batch",
+
 
 ]
 
 # Optional: version string (set manually)
-__version__ = "0.2.9.5"
+__version__ = "0.3.0"
 
 
 # -----------------------
@@ -74,11 +77,15 @@ _LAZY_MAP = {
     "baselineAPI": ("ramanpl", "baselineAPI"),
     "exporter": ("ramanpl", "exporter"),
 
+    # Batch (optional convenience)
+    "Batch": ("ramanpl", "batch"),
+    "batch": ("ramanpl", "batch"),
+
 }
 
 
 def __getattr__(name: str) -> Any:
-    if name in ("Mapping", "operation", "dataImporter", "baselineAPI"):
+    if name in ("Mapping", "operation", "dataImporter", "baselineAPI", "batch"):
         return import_module(f"ramanpl.{name}")
 
     if name not in _LAZY_MAP:

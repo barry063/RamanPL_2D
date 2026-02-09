@@ -366,6 +366,7 @@ def fit_spectra_batch(
     *,
     fitter_cls,
     fitter_kwargs: Optional[dict] = None,
+    fit_spectrum_kwargs: Optional[dict] = None,
     return_fitters: bool = False,
 ):
     """
@@ -380,6 +381,7 @@ def fit_spectra_batch(
       - if return_fitters=True : list[(raw_spectrum, fitted_spectrum, fitter_object)]
     """
     fitter_kwargs = fitter_kwargs or {}
+    fit_spectrum_kwargs = fit_spectrum_kwargs or {}
 
     # Accept either a module (ramanpl.RamanFit) or the class (RamanFit.RamanFit)
     fitter_class = _resolve_fitter_class(fitter_cls)
@@ -398,7 +400,7 @@ def fit_spectra_batch(
         )
 
         # Your fitters use fit_spectrum()
-        fitter.fit_spectrum()
+        fitter.fit_spectrum(**fit_spectrum_kwargs)
 
         # Build fitted spectrum FIRST
         x_fit, y_fit = fitter.get_fitted_spectrum()
@@ -884,7 +886,7 @@ class _BaseBatch:
         self.specs = load_spectra(list(self.files), axis=self.axis)
         return self
 
-    def fit(self, *, return_fitters: bool = True):
+    def fit(self, *, return_fitters: bool = True, fit_spectrum_kwargs: Optional[dict] = None):
         """
         Fit all spectra and cache:
           - self.fits (raw, fit, fitter)
@@ -897,6 +899,7 @@ class _BaseBatch:
             self.specs,
             fitter_cls=self.fitter_module,
             fitter_kwargs=self.fitter_kwargs,
+            fit_spectrum_kwargs=fit_spectrum_kwargs,
             return_fitters=return_fitters,
         )
 

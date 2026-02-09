@@ -24,6 +24,52 @@ from ramanpl import DataImporter
 from typing import Optional, Tuple
 from ramanpl.exporter import params_to_rows, write_table
 
+def _mapping_rng(random_state=None):
+    if random_state is None:
+        return np.random.default_rng()
+    return np.random.default_rng(random_state)
+
+def _mapping_generate_p0_trials(lb, ub, base_p0, n_starts, strategy="midpoint", random_state=None):
+    lb = np.asarray(lb, dtype=float).ravel()
+    ub = np.asarray(ub, dtype=float).ravel()
+    base_p0 = np.asarray(base_p0, dtype=float).ravel()
+
+    if n_starts is None:
+        n_starts = 1
+    n_starts = int(n_starts)
+    if n_starts < 1:
+        n_starts = 1
+
+    strategy = (strategy or "midpoint").lower()
+    if strategy not in {"midpoint", "random", "jitter"}:
+        raise ValueError("p0_strategy must be one of: 'midpoint', 'random', 'jitter'.")
+
+    trials = [base_p0.copy()]
+    if n_starts == 1:
+        return trials
+
+    rng = _mapping_rng(random_state)
+    m = n_starts - 1
+
+    if strategy == "random":
+        for _ in range(m):
+            trials.append(rng.uniform(lb, ub))
+        return trials
+
+    scale = 0.10 * (ub - lb)
+    scale = np.where(scale > 0, scale, 1.0)
+    for _ in range(m):
+        p = base_p0 + rng.normal(loc=0.0, scale=scale)
+        p = np.clip(p, lb, ub)
+        trials.append(p)
+
+    return trials
+
+def _params_at_upper_bounds(params, lb, ub, *, rtol=1e-6, atol=1e-12):
+    params = np.asarray(params, dtype=float).ravel()
+    ub = np.asarray(ub, dtype=float).ravel()
+    return np.isclose(params, ub, rtol=rtol, atol=atol)
+
 def seed_p0_from_coord(mapping_obj, coord, seed_roi=None, *, maxfev=6400):
     """
     Fit ONE spectrum from an already-loaded mapping object and return:
@@ -297,8 +343,8 @@ class PLMapping:
             self.data_range = (float(np.min(self.xdata)), float(np.max(self.xdata)))
 
         num_peaks = len(self.custom_peaks)
-        self.peak_positions = np.zeros((self.Y, self.X, num_peaks))
-        self.peak_intensities = np.zeros((self.Y, self.X, num_peaks))
+        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan)
+        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan)
         self.fitted_params = np.zeros((self.Y, self.X, num_peaks * 3))
         
         ### UPDATED INITIALIZATION in v0.2.2 ###
@@ -498,7 +544,7 @@ class PLMapping:
 
 
 
-    ## UPDATED METHOD in v0.2.3 ##
+    ## UPDATED METHOD in v0.3.0 ##
     def fit_spectra(
         self,
         initial_p0=None,
@@ -508,7 +554,9 @@ class PLMapping:
         reset_on_fail=True,
         row_reset=True,
         warm_start_rmse_gate=0.06,
-        maxfev = 6400
+        maxfev = 6400,
+        fit_spectrum_kwargs=None,
+        fit_normalize=True
     ):
         """
         Fit all map spectra using self.custom_peaks as bounds.
@@ -527,6 +575,8 @@ class PLMapping:
             curve_fit maximum function evaluations.
         warm_start_rmse_gate : float
             RMSE threshold (normalised space) for accepting warm-start propagation.
+        fit_normalize : bool
+            If True, internal scaling for optimisation is normalised
 
         Returns
         -------
@@ -536,8 +586,8 @@ class PLMapping:
             to avoid auto-display.
 
         """
-        import numpy as np
-        from scipy import optimize
+        if fit_spectrum_kwargs is None:
+            fit_spectrum_kwargs = {}
 
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
@@ -601,8 +651,10 @@ class PLMapping:
 
         p0_current = p0_base.copy()
 
-        # Output arrays
+        # Output arrays (added in v0.3.0)
         fitted_params = np.full((self.Y, self.X, n_params), np.nan)
+        self.fit_diagnostics_map = np.empty((self.Y, self.X), dtype=object)
+        self.fit_diagnostics_map[:, :] = None
 
         # Ensure these exist and are float arrays
         if not hasattr(self, "norm_scale_map"):
@@ -612,64 +664,174 @@ class PLMapping:
 
         for j in range(self.Y):
             for i in range(self.X):
-                raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
-                spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
+                # --- get spectrum for this pixel ---
+                y = self.spectra[j, i, :]
+                if mask is not None:
+                    y = y[mask]
+                x = xdata  # already masked (or full) above
 
-                if spec_norm is None:
-                    self.norm_scale_map[j, i] = np.nan
+                # --- normalisation (KEEP your existing behaviour) ---
+                # If your existing code already fills norm_scale_map/residual_map, keep it consistent.
+                y = y.astype(float)
+
+                if fit_normalize:
+                    s = np.nanmax(y)
+                    if not np.isfinite(s) or s == 0:
+                        s = 1.0
+                    self.norm_scale_map[j, i] = s
+                    y_fitspace = y / s
+                else:
+                    self.norm_scale_map[j, i] = 1.0
+                    y_fitspace = y
+
+
+                # (If you already do baseline removal / smoothing in Mapping, do it here exactly as before.)
+                # IMPORTANT: do not duplicate preprocessing in PLfit at this stage.
+
+                # --- multi-start setup ---
+                n_starts = int(fit_spectrum_kwargs.get("n_starts", 1))
+                p0_strategy = fit_spectrum_kwargs.get("p0_strategy", "midpoint")
+                random_state = fit_spectrum_kwargs.get("random_state", None)
+
+                p0_trials = _mapping_generate_p0_trials(
+                    lower_bound, upper_bound, p0_current,
+                    n_starts=n_starts,
+                    strategy=p0_strategy,
+                    random_state=random_state,
+                )
+
+                best_params = None
+                best_cov = None
+                best_rmse = np.inf
+                best_p0 = None
+                n_fail = 0
+
+                # --- new: consistent selection controls ---
+                best_score = np.inf
+                best_hits = np.inf
+
+                width_penalty = float(fit_spectrum_kwargs.get("width_penalty", 0.0))  # 0.0 => old behaviour (RMSE-only)
+                prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
+                score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))  # tolerance in score space
+
+                for p0_try in p0_trials:
+                    try:
+                        params, cov = optimize.curve_fit(
+                            self.lorentzian,
+                            x,
+                            y_fitspace,
+                            p0=p0_try,
+                            bounds=(lower_bound, upper_bound),
+                            maxfev=maxfev,
+                        )
+                    except Exception:
+                        n_fail += 1
+                        continue
+
+                    y_hat = self.lorentzian(x, *params)
+                    rmse = float(np.sqrt(np.mean((y_fitspace - y_hat) ** 2)))
+
+                    # count upper-bound hits (diagnostic + tie-breaker)
+                    hits = int(np.count_nonzero(_params_at_upper_bounds(params, lower_bound, upper_bound, rtol=1e-6)))
+
+                    # score: RMSE + (optional) width regularisation
+                    if width_penalty > 0:
+                        widths = np.asarray(params[1::3], dtype=float)
+                        width_ub = np.asarray(upper_bound[1::3], dtype=float)
+                        pen = float(np.mean((widths / width_ub) ** 2))
+                        score = rmse + width_penalty * pen
+                    else:
+                        score = rmse
+
+                    # primary: minimise score
+                    better = score < best_score
+
+                    # tie-break: prefer fewer bound hits when scores are nearly equal (optional)
+                    near_tie = (abs(score - best_score) <= score_tie_tol)
+
+                    if best_params is None or better or (prefer_nonbound and near_tie and hits < best_hits):
+                        best_score = score
+                        best_rmse = rmse
+                        best_params = params
+                        best_cov = cov
+                        best_p0 = p0_try
+                        best_hits = hits
+
+
+                # --- handle fail / success ---
+                if best_params is None:
+                    fitted_params[j, i, :] = np.nan
                     self.residual_map[j, i] = np.nan
+                    self.fit_diagnostics_map[j, i] = {
+                        "ok": False,
+                        "n_starts": n_starts,
+                        "n_fail": n_fail,
+                        "p0_strategy": p0_strategy,
+                    }
+
                     if reset_on_fail:
                         p0_current = p0_base.copy()
                     continue
 
-                # valid spectrum
-                self.norm_scale_map[j, i] = scale
+                # success
+                fitted_params[j, i, :] = best_params
+                self.residual_map[j, i] = float(best_rmse)
+                self.fit_diagnostics_map[j, i] = {
+                    "ok": True,
+                    "rmse": float(best_rmse),
+                    "n_starts": n_starts,
+                    "n_fail": n_fail,
+                    "p0_strategy": p0_strategy,
+                    "best_p0": np.asarray(best_p0, dtype=float),
+                }
+                at_ub = _params_at_upper_bounds(best_params, lower_bound, upper_bound, rtol=1e-6)
+                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_ub))
+                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_ub
 
-                try:
-                    params, _ = optimize.curve_fit(
-                        self.lorentzian,
-                        xdata,
-                        spec_norm,
-                        p0=p0_current,
-                        bounds=(lower_bound, upper_bound),
-                        maxfev=maxfev
-                    )
 
-                    # Residual (fit space)
-                    model_norm = self.lorentzian(xdata, *params)
-                    residual_norm = spec_norm - model_norm
-                    rmse_norm = np.sqrt(np.mean(residual_norm ** 2))
-                    self.residual_map[j, i] = rmse_norm
+                # --- derive peak centre + peak height per component ---
+                # best_params ordering: [centre, width(scale), amp] repeated
+                n_peaks = len(self.peak_params)
+                for k in range(n_peaks):
+                    idx = 3 * k
+                    centre = float(best_params[idx])
+                    width  = float(best_params[idx + 1])
+                    amp    = float(best_params[idx + 2])
 
-                    fitted_params[j, i, :] = params
+                    self.peak_positions[j, i, k] = centre
 
-                    # Store peak positions and intensities
-                    for k, _ in enumerate(self.peak_params):
-                        idx = 3 * k
-                        center, width, amp = params[idx:idx + 3]
-                        self.peak_positions[j, i, k] = center
+                    # Peak height at x = centre for your Lorentzian definition:
+                    # height = amp / (pi * width)
+                    if (not np.isfinite(width)) or width <= 0:
+                        height_fitspace = np.nan
+                    else:
+                        height_fitspace = amp / (np.pi * width)
 
-                        peak_height_norm = amp / (np.pi * width)
-                        if self.normalize:
-                            self.peak_intensities[j, i, k] = peak_height_norm
+                    # Convert to display convention:
+                    # - if self.normalize: store fit-space height (dimensionless if fit_normalize=True)
+                    # - else: store raw height using the per-pixel scale ONLY when fit_normalize=True
+                    if self.normalize:
+                        self.peak_intensities[j, i, k] = height_fitspace
+                    else:
+                        if fit_normalize:
+                            self.peak_intensities[j, i, k] = height_fitspace * float(self.norm_scale_map[j, i])
                         else:
-                            self.peak_intensities[j, i, k] = peak_height_norm * scale
+                            # already fit in raw intensity space
+                            self.peak_intensities[j, i, k] = height_fitspace
 
-                    # Gated warm-start
-                    if warm_start:
-                        if rmse_norm <= warm_start_rmse_gate:
-                            p0_current = params
-                        else:
-                            if reset_on_fail:
-                                p0_current = p0_base.copy()
 
-                except (RuntimeError, ValueError):
-                    self.residual_map[j, i] = np.nan
-                    # keep the scale (it was valid), but reset p0 if requested
+                # warm-start update (respect your RMSE gate)
+                if warm_start and best_rmse <= warm_start_rmse_gate:
+                    p0_current = np.asarray(best_params, dtype=float)
+                else:
                     if reset_on_fail:
                         p0_current = p0_base.copy()
-                    continue
+
+
+            # Row reset    
+            if row_reset:
+                p0_current = p0_base.copy()
 
         n_fit = np.sum(~np.isnan(self.residual_map))
         print(f"Successful fits: {n_fit} / {self.X * self.Y}")
@@ -1616,20 +1778,21 @@ class RamanMapping:
 
         return np.asarray(y_ref, dtype=float).ravel(), np.asarray(self.wavenumber, dtype=float).ravel()
 
-    ### NEW METHOD IN v0.2.4 ###
-    def _preprocess_single_spectrum(self, xdata, spec):
+    ### UPDATED IN v0.3.0 ###
+    def _preprocess_single_spectrum(self, xdata, spec, *, fit_normalize: bool = True):
         """
-        Preprocessing for fitting (always normalised):
+        Preprocessing for fitting:
         1) optional smoothing
         2) optional background removal
-        3) normalisation by peak intensity
+        3) optional peak normalisation (fit space)
 
         Returns
         -------
-        y_norm : ndarray or None
-            Peak-normalised spectrum for fitting
+        y_out : ndarray or None
+            Preprocessed spectrum. Normalised if fit_normalize=True.
         scale : float or None
-            Peak intensity used for scaling back (raw units)
+            Peak intensity used for scaling back (raw units). If fit_normalize=False,
+            scale is still returned for display/export convenience.
         """
         y = np.asarray(spec, dtype=float)
 
@@ -1639,11 +1802,15 @@ class RamanMapping:
         if self.background_remove:
             y = self.remove_background(xdata, y)
 
-        scale = np.max(y)
-        if scale <= 0:
+        scale = np.nanmax(y)
+        if (not np.isfinite(scale)) or scale <= 0:
             return None, None
 
-        return y / scale, scale
+        if fit_normalize:
+            return y / scale, float(scale)
+        else:
+            return y, float(scale)
+
     
     @staticmethod
     def custom_peaks_from_ramanfit(raman_fit):
@@ -1736,7 +1903,7 @@ class RamanMapping:
 
 
 
-    ### UPDATED METHOD IN v0.2.4 ###
+    ### UPDATED METHOD IN v0.3.0 ###
     def fit_spectra(
         self,
         initial_p0=None,
@@ -1746,8 +1913,11 @@ class RamanMapping:
         reset_on_fail=True,
         row_reset=True,
         warm_start_rmse_gate=0.06,
-        maxfev = 6400
+        maxfev=6400,
+        fit_spectrum_kwargs=None,
+        fit_normalize=True,
     ):
+
 
         """
         Fit all map spectra using self.custom_peaks as bounds.
@@ -1767,6 +1937,9 @@ class RamanMapping:
             to avoid auto-display.
 
         """
+        if fit_spectrum_kwargs is None:
+            fit_spectrum_kwargs = {}
+
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising RamanMapping.")
 
@@ -1859,6 +2032,10 @@ class RamanMapping:
 
         # outputs
         fitted_params = np.full((self.Y, self.X, n_params), np.nan)
+        
+        # Per-pixel diagnostics (added in v0.3.0)
+        self.fit_diagnostics_map = np.empty((self.Y, self.X), dtype=object)
+        self.fit_diagnostics_map[:, :] = None
 
         # ensure maps exist
         if not hasattr(self, "norm_scale_map"):
@@ -1878,82 +2055,251 @@ class RamanMapping:
             for i in range(self.X):
                 raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
-                spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
-                if spec_norm is None:
+                spec_fit, scale = self._preprocess_single_spectrum(xdata, raw_spec, fit_normalize=fit_normalize)
+                if spec_fit is None:
                     self.norm_scale_map[j, i] = np.nan
                     self.residual_map[j, i] = np.nan
+                    self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
                     if reset_on_fail:
                         p0_current = p0_base.copy()
                     continue
 
-                self.norm_scale_map[j, i] = scale
+                self.norm_scale_map[j, i] = float(scale)
 
-                try:
-                    params, _ = optimize.curve_fit(
-                        self.lorentzian_raman,
-                        xdata,
-                        spec_norm,
-                        p0=p0_current,
-                        bounds=(lower_bound, upper_bound),
-                        maxfev=maxfev
-                    )
+                # ---- multi-start setup ----
+                n_starts = int(fit_spectrum_kwargs.get("n_starts", 1))
+                p0_strategy = fit_spectrum_kwargs.get("p0_strategy", "midpoint")
+                random_state = fit_spectrum_kwargs.get("random_state", None)
 
-                    # residual in fit space (normalised)
-                    model_norm = self.lorentzian_raman(xdata, *params)
-                    residual_norm = spec_norm - model_norm
-                    rmse_norm = np.sqrt(np.mean(residual_norm ** 2))
-                    self.residual_map[j, i] = rmse_norm
+                p0_trials = _mapping_generate_p0_trials(
+                    lower_bound, upper_bound, p0_current,
+                    n_starts=n_starts,
+                    strategy=p0_strategy,
+                    random_state=random_state,
+                )
 
-                    fitted_params[j, i, :] = params
+                best_params = None
+                best_rmse = np.inf
+                best_p0 = None
+                n_fail = 0
 
-                    # store peak centre + intensity (height)
-                    for k in range(n_peaks):
-                        idx = 3 * k
-                        center, width, amp = params[idx:idx + 3]
-                        self.peak_positions[j, i, k] = center
+                best_score = np.inf
+                best_hits = np.inf
 
-                        peak_height_norm = amp / (np.pi * width)
-                        if self.normalize:
-                            self.peak_intensities[j, i, k] = peak_height_norm
-                        else:
-                            self.peak_intensities[j, i, k] = peak_height_norm * scale
+                width_penalty = float(fit_spectrum_kwargs.get("width_penalty", 0.0))
+                prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
+                score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))
 
-                    # derived maps: compute ONCE per pixel (not inside the peak loop)
-                    idx_a1g = self._find_peak_index("A1g")
-                    idx_e2g = self._find_peak_index("E2g")
-                    if idx_e2g is None:
-                        idx_e2g = self._find_peak_index("E12g")
+                for p0_try in p0_trials:
+                    try:
+                        params, _ = optimize.curve_fit(
+                            self.lorentzian_raman,
+                            xdata,
+                            spec_fit,
+                            p0=p0_try,
+                            bounds=(lower_bound, upper_bound),
+                            maxfev=maxfev,
+                        )
+                    except Exception:
+                        n_fail += 1
+                        continue
 
-                    if (idx_a1g is not None) and (idx_e2g is not None):
-                        a1g_pos = self.peak_positions[j, i, idx_a1g]
-                        e2g_pos = self.peak_positions[j, i, idx_e2g]
-                        a1g_I = self.peak_intensities[j, i, idx_a1g]
-                        e2g_I = self.peak_intensities[j, i, idx_e2g]
+                    model = self.lorentzian_raman(xdata, *params)
+                    rmse = float(np.sqrt(np.mean((spec_fit - model) ** 2)))
 
-                        self.Peaks_distance[j, i] = (a1g_pos - e2g_pos) if (np.isfinite(a1g_pos) and np.isfinite(e2g_pos)) else np.nan
-                        self.ratio_A1g_E2g[j, i] = (a1g_I / e2g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and e2g_I > 0) else np.nan
-                        self.ratio_E2g_A1g[j, i] = (e2g_I / a1g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and a1g_I > 0) else np.nan
+
+                    hits = int(np.count_nonzero(_params_at_upper_bounds(params, lower_bound, upper_bound, rtol=1e-6)))
+
+                    # Penalised objective (score)
+                    if width_penalty > 0:
+                        widths = np.asarray(params[1::3], dtype=float)
+                        width_ub = np.asarray(upper_bound[1::3], dtype=float)
+                        pen = float(np.mean((widths / width_ub) ** 2))
+                        score = rmse + width_penalty * pen
                     else:
-                        self.Peaks_distance[j, i] = np.nan
-                        self.ratio_A1g_E2g[j, i] = np.nan
-                        self.ratio_E2g_A1g[j, i] = np.nan
+                        score = rmse
 
-                    # gated warm-start: RMSE + plausibility
-                    if warm_start:
-                        ok_rmse = (rmse_norm <= warm_start_rmse_gate)
-                        ok_params = _params_plausible(params, lower_bound, upper_bound, n_peaks)
+                    # Select by score (primary), with optional tie-break by bound hits
+                    if best_params is None:
+                        best_score = score
+                        best_rmse = rmse
+                        best_params = params
+                        best_p0 = p0_try
+                        best_hits = hits
+                    else:
+                        better = score < best_score
+                        near_tie = abs(score - best_score) <= score_tie_tol
 
-                        if ok_rmse and ok_params:
-                            p0_current = params
-                        else:
-                            if reset_on_fail:
-                                p0_current = p0_base.copy()
+                        if better or (prefer_nonbound and near_tie and hits < best_hits):
+                            best_score = score
+                            best_rmse = rmse
+                            best_params = params
+                            best_p0 = p0_try
+                            best_hits = hits
 
-                except (RuntimeError, ValueError):
+                # ---- fail all starts ----
+                if best_params is None:
                     self.residual_map[j, i] = np.nan
+                    fitted_params[j, i, :] = np.nan
+                    self.fit_diagnostics_map[j, i] = {
+                        "ok": False,
+                        "n_starts": n_starts,
+                        "n_fail": n_fail,
+                        "p0_strategy": p0_strategy,
+                    }
                     if reset_on_fail:
                         p0_current = p0_base.copy()
                     continue
+
+                # ---- success ----
+                self.residual_map[j, i] = best_rmse
+                fitted_params[j, i, :] = best_params
+                self.fit_diagnostics_map[j, i] = {
+                    "ok": True,
+                    "rmse": best_rmse,
+                    "n_starts": n_starts,
+                    "n_fail": n_fail,
+                    "p0_strategy": p0_strategy,
+                    "best_p0": np.asarray(best_p0, dtype=float),
+                }
+                at_ub = _params_at_upper_bounds(best_params, lower_bound, upper_bound, rtol=1e-6)
+                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_ub))
+                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_ub
+
+                # ---- store peak centre + intensity (height) ----
+                for k in range(n_peaks):
+                    idx = 3 * k
+                    center = float(best_params[idx])
+                    width  = float(best_params[idx + 1])
+                    amp    = float(best_params[idx + 2])
+
+                    self.peak_positions[j, i, k] = center
+
+                    if (not np.isfinite(width)) or width <= 0:
+                        height_fitspace = np.nan
+                    else:
+                        height_fitspace = amp / (np.pi * width)
+
+                    # Display convention: normalize=True => store fit-space height
+                    # normalize=False => store raw height using scale only if fit_normalize=True
+                    if self.normalize:
+                        self.peak_intensities[j, i, k] = height_fitspace
+                    else:
+                        if fit_normalize:
+                            self.peak_intensities[j, i, k] = height_fitspace * float(scale)
+                        else:
+                            # already fit in raw intensity space
+                            self.peak_intensities[j, i, k] = height_fitspace
+
+                # ---- derived maps (compute once per pixel) ----
+                idx_a1g = self._find_peak_index("A1g")
+                idx_e2g = self._find_peak_index("E2g")
+                if idx_e2g is None:
+                    idx_e2g = self._find_peak_index("E12g")
+
+                if (idx_a1g is not None) and (idx_e2g is not None):
+                    a1g_pos = self.peak_positions[j, i, idx_a1g]
+                    e2g_pos = self.peak_positions[j, i, idx_e2g]
+                    a1g_I   = self.peak_intensities[j, i, idx_a1g]
+                    e2g_I   = self.peak_intensities[j, i, idx_e2g]
+
+                    self.Peaks_distance[j, i] = (a1g_pos - e2g_pos) if (np.isfinite(a1g_pos) and np.isfinite(e2g_pos)) else np.nan
+                    self.ratio_A1g_E2g[j, i]  = (a1g_I / e2g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and e2g_I > 0) else np.nan
+                    self.ratio_E2g_A1g[j, i]  = (e2g_I / a1g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and a1g_I > 0) else np.nan
+                else:
+                    self.Peaks_distance[j, i] = np.nan
+                    self.ratio_A1g_E2g[j, i]  = np.nan
+                    self.ratio_E2g_A1g[j, i]  = np.nan
+
+                # ---- gated warm-start (RMSE + plausibility) ----
+                if warm_start:
+                    ok_rmse = (best_rmse <= warm_start_rmse_gate)
+                    ok_params = _params_plausible(best_params, lower_bound, upper_bound, n_peaks)
+
+                    if ok_rmse and ok_params:
+                        p0_current = np.asarray(best_params, dtype=float)
+                    else:
+                        if reset_on_fail:
+                            p0_current = p0_base.copy()
+
+                # raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
+
+                # spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
+                # if spec_norm is None:
+                #     self.norm_scale_map[j, i] = np.nan
+                #     self.residual_map[j, i] = np.nan
+                #     if reset_on_fail:
+                #         p0_current = p0_base.copy()
+                #     continue
+
+                # self.norm_scale_map[j, i] = scale
+
+                # try:
+                #     params, _ = optimize.curve_fit(
+                #         self.lorentzian_raman,
+                #         xdata,
+                #         spec_norm,
+                #         p0=p0_current,
+                #         bounds=(lower_bound, upper_bound),
+                #         maxfev=maxfev
+                #     )
+
+                #     # residual in fit space (normalised)
+                #     model_norm = self.lorentzian_raman(xdata, *params)
+                #     residual_norm = spec_norm - model_norm
+                #     rmse_norm = np.sqrt(np.mean(residual_norm ** 2))
+                #     self.residual_map[j, i] = rmse_norm
+
+                #     fitted_params[j, i, :] = params
+
+                #     # store peak centre + intensity (height)
+                #     for k in range(n_peaks):
+                #         idx = 3 * k
+                #         center, width, amp = params[idx:idx + 3]
+                #         self.peak_positions[j, i, k] = center
+
+                #         peak_height_norm = amp / (np.pi * width)
+                #         if self.normalize:
+                #             self.peak_intensities[j, i, k] = peak_height_norm
+                #         else:
+                #             self.peak_intensities[j, i, k] = peak_height_norm * scale
+
+                #     # derived maps: compute ONCE per pixel (not inside the peak loop)
+                #     idx_a1g = self._find_peak_index("A1g")
+                #     idx_e2g = self._find_peak_index("E2g")
+                #     if idx_e2g is None:
+                #         idx_e2g = self._find_peak_index("E12g")
+
+                #     if (idx_a1g is not None) and (idx_e2g is not None):
+                #         a1g_pos = self.peak_positions[j, i, idx_a1g]
+                #         e2g_pos = self.peak_positions[j, i, idx_e2g]
+                #         a1g_I = self.peak_intensities[j, i, idx_a1g]
+                #         e2g_I = self.peak_intensities[j, i, idx_e2g]
+
+                #         self.Peaks_distance[j, i] = (a1g_pos - e2g_pos) if (np.isfinite(a1g_pos) and np.isfinite(e2g_pos)) else np.nan
+                #         self.ratio_A1g_E2g[j, i] = (a1g_I / e2g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and e2g_I > 0) else np.nan
+                #         self.ratio_E2g_A1g[j, i] = (e2g_I / a1g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and a1g_I > 0) else np.nan
+                #     else:
+                #         self.Peaks_distance[j, i] = np.nan
+                #         self.ratio_A1g_E2g[j, i] = np.nan
+                #         self.ratio_E2g_A1g[j, i] = np.nan
+
+                #     # gated warm-start: RMSE + plausibility
+                #     if warm_start:
+                #         ok_rmse = (rmse_norm <= warm_start_rmse_gate)
+                #         ok_params = _params_plausible(params, lower_bound, upper_bound, n_peaks)
+
+                #         if ok_rmse and ok_params:
+                #             p0_current = params
+                #         else:
+                #             if reset_on_fail:
+                #                 p0_current = p0_base.copy()
+
+                # except (RuntimeError, ValueError):
+                #     self.residual_map[j, i] = np.nan
+                #     if reset_on_fail:
+                #         p0_current = p0_base.copy()
+                #     continue
 
         self.fitted_params = fitted_params
         n_fit = np.sum(~np.isnan(self.residual_map))

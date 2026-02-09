@@ -158,15 +158,120 @@ from ramanpl import RamanFit
 
 **This approach is transient – it must be repeated each time the Python kernel restarts unless automated via environment variables or startup scripts.**
 
+
+
 ### 7. Run Example Notebook
 
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
 
 
+------
+
+## Multi-start fitting (v0.3.0)
+
+Multi-start fitting reduces “bound-sticking” artefacts in multi-peak Lorentzian models by running several fits from different initial guesses (`p0` trials) and selecting the best result (lowest score / RMSE with optional penalties).
+
+### How it works
+- Fitting is performed in **peak-normalised space** for stability.
+- The fitter generates `n_starts` initial guesses using one of:
+  - `p0_strategy="midpoint"`: midpoint of bounds (baseline behaviour)
+  - `p0_strategy="random"`: uniform random within bounds
+  - `p0_strategy="jitter"`: Gaussian perturbations around the current `p0`, clipped to bounds
+- The best candidate is selected using RMSE (and optionally a penalty term for width “inflation” toward its upper bound).
+
+### Example (Raman mapping)
+
+```python
+from ramanpl import Mapping
+
+custom_peaks = {
+    "E2g":   ([348, 0, 0], [360, 10, 10]),
+    "A1g":   ([418, 0, 0], [424, 10, 10]),
+    "Si":    ([518, 0, 0], [525, 20, 10]),
+    "2LA(M)":([340, 0, 0], [350,  5,  5]),
+}
+
+raman_map = Mapping.RamanMapping(
+    "Mapping Raman Sample.wdf",
+    custom_peaks=custom_peaks,
+    data_range=(320, 560),
+    normalize=True,            # display scaling only
+    background_remove=True,
+    step_size=0.5,
+)
+
+_ = raman_map.fit_spectra(
+    warm_start=True,
+    fit_spectrum_kwargs=dict(
+        n_starts=10,
+        p0_strategy="jitter",
+        random_state=0,
+        # optional robustness knobs if exposed in your build:
+        # width_penalty=0.25,
+        # prefer_nonbound=True,
+        # rmse_tie_tol=1e-3,
+    )
+)
+```
+
+## Verifying bound-sticking (QA check)
+
+After fitting, you can quantify how often fitted parameters sit on their bounds. This is a practical sanity check for over-restrictive bounds or model misspecification.
+
+### Generic bound-hit check from fitted parameters
+```python
+import numpy as np
+
+def bounds_from_custom_peaks(custom_peaks):
+    lb, ub = [], []
+    for v in custom_peaks.values():
+        lb.extend(v[0]); ub.extend(v[1])
+    return np.asarray(lb, float), np.asarray(ub, float)
+
+def bound_hit_report(mapping_obj, *, rtol=1e-6, atol=1e-12):
+    lb, ub = bounds_from_custom_peaks(mapping_obj.custom_peaks)
+    P = np.asarray(mapping_obj.fitted_params, float)  # shape [Y, X, 3*n_peaks]
+    P2 = P.reshape(-1, P.shape[-1])
+
+    valid = np.isfinite(P2).all(axis=1)
+    P2 = P2[valid]
+
+    hit_upper = np.isclose(P2, ub, rtol=rtol, atol=atol)
+    hit_lower = np.isclose(P2, lb, rtol=rtol, atol=atol)
+
+    centres_u = hit_upper[:, 0::3].mean(axis=0)
+    widths_u  = hit_upper[:, 1::3].mean(axis=0)
+    amps_u    = hit_upper[:, 2::3].mean(axis=0)
+
+    names = list(mapping_obj.custom_peaks.keys())
+    print("Peaks:", names)
+    print("Upper-bound hit fraction per peak (centre):", centres_u)
+    print("Upper-bound hit fraction per peak (width) :", widths_u)
+    print("Upper-bound hit fraction per peak (amp)   :", amps_u)
+    print("Overall upper-bound hit fraction centre:", float(hit_upper[:,0::3].mean()))
+    print("Overall upper-bound hit fraction width :", float(hit_upper[:,1::3].mean()))
+    print("Overall upper-bound hit fraction amp   :", float(hit_upper[:,2::3].mean()))
+
+    return dict(
+        peaks=names,
+        upper_centre=centres_u, upper_width=widths_u, upper_amp=amps_u,
+        lower_centre=hit_lower[:,0::3].mean(axis=0),
+        lower_width =hit_lower[:,1::3].mean(axis=0),
+        lower_amp   =hit_lower[:,2::3].mean(axis=0),
+    )
+
+# usage:
+# rep = bound_hit_report(raman_map)
+```
+
+-------
+
 ## To-do
 
-- (v0.3.0) Add Monte-Carlo peak-fitting functionalities so that best-fit is easier to get.
+- (v0.3.3) Add **pseudo-Voigt** peak model option for Raman/PL fitting and mapping (user-selectable line shape).
+- (v0.3.3) Add model-selection / QA utilities (e.g. AIC/BIC or cross-validated residual metrics) to compare Lorentzian vs pseudo-Voigt.
+- (v0.3.3) Add clearer documentation and examples for diagnosing width upper-bound saturation and improving physically-motivated bounds.
 
 ## License
 
