@@ -40,12 +40,12 @@ __all__ = [
     "exporter",
     "Batch",
     "batch",
-
+    "peak_models",
 
 ]
 
 # Optional: version string (set manually)
-__version__ = "0.3.0"
+__version__ = "0.3.3"
 
 
 # -----------------------
@@ -81,6 +81,8 @@ _LAZY_MAP = {
     "Batch": ("ramanpl", "batch"),
     "batch": ("ramanpl", "batch"),
 
+    # Peak models (public API)
+    "peak_models":("ramanpl", "peak_models")
 }
 
 

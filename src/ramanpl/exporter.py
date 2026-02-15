@@ -18,8 +18,8 @@ class FitExportRow:
     fwhm: float
     scale: float
     amp: float
-    height_norm: float
-    height_scaled: float
+    peak_height_norm: float
+    peak_height: float
 
 
 def _safe_float(x: Any) -> float:
@@ -64,11 +64,11 @@ def params_to_rows(
 
         # Avoid division by zero / negative scale
         if not math.isfinite(scale) or scale <= 0:
-            height_norm = float("nan")
+            peak_height_norm = float("nan")
         else:
-            height_norm = amp / (math.pi * scale)
+            peak_height_norm = amp / (math.pi * scale)
 
-        height_scaled = height_norm * float(intensity_scale)
+        peak_height = peak_height_norm * float(intensity_scale)
 
         rows.append(
             FitExportRow(
@@ -77,8 +77,8 @@ def params_to_rows(
                 fwhm=fwhm,
                 scale=scale,
                 amp=amp,
-                height_norm=height_norm,
-                height_scaled=height_scaled,
+                peak_height_norm=peak_height_norm,
+                peak_height=peak_height,
             )
         )
     return rows
@@ -117,8 +117,8 @@ def write_rows(
         "FWHM",
         "Scale",
         "Amp",
-        "Height_norm",
-        "Height_scaled",
+        "PeakHeight_norm",
+        "PeakHeight",
     ]
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
@@ -142,8 +142,8 @@ def write_rows(
                 r.fwhm,
                 r.scale,
                 r.amp,
-                r.height_norm,
-                r.height_scaled,
+                r.peak_height_norm,
+                r.peak_height,
             ])
 
     return out_path

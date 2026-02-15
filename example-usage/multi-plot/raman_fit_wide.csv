@@ -19,7 +19,7 @@
 # fitter_class: RamanFit
 # n_spectra: 3
 # 
-source,2LA(M)-2E22g_fwhm,2LA(M)-2E22g_intensity,2LA(M)-2E22g_position,2LA(M)-E22g_fwhm,2LA(M)-E22g_intensity,2LA(M)-E22g_position,2LA(M)_fwhm,2LA(M)_intensity,2LA(M)_position,3LA(K)_fwhm,3LA(K)_intensity,3LA(K)_position,4LA(M)_fwhm,4LA(M)_intensity,4LA(M)_position,A1g_fwhm,A1g_intensity,A1g_position,B1/u_fwhm,B1/u_intensity,B1/u_position,E12g_fwhm,E12g_intensity,E12g_position,Si_fwhm,Si_intensity,Si_position,condition
-765C_Raman.txt,20,2.90693,305,20,4.7327,322.379,4.04247,29.8678,348.146,10,2.3772,570,20,3.38343,710,10,1.77187e-07,424,10,5.32706,413,3.18601,20.2823,356.881,5.73859,454.296,520.044,765
-805C_Raman.txt,3.35787,89.5724,297.171,20,197.942,325.185,10,632.038,348.715,10,54.7433,580,20,49.599,700.532,3.281,268.035,419.97,3.3706,189.359,416.5,6.93665,987.021,354.685,4.58331,1046.24,520.834,805
-830C_Raman.txt,20,197.758,295.326,20,767.961,325.088,10,2875.98,349.66,10,272.106,580,20,208.066,699.062,4.59889,1364.65,420.495,4.22051,603.678,416.475,7.12983,2982.22,354.886,8.17021,772.332,521.311,830
+source,2LA(M)-2E22g_fwhm,2LA(M)-2E22g_peak_height,2LA(M)-2E22g_position,2LA(M)-E22g_fwhm,2LA(M)-E22g_peak_height,2LA(M)-E22g_position,2LA(M)_fwhm,2LA(M)_peak_height,2LA(M)_position,3LA(K)_fwhm,3LA(K)_peak_height,3LA(K)_position,4LA(M)_fwhm,4LA(M)_peak_height,4LA(M)_position,A1g_fwhm,A1g_peak_height,A1g_position,B1/u_fwhm,B1/u_peak_height,B1/u_position,E12g_fwhm,E12g_peak_height,E12g_position,Si_fwhm,Si_peak_height,Si_position,condition
+765C_Raman.txt,20,2.90693,305,20,4.73269,322.379,4.04247,29.8678,348.146,10,2.3772,570,20,3.38343,710,10,1.77291e-07,424,10,5.32706,413,3.18601,20.2823,356.881,5.73859,454.296,520.044,765
+805C_Raman.txt,3.35787,89.5724,297.171,20,197.942,325.185,10,632.037,348.715,10,54.7433,580,20,49.599,700.532,3.281,268.035,419.97,3.3706,189.359,416.5,6.93666,987.022,354.685,4.58331,1046.24,520.834,805
+830C_Raman.txt,20,197.758,295.326,20,767.961,325.088,10,2875.98,349.66,10,272.106,580,20,208.066,699.062,4.59889,1364.65,420.495,4.22052,603.678,416.475,7.12983,2982.22,354.886,8.17021,772.332,521.311,830

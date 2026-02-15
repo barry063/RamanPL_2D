@@ -8,7 +8,6 @@ Classes:
     RamanFit: Main class for processing, fitting, and visualizing Raman spectra.
     DataImporter: Class for importing Raman data from .wdf and .txt files (single spectrum only)
 """
-from renishawWiRE import WDFReader
 import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
@@ -18,7 +17,6 @@ import os
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
 from ramanpl.exporter import params_to_rows, write_rows
-
 
 
 class DataImporter:
@@ -150,8 +148,6 @@ class RamanFit:
         Modify fitting bounds for specific peaks
     remove_peaks(*peak_names)
         Remove peaks from fitting model
-    lorentzian_raman(x, *params)
-        Lorentzian distribution function for fitting
     fit_spectrum()
         Perform curve fitting
     plot_fit(params, **kwargs)
@@ -174,6 +170,7 @@ class RamanFit:
         custom_peaks=None,
         remove_peaks=None,
         peak_order=None,
+        peak_profile: str = "lorentzian"
     ):
         """Initialize RamanFit analyzer with data and processing parameters.
 
@@ -218,6 +215,14 @@ class RamanFit:
         self.upper_bound = []
         self.peak_labels = []
 
+        # ------------------------------
+        # Peak profile (Lorentzian vs pseudo-Voigt)
+        # ------------------------------
+        self.peak_profile = str(peak_profile).lower().strip()
+        if self.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+
         # Store user intent for reproducibility/metadata
         self.custom_peaks = custom_peaks
         self.remove_peaks_list = list(remove_peaks) if remove_peaks is not None else []
@@ -241,10 +246,14 @@ class RamanFit:
 
             self.peak_labels = list(peak_order_eff)
 
+            expected = self.params_per_peak
             for name in self.peak_labels:
                 lb, ub = custom_peaks[name]
-                if len(lb) != 3 or len(ub) != 3:
-                    raise ValueError(f"Peak '{name}' bounds must be length-3 lists: [centre, width, amp]")
+                if len(lb) != expected or len(ub) != expected:
+                    if expected == 3:
+                        raise ValueError(f"Peak '{name}' bounds must be length-3 lists: [centre, width(HWHM), amp(area)]")
+                    else:
+                        raise ValueError(f"Peak '{name}' bounds must be length-4 lists: [centre, FWHM, amp(area), eta]")
                 self.lower_bound += list(lb)
                 self.upper_bound += list(ub)
 
@@ -374,12 +383,7 @@ class RamanFit:
                 material_lib = json.load(f)
         except FileNotFoundError:
             raise ValueError(f"Material library file not found at: {json_path}")
-        
-        # # Clear defaults when materials are specified
-        # self.lower_bound = []
-        # self.upper_bound = []
-        # self.peak_labels = []
-        
+                
         for material in materials:
             if material not in material_lib:
                 raise ValueError(f"Material '{material}' not found in library")
@@ -390,22 +394,35 @@ class RamanFit:
             ub = params['upper_bound']
             labels = params['peak_labels']
 
+            # Updated in v0.3.3
             # Append peaks but avoid duplicated peak labels (prevents WS2 double-loading etc.)
             for k, name in enumerate(labels):
                 if name in self.peak_labels:
                     continue
+
+                # library is Lorentzian-style: [centre, HWHM, area_amp]
+                lb3 = lb[3*k:3*k+3]
+                ub3 = ub[3*k:3*k+3]
+
                 self.peak_labels.append(name)
-                self.lower_bound.extend(lb[3*k:3*k+3])
-                self.upper_bound.extend(ub[3*k:3*k+3])
-            ### End of v.0.2.4 update ###
+
+                if self.peak_profile == "lorentzian":
+                    self.lower_bound.extend(lb3)
+                    self.upper_bound.extend(ub3)
+                else:
+                    # pVoigt expects width = FWHM. Convert Lorentzian HWHM -> FWHM by *2.
+                    c_lb, hwhm_lb, a_lb = lb3
+                    c_ub, hwhm_ub, a_ub = ub3
+
+                    self.lower_bound.extend([c_lb, 2.0*hwhm_lb, a_lb, 0.01])
+                    self.upper_bound.extend([c_ub, 2.0*hwhm_ub, a_ub, 0.99])
 
         # Verify parameter consistency
-        param_count = len(self.lower_bound)
-        if (len(self.upper_bound) != param_count or 
-            3 * len(self.peak_labels) != param_count):
-            raise ValueError("Invalid parameter dimensions in material library")
+        stride = self.params_per_peak
+        if (len(self.upper_bound) !=  stride * len(self.peak_labels)):
+            raise ValueError("Invalid parameter dimensions after loading peaks (stride mismatch).")
 
-    ### Added in v.0.2.4 ###
+    ### updated in v0.3.3 ###
     def _enforce_peak_order_if_requested(self, peak_order=None):
         """
         Reorder bounds/labels to match a user-provided peak_order (case-insensitive).
@@ -425,8 +442,10 @@ class RamanFit:
                 f"Requested: {peak_order}"
             )
 
+        stride = self.params_per_peak
+
         def block(arr, idx):
-            return arr[3*idx:3*idx+3]
+            return arr[stride*idx:stride*idx+stride]
 
         new_lb, new_ub, new_labels = [], [], []
         for name_lower in order_lower:
@@ -472,11 +491,11 @@ class RamanFit:
         x = np.asarray(self.wavenumber, dtype=float).ravel()
 
         # Fit is performed in normalised space; convert back to processed intensity scale
-        y_fit_norm = self.lorentzian_raman(x, *self.params_fit)  # model in normalised space
+        y_fit_norm = self._model(x, *self.params_fit)  # model in normalised space
         y_fit = y_fit_norm * float(self.peak_intensity)
 
         return x.copy(), np.asarray(y_fit, dtype=float).ravel().copy()
-    
+
     ### Added in v0.2.9 ###
     def get_fitted_parameters(self):
         """
@@ -484,8 +503,13 @@ class RamanFit:
 
         Notes
         -----
-        Parameter vector layout is (loc, scale, amp) repeated for each peak
-        in the same order as self.peak_labels.
+        Parameter vector layout depends on peak_profile:
+
+        - lorentzian: (loc, HWHM, amp_area) per peak
+        - pvoigt:     (loc, FWHM, amp_area, eta) per peak
+
+        Reported peak_height/intensity is the *peak maximum* in processed intensity units
+        (i.e. scaled back by peak_intensity when self.normalize=False elsewhere).
         """
         if not hasattr(self, "params_fit") or self.params_fit is None:
             raise RuntimeError("Fit not available. Run fit_spectrum() first.")
@@ -495,37 +519,69 @@ class RamanFit:
 
         p = np.asarray(self.params_fit, dtype=float).ravel()
 
-        expected = 3 * len(self.peak_labels)
+        profile = str(getattr(self, "peak_profile", "lorentzian")).lower().strip()
+        stride = int(getattr(self, "params_per_peak", 3))
+        if profile not in ("lorentzian", "pvoigt"):
+            raise RuntimeError(f"Unsupported peak_profile '{profile}' in get_fitted_parameters().")
+
+        expected = stride * len(self.peak_labels)
         if p.size < expected:
             raise RuntimeError(
                 f"params_fit has length {p.size}, but expected at least {expected} "
-                f"for {len(self.peak_labels)} peaks."
+                f"for {len(self.peak_labels)} peaks (stride={stride})."
             )
 
-        out = {}
+        # Convert fit-space (normalised) peak height back to processed units.
+        # Note: fitting is always normalised, so this is the factor you use everywhere.
         fit_scale = float(self.peak_intensity) if hasattr(self, "peak_intensity") else 1.0
 
+        # For pVoigt peak height, evaluate numerically using the same component model as plot_fit()
+        if profile == "pvoigt":
+            try:
+                from .peak_models import single_peak
+            except Exception:  # pragma: no cover
+                from peak_models import single_peak
+
+        out = {}
+
         for i, name in enumerate(self.peak_labels):
-            idx = 3 * i
-            loc = float(p[idx])
-            scale = float(p[idx + 1])
-            amp = float(p[idx + 2])
+            block = p[stride * i : stride * (i + 1)]
 
-            # In your plot_fit(), you report:
-            #   FWHM = 2 * scale
-            #   peak height (in scaled units) = (amp / (pi * scale)) * fit_scale
-            fwhm = 2.0 * scale
-            height_norm = (amp / (np.pi * scale)) if scale != 0 else np.nan
-            height_scaled = height_norm * fit_scale
+            loc = float(block[0])
+            width = float(block[1])          # HWHM (lorentzian) or FWHM (pvoigt)
+            amp_area = float(block[2])       # area-like amplitude (both profiles)
 
-            out[name] = dict(
+            if profile == "lorentzian":
+                # Historical convention: width is HWHM, so FWHM = 2*HWHM
+                fwhm = 2.0 * width
+                height_norm = (amp_area / (np.pi * width)) if width != 0 else np.nan
+
+            else:
+                # pVoigt convention in your peak_models: width is already FWHM
+                fwhm = width
+                eta = float(block[3])
+                y_comp_norm = single_peak(self.wavenumber, block, profile="pvoigt")
+                height_norm = float(np.max(y_comp_norm))
+
+            height_scaled = float(height_norm * fit_scale)
+
+            row = dict(
                 position=loc,
-                fwhm=fwhm,
-                scale=scale,
-                amp=amp,
+                fwhm=float(fwhm),
+                amp=float(amp_area),
                 height_norm=float(height_norm),
-                intensity=float(height_scaled),  # keep key name "intensity" for batch table compatibility
+                peak_height=float(height_scaled),   # preferred name
+                intensity=float(height_scaled),     # backwards-compatible alias
             )
+
+            # Keep "scale" for Lorentzian compatibility; for pVoigt, store "eta" and optionally "fwhm_param"
+            if profile == "lorentzian":
+                row["scale"] = float(width)  # HWHM
+            else:
+                row["eta"] = float(eta)
+                row["fwhm_param"] = float(width)  # explicit: pVoigt width parameter is FWHM
+
+            out[name] = row
 
         return out
 
@@ -641,6 +697,7 @@ class RamanFit:
         )
     ### End of v.0.2.8 ###
 
+    # Updated v0.3.3
     def load_substrate(self, substrate):
         """Load substrate parameters from JSON material library.
 
@@ -665,43 +722,61 @@ class RamanFit:
             raise ValueError(f"Invalid substrate '{substrate}' or not marked as substrate in library")
         
         params = material_lib[substrate]['peaks']
-        self.lower_bound.extend(params['lower_bound'])
-        self.upper_bound.extend(params['upper_bound'])
-        self.peak_labels.extend(params['peak_labels'])
+        lb = params["lower_bound"]
+        ub = params["upper_bound"]
+        labels = params["peak_labels"]
+
+        for k, name in enumerate(labels):
+            if name in self.peak_labels:
+                continue
+
+            lb3 = lb[3*k:3*k+3]
+            ub3 = ub[3*k:3*k+3]
+
+            self.peak_labels.append(name)
+
+            if self.peak_profile == "lorentzian":
+                self.lower_bound.extend(lb3)
+                self.upper_bound.extend(ub3)
+            else:
+                c_lb, hwhm_lb, a_lb = lb3
+                c_ub, hwhm_ub, a_ub = ub3
+                self.lower_bound.extend([c_lb, 2.0*hwhm_lb, a_lb, 0.01])
+                self.upper_bound.extend([c_ub, 2.0*hwhm_ub, a_ub, 0.99])
     
     def update_bounds(self, **kwargs):
-        """Update fitting constraints for specific peaks.
-
-        Parameters
-        ----------
-        **kwargs : dict
-            Keyword arguments in format {peak_name: ([lb1, lb2, lb3], [ub1, ub2, ub3])}
-            Example: update_bounds(E12g=([350, 0, 0], [360, 5, 10]))
-
-        Raises
-        ------
-        ValueError
-            For unrecognized peak names or invalid bound formats
         """
+        Update fitting constraints for specific peaks.
+
+        kwargs format:
+            peak=([lb...], [ub...])
+
+        For lorentzian: [centre, HWHM, amp(area)]
+        For pvoigt:     [centre, FWHM, amp(area), eta]
+        """
+        stride = self.params_per_peak
+        labels_lower = [p.lower() for p in self.peak_labels]
+
         for peak_name, new_bounds in kwargs.items():
-            if peak_name not in self.peak_labels:
-                raise ValueError(f"Peak '{peak_name}' is not a recognized peak name. Available peaks are: {self.peak_labels}")
+            key = str(peak_name).lower()
+            if key not in labels_lower:
+                raise ValueError(f"Peak '{peak_name}' is not recognised. Available peaks: {self.peak_labels}")
 
-            if not (isinstance(new_bounds, tuple) and len(new_bounds) == 2 and 
-                    isinstance(new_bounds[0], list) and isinstance(new_bounds[1], list) and 
-                    len(new_bounds[0]) == 3 and len(new_bounds[1]) == 3):
-                raise ValueError(f"Bounds for '{peak_name}' must be a tuple of two lists with three elements each.")
+            if not (isinstance(new_bounds, (tuple, list)) and len(new_bounds) == 2):
+                raise ValueError(f"Bounds for '{peak_name}' must be (lb, ub).")
 
-            idx = self.peak_labels.index(peak_name)
+            lb_new, ub_new = new_bounds
+            if len(lb_new) != stride or len(ub_new) != stride:
+                raise ValueError(f"Bounds for '{peak_name}' must be length-{stride} lists (stride={stride}).")
 
-            # Update the lower and upper bounds for the specified peak
-            self.lower_bound[3 * idx:3 * idx + 3] = new_bounds[0]
-            self.upper_bound[3 * idx:3 * idx + 3] = new_bounds[1]
+            idx = labels_lower.index(key)
+            s = stride * idx
 
-            # Update p0 to the midpoint of the new bounds
-            self.p0[3 * idx:3 * idx + 3] = [(new_bounds[0][i] + new_bounds[1][i]) / 2 for i in range(3)]
+            self.lower_bound[s:s+stride] = list(lb_new)
+            self.upper_bound[s:s+stride] = list(ub_new)
+            self.p0[s:s+stride] = [(lb_new[i] + ub_new[i]) / 2 for i in range(stride)]
     
-    
+    ## updated in v0.3.3
     def remove_peaks(self, *peak_names):
         """Remove peaks from fitting model.
 
@@ -715,42 +790,29 @@ class RamanFit:
         ValueError
             If specified peak names are not in current model
         """
+        stride = self.params_per_peak
         for peak_name in peak_names:
-            if peak_name not in self.peak_labels:
-                raise ValueError(f"Peak '{peak_name}' is not a recognized peak name. Available peaks are: {self.peak_labels}")
-            
-            idx = self.peak_labels.index(peak_name)
+            labels_lower = [p.lower() for p in self.peak_labels]
+            key = str(peak_name).lower()
+            if key not in labels_lower:
+                raise ValueError(f"Peak '{peak_name}' is not recognised. Available peaks: {self.peak_labels}")
 
-            # Remove the corresponding parameters, bounds, and label
-            del self.p0[3 * idx:3 * idx + 3]
-            del self.lower_bound[3 * idx:3 * idx + 3]
-            del self.upper_bound[3 * idx:3 * idx + 3]
+            idx = labels_lower.index(key)
+            del self.p0[stride*idx:stride*idx+stride]
+            del self.lower_bound[stride*idx:stride*idx+stride]
+            del self.upper_bound[stride*idx:stride*idx+stride]
             del self.peak_labels[idx]
 
+    ## Added in v0.3.3 (replace lorentzian_raman)
+    def _model(self, x, *params):
+        """Internal model dispatcher (Lorentzian or pseudo-Voigt)."""
+        try:
+            from .peak_models import sum_peaks
+        except Exception:  # pragma: no cover
+            from peak_models import sum_peaks
 
-    # Lorentzian function to fit each peak
-    @staticmethod
-    def lorentzian_raman(x, *params):
-        """Sum of Lorentzian distributions for Raman peak fitting.
-
-        Parameters
-        ----------
-        x : array-like
-            Raman shift values (cm⁻¹)
-        *params : array-like
-            Fitting parameters in groups of three per peak:
-            (loc, scale, amp) × number_of_peaks
-
-        Returns
-        -------
-        ndarray
-            Sum of Lorentzian components evaluated at x positions
-        """
-        L = 0
-        for i in range(0, len(params), 3):
-            loc, scale, amp = params[i:i+3]
-            L += (scale / ((x - loc) ** 2 + scale ** 2)) * amp / np.pi
-        return L
+        profile = "pvoigt" if self.peak_profile == "pvoigt" else "lorentzian"
+        return sum_peaks(np.asarray(x), params, profile=profile, stride=self.params_per_peak)
 
     # Updated in v0.3.0
     def fit_spectrum(
@@ -788,7 +850,7 @@ class RamanFit:
         for p0 in p0_trials:
             try:
                 params, params_cov = optimize.curve_fit(
-                    self.lorentzian_raman,
+                    self._model,
                     self.wavenumber,
                     self.intensity_normal,
                     p0=p0,
@@ -799,7 +861,7 @@ class RamanFit:
                 n_fail += 1
                 continue
 
-            y_hat = self.lorentzian_raman(self.wavenumber, *params)
+            y_hat = self._model(self.wavenumber, *params)
             rmse = _rmse(self.intensity_normal, y_hat)
 
             if rmse < best_rmse:
@@ -839,7 +901,15 @@ class RamanFit:
     # Method to plot the fitted spectrum along with components
     def plot_fit(self, params, offset=0, scale=1.0, x_lim = [250, 750], y_lim = [],
                  x_ticks = [300, 350, 400, 450, 500, 550, 600, 650, 700]):
-        """Visualize fitting results and components.
+        """Visualise fitting results and components (Lorentzian + pseudo-Voigt).
+
+        Notes
+        -----
+        - Fit space is always normalised: intensity_normal = processed_spectra / peak_intensity
+        - self.normalize controls DISPLAY only:
+            * True  -> plot in normalised a.u.
+            * False -> plot in counts
+        - Reported "Peak height" is the peak maximum in DISPLAY units.
 
         Parameters
         ----------
@@ -867,72 +937,112 @@ class RamanFit:
 
         plt.figure()
 
-        # Determine scaling factors based on normalization
-        data_plot = self.processed_spectra * scale + offset
+        profile = str(getattr(self, "peak_profile", "lorentzian")).lower().strip()
+        stride = int(getattr(self, "params_per_peak", 3))
+        p = np.asarray(params, dtype=float).ravel()
+
+        # Display multiplier: convert model (normalised fit space) to display units
+        display_multiplier = 1.0 if self.normalize else float(self.peak_intensity)
+
+        # Display-space spectra
         if self.normalize:
-            fit_scale = 1.0           
+            proc_plot = (self.processed_spectra / self.peak_intensity) * scale + offset
+            raw_plot = (self.raw_spectra / self.peak_intensity) * scale + offset
             plt.yticks([])
         else:
-            fit_scale = self.peak_intensity
+            proc_plot = self.processed_spectra * scale + offset
+            raw_plot = self.raw_spectra * scale + offset
 
         # Plot spectra
-        plt.plot(self.wavenumber, data_plot, 'k-', label='Processed Spectrum')
-        plt.plot(self.wavenumber, self.raw_spectra * scale + offset, 'g-', label='Original Spectrum')
+        plt.plot(self.wavenumber, proc_plot, 'k-', label='Processed Spectrum')
+        plt.plot(self.wavenumber, raw_plot, 'g-', label='Original Spectrum')
 
-        # Calculate and plot fitted curves
-        y_fit = self.lorentzian_raman(self.wavenumber, *params) * fit_scale
-        if self.normalize:
-            plt.plot(self.wavenumber, y_fit * self.peak_intensity, 'b--', label='Fitted Total Curve')
+        # Total fitted curve (fit space -> display space)
+        y_fit_norm = self._model(self.wavenumber, *p)
+        y_fit_plot = (y_fit_norm * display_multiplier) * scale + offset
+        plt.plot(self.wavenumber, y_fit_plot, 'b--', label='Fitted Total Curve')
+
+        # Residual in fit space (normalised)
+        residual = np.sum((self.intensity_normal - y_fit_norm) ** 2) / np.sum(self.intensity_normal ** 2)
+
+        # Component evaluation helper
+        try:
+            from .peak_models import single_peak
+        except Exception:  # pragma: no cover
+            from peak_models import single_peak
+
+        # Print header (style-preserving)
+        if profile == "lorentzian":
+            print("\n{:<20} {:<15} {:<13} {:<14} {:<10}".format(
+                "Peak", "Position(cm⁻¹)", "FWHM(cm⁻¹)", "Peak height", "Scale"
+            ))
+        elif profile == "pvoigt":
+            print("\n{:<20} {:<15} {:<13} {:<14} {:<10} {:<6}".format(
+                "Peak", "Position(cm⁻¹)", "FWHM(cm⁻¹)", "Peak height", "Scale", "eta"
+            ))
         else:
-            plt.plot(self.wavenumber, y_fit , 'b--', label='Fitted Total Curve')
+            raise RuntimeError(f"Unsupported peak_profile '{profile}' in plot_fit().")
 
-        # Print header
-        print("\n{:<20} {:<15} {:<13} {:<12} {:<10}".format(
-            "Peak", "Position(cm⁻¹)", "FWHM(cm⁻¹)", "Intensity", "Scale"))
-        print("-" * 70)
+        print("-" * 80)
 
         # Plot components and calculate parameters
         peak_positions = {}
-        for i in range(len(self.peak_labels)):
-            idx = i * 3
-            loc = params[idx]
-            scale_param = params[idx+1]
-            amp = params[idx+2]
-            
-            # Calculate peak properties
-            fwhm = 2 * scale_param
-            amplitude = (amp / (np.pi * scale_param)) * fit_scale
-            
+
+        for i, name in enumerate(self.peak_labels):
+            block = p[i * stride:(i + 1) * stride]
+            loc = float(block[0])
+
             # Store positions for special peaks
-            peak_positions[self.peak_labels[i]] = loc
-            
-            # Print parameters for all peaks
-            print("{:<20} {:<15.2f} {:<13.2f} {:<12.2f} {:<10.2f}".format(
-                self.peak_labels[i], loc, fwhm, amplitude, scale_param))
+            peak_positions[str(name)] = loc
 
-            # Plot component
-            y_fit_single = (scale_param / ((self.wavenumber - loc)**2 + scale_param**2)) * amp / np.pi * fit_scale
-            # plt.plot(self.wavenumber, y_fit_single, 'r--')
-            if self.normalize:
-                plt.plot(self.wavenumber, y_fit_single * self.peak_intensity, 'r--')
+            # Component in fit space, then display space
+            comp_profile = "pvoigt" if profile == "pvoigt" else "lorentzian"
+            y_comp_norm = single_peak(self.wavenumber, block, profile=comp_profile)
+            y_comp_plot = (y_comp_norm * display_multiplier) * scale + offset
+
+            # Plot component (keep your legacy red dashed style)
+            plt.plot(self.wavenumber, y_comp_plot, 'r--')
+
+            # Peak height (display units)
+            peak_height = float(np.max(y_comp_norm) * display_multiplier)
+
+            if profile == "lorentzian":
+                # width stored as HWHM in your Lorentzian convention
+                scale_param = float(block[1])
+                fwhm = 2.0 * scale_param
+                amp_area = float(block[2])
+
+                print("{:<20} {:<15.2f} {:<13.2f} {:<14.2f} {:<10.2f}".format(
+                    str(name), loc, fwhm, peak_height, scale_param
+                ))
+
             else:
-                plt.plot(self.wavenumber, y_fit_single, 'r--')
+                # pVoigt width stored as FWHM (per your updated peak_models)
+                fwhm = float(block[1])
+                amp_area = float(block[2])
+                eta = float(block[3])
 
-        # Calculate and print E12g-A1g difference if both exist
+                # "Scale" column: keep something meaningful and stable for users.
+                # For pVoigt we print FWHM again as "Scale" to avoid inventing a new parameter name.
+                # (If you prefer, relabel the column to "Width" for pVoigt later.)
+                print("{:<20} {:<15.2f} {:<13.2f} {:<14.2f} {:<10.2f} {:<6.2f}".format(
+                    str(name), loc, fwhm, peak_height, fwhm, eta
+                ))
+
+        # E12g-A1g separation
         if 'E12g' in peak_positions and 'A1g' in peak_positions:
             peak_diff = peak_positions['A1g'] - peak_positions['E12g']
             print(f"\nE12g(Γ)-A1g(Γ) separation: {peak_diff:.2f} cm⁻¹")
 
-        # Print residual
-        fitted_curve = self.lorentzian_raman(self.wavenumber, *params)
-        residual = np.sum((self.intensity_normal - fitted_curve)**2) / np.sum(self.intensity_normal**2)
+        # Residual print (match your legacy wording)
         print(f"\nNormalized Residual: {residual:.4f} (0 = perfect fit)")
 
         # Plot formatting
         plt.xlabel('Raman Shift (cm⁻¹)')
         plt.ylabel('Intensity (a.u.)' if self.normalize else 'Intensity (counts)')
         plt.xlim(x_lim)
-        plt.ylim(y_lim)
+        if y_lim:
+            plt.ylim(y_lim)
         plt.xticks(x_ticks)
         plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
         plt.show()

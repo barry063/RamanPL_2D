@@ -484,9 +484,10 @@ def collect_fit_parameters(
                     peak=peak,
                     position=d["position"],
                     fwhm=d["fwhm"],
-                    intensity=d["intensity"],
+                    peak_height=d["peak_height"],  # NEW: physical meaning (peak max)
                 )
             )
+
 
     return rows
 
@@ -512,13 +513,24 @@ def collect_fit_parameters_from_fitters(
     for raw, _fit, fitter in fits_with_fitters:
         params = fitter.get_fitted_parameters()
         for peak, d in params.items():
+            if "peak_height" in d:
+                peak_height = d["peak_height"]
+            elif "intensity" in d:
+                # legacy fallback (optional — you can delete this branch if you want it strict)
+                peak_height = d["intensity"]
+            else:
+                raise KeyError(
+                    f"Fitter returned params for peak '{peak}' without 'peak_height'. "
+                    f"Available keys: {list(d.keys())}"
+                )
+
             rows.append(
                 dict(
                     source=raw.source,
                     peak=peak,
                     position=d["position"],
                     fwhm=d["fwhm"],
-                    intensity=d["intensity"],
+                    peak_height=peak_height,
                 )
             )
 
@@ -619,11 +631,11 @@ def _infer_metadata_from_fitters(
 
 def parameters_dataframe(rows):
     """
-    Convert list-of-dicts rows (source, peak, position, fwhm, intensity) into a DataFrame.
+    Convert list-of-dicts rows (source, peak, position, fwhm, peak_height) into a DataFrame.
     """
     import pandas as pd
     df = pd.DataFrame(rows)
-    required = {"source", "peak", "position", "fwhm", "intensity"}
+    required = {"source", "peak", "position", "fwhm", "peak_height"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Missing required columns in rows: {sorted(missing)}")
@@ -647,8 +659,8 @@ def plot_fitted_parameters(
     Parameters
     ----------
     df : pandas.DataFrame
-        Long-format table with columns: source, peak, position, fwhm, intensity
-    metric : {"position","fwhm","intensity"}
+        Long-format table with columns: source, peak, position, fwhm, peak_height
+    metric : {"position","fwhm","peak_height"}
         Which fitted parameter to plot.
     peaks : list[str] | None
         Peak names to include. If None, include all peaks.
@@ -661,8 +673,8 @@ def plot_fitted_parameters(
     import numpy as np
     import matplotlib.pyplot as plt
 
-    if metric not in ("position", "fwhm", "intensity"):
-        raise ValueError("metric must be one of: 'position', 'fwhm', 'intensity'.")
+    if metric not in ("position", "fwhm", "peak_height"):
+        raise ValueError("metric must be one of: 'position', 'fwhm', 'peak_height'.")
 
     dff = df.copy()
 
@@ -707,7 +719,7 @@ def plot_fitted_parameters(
         elif metric == "fwhm":
             ylabel = "FWHM (cm$^{-1}$)"
         else:
-            ylabel = "Intensity (a.u.)"
+            ylabel = "Peak height (a.u.)"
 
     ax.set_ylabel(ylabel)
 
@@ -726,7 +738,7 @@ def pivot_parameters(
     *,
     index_col: str = "source",
     peak_col: str = "peak",
-    metrics: tuple[str, ...] = ("position", "fwhm", "intensity"),
+    metrics: tuple[str, ...] = ("position", "fwhm", "peak_height"),
     sep: str = "_",
     aggfunc="first",
 ):
@@ -1092,7 +1104,7 @@ class _BaseBatch:
             raise RuntimeError("No parameter rows cached. Run .fit(return_fitters=True) first.")
 
         # Basic column formatting
-        cols = ["source", "peak", "position", "fwhm", "intensity"]
+        cols = ["source", "peak", "position", "fwhm", "peak_height"]
         print(" | ".join([f"{c:>12s}" for c in cols]))
         print("-" * (15 * len(cols)))
 
@@ -1102,7 +1114,7 @@ class _BaseBatch:
                 f"{str(r.get('peak','')):>12s} | "
                 f"{float(r.get('position', float('nan'))):>12.6g} | "
                 f"{float(r.get('fwhm', float('nan'))):>12.6g} | "
-                f"{float(r.get('intensity', float('nan'))):>12.6g}"
+                f"{float(r.get('peak_height', float('nan'))):>12.6g}"
             )
 
         if len(self.rows) > max_rows:
@@ -1230,7 +1242,7 @@ class _BaseBatch:
     def summary_by_peak(
         self,
         *,
-        metrics: tuple[str, ...] = ("position", "fwhm", "intensity"),
+        metrics: tuple[str, ...] = ("position", "fwhm", "peak_height"),
         percentiles: tuple[float, ...] = (0.05, 0.25, 0.50, 0.75, 0.95),
         dropna: bool = True,
         print_summary: bool = True,
@@ -1252,7 +1264,7 @@ class _BaseBatch:
         ----------
         metrics
             Which columns to summarise (must exist in the long-format df).
-            Default: ("position","fwhm","intensity")
+            Default: ("position", "fwhm", "peak_height")
         percentiles
             Percentiles to include (0..1). Default: (5%,25%,50%,75%,95%)
         print_mode

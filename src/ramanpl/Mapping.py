@@ -522,13 +522,13 @@ class PLMapping:
         Returns:
             Sum of Lorentzian components
         """
-        result = np.zeros_like(x)
-        for i in range(0, len(params), 3):
-            loc = params[i]
-            scale = params[i+1]
-            amp = params[i+2]
-            result += (scale / ((x - loc)**2 + scale**2)) * amp / np.pi
-        return result
+        try:
+            from .peak_models import sum_peaks
+        except Exception:  # pragma: no cover
+            from peak_models import sum_peaks
+
+        return sum_peaks(np.asarray(x), params, profile="lorentzian", stride=3)
+
 
     ### UPDATED METHOD in v0.2.5 ##
     def remove_background(self, xdata, intensity):
@@ -1881,13 +1881,13 @@ class RamanMapping:
         Returns:
             ndarray: Sum of Lorentzian components
         """
-        result = np.zeros_like(x)
-        for i in range(0, len(params), 3):
-            loc = params[i]
-            scale = params[i+1]
-            amp = params[i+2]
-            result += (scale / ((x - loc)**2 + scale**2)) * amp / np.pi
-        return result
+        try:
+            from .peak_models import sum_peaks
+        except Exception:  # pragma: no cover
+            from peak_models import sum_peaks
+
+        return sum_peaks(np.asarray(x), params, profile="lorentzian", stride=3)
+
 
     ### UPDATED METHOD IN v0.2.5 ###
     def remove_background(self, wavenumber, intensity):
