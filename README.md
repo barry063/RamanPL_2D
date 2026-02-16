@@ -6,7 +6,9 @@
 
 - Compatible analysis tools with most Renishaw Raman spectroscopy systems
 - Import and process Raman and PL spectra from `.txt` and `.wdf`
-- Single-spectrum **Lorentzian peak fitting** for Raman and PL
+- Single-spectrum fitting of 2 models for Raman and PL：
+  - **Lorentzian** (default; compatible with materials library)
+  - **Pseudo-Voigt (pVoigt)** — linear combination of Lorentzian and Gaussian
 - **Batch processing** of multiple spectra (RamanBatch / PLBatch):
   - automated fitting across many spectra
   - consistent peak parameter extraction (position, FWHM, intensity)
@@ -53,6 +55,7 @@ RamanPL_2D/
     │ │ ├── PLfit.py                  # Class modules for Raman spectra fitting and plotting
     │ │ ├── baselinAPI.py             # Helper codes for Raman/PL background subtration
     │ │ ├── dataImporter.py           # Helper codes for importing .wdf/.txt data files
+    │ │ ├── peak_model.py             # Helper codes for calling lorentzian/pesudo-voigt model when fitting
     │ │ ├── operation.py              # Classs modules for making math operations of multiple data files.
     │ │ ├── batch.py                  # Batch fitting, statistical analysis, plotting, and export of multiple spectra
     │ │ ├── exporter.py               # Classs modules for exporting the fitted data and parameters into .csv files
@@ -269,9 +272,7 @@ def bound_hit_report(mapping_obj, *, rtol=1e-6, atol=1e-12):
 
 ## To-do
 
-- (v0.3.3) Add **pseudo-Voigt** peak model option for Raman/PL fitting and mapping (user-selectable line shape).
-- (v0.3.3) Add model-selection / QA utilities (e.g. AIC/BIC or cross-validated residual metrics) to compare Lorentzian vs pseudo-Voigt.
-- (v0.3.3) Add clearer documentation and examples for diagnosing width upper-bound saturation and improving physically-motivated bounds.
+- v0.3.4 Optimisation of codes and add two-tier fitting in Mapping
 
 ## License
 

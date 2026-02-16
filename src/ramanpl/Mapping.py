@@ -22,7 +22,125 @@ from renishawWiRE import WDFReader
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
 from typing import Optional, Tuple
-from ramanpl.exporter import params_to_rows, write_table
+from ramanpl.exporter import write_table
+from collections import Counter
+try:
+    from .peak_models import single_peak
+except Exception:  # pragma: no cover
+    from peak_models import single_peak
+
+def fit_summary(
+    obj,
+    *,
+    print_summary: bool = True,
+    rmse_quantiles=(0.5, 0.9, 0.95, 0.99),
+):
+    """
+    Summarise mapping fit quality and bound-sticking diagnostics.
+
+    Works for both RamanMapping and PLMapping provided they define:
+      - obj.X, obj.Y
+      - obj.residual_map (RMSE in fit-space; NaN = failed/unfitted)
+      - obj.fit_diagnostics_map: [Y, X] of dicts with keys:
+          ok: bool
+          reason: str (optional, for failures)
+          n_params_at_lower_bounds / n_params_at_upper_bounds (optional)
+    """
+    if not hasattr(obj, "residual_map"):
+        raise AttributeError("Object has no residual_map. Run fit_spectra() first.")
+    if not hasattr(obj, "fit_diagnostics_map"):
+        raise AttributeError("Object has no fit_diagnostics_map. Run fit_spectra() first.")
+
+    Y, X = int(obj.Y), int(obj.X)
+    total = X * Y
+
+    residual = np.asarray(obj.residual_map, dtype=float)
+    ok_mask = np.isfinite(residual)
+
+    n_ok = int(np.count_nonzero(ok_mask))
+    n_fail = total - n_ok
+
+    # Failure reasons (best-effort)
+    reasons = Counter()
+    diag = obj.fit_diagnostics_map
+    for jj in range(Y):
+        for ii in range(X):
+            d = diag[jj, ii]
+            if not isinstance(d, dict):
+                continue
+            if d.get("ok") is False:
+                reasons[str(d.get("reason", "fit_failed"))] += 1
+
+    # Bound sticking stats (best-effort)
+    lower_hits = []
+    upper_hits = []
+    for jj in range(Y):
+        for ii in range(X):
+            d = diag[jj, ii]
+            if not isinstance(d, dict):
+                continue
+            if d.get("ok") is True:
+                if "n_params_at_lower_bounds" in d:
+                    lower_hits.append(int(d["n_params_at_lower_bounds"]))
+                if "n_params_at_upper_bounds" in d:
+                    upper_hits.append(int(d["n_params_at_upper_bounds"]))
+
+    lower_hits = np.asarray(lower_hits, dtype=float) if lower_hits else None
+    upper_hits = np.asarray(upper_hits, dtype=float) if upper_hits else None
+
+    # RMSE stats
+    rmse_vals = residual[ok_mask]
+    rmse_stats = {}
+    if rmse_vals.size:
+        rmse_stats["mean"] = float(np.mean(rmse_vals))
+        rmse_stats["median"] = float(np.median(rmse_vals))
+        for q in rmse_quantiles:
+            rmse_stats[f"q{int(round(q*100))}"] = float(np.quantile(rmse_vals, q))
+
+    out = dict(
+        n_total=total,
+        n_ok=n_ok,
+        n_fail=n_fail,
+        success_rate=(n_ok / total) if total else np.nan,
+        rmse_stats=rmse_stats,
+        failure_reasons=dict(reasons),
+        bounds=dict(
+            lower=dict(
+                mean=float(np.mean(lower_hits)) if lower_hits is not None and lower_hits.size else None,
+                max=int(np.max(lower_hits)) if lower_hits is not None and lower_hits.size else None,
+            ),
+            upper=dict(
+                mean=float(np.mean(upper_hits)) if upper_hits is not None and upper_hits.size else None,
+                max=int(np.max(upper_hits)) if upper_hits is not None and upper_hits.size else None,
+            ),
+        ),
+    )
+
+    if print_summary:
+        print("\n=== Fit summary ===")
+        print(f"Successful fits: {n_ok} / {total} ({100*out['success_rate']:.1f}%)")
+
+        if rmse_stats:
+            q_bits = " | ".join([f"{k}: {v:.4g}" for k, v in rmse_stats.items()])
+            print(f"RMSE (fit-space): {q_bits}")
+
+        if reasons:
+            print("\nFailure reasons:")
+            for k, v in reasons.most_common():
+                print(f"  - {k}: {v}")
+
+        # Only print bound stats if present
+        lb_mean = out["bounds"]["lower"]["mean"]
+        ub_mean = out["bounds"]["upper"]["mean"]
+        if lb_mean is not None or ub_mean is not None:
+            print("\nBound-sticking (params at bounds per successful pixel):")
+            if lb_mean is not None:
+                print(f"  - lower: mean {lb_mean:.3g}, max {out['bounds']['lower']['max']}")
+            if ub_mean is not None:
+                print(f"  - upper: mean {ub_mean:.3g}, max {out['bounds']['upper']['max']}")
+
+    return out
+
 
 def _mapping_rng(random_state=None):
     if random_state is None:
@@ -65,10 +183,43 @@ def _mapping_generate_p0_trials(lb, ub, base_p0, n_starts, strategy="midpoint", 
 
     return trials
 
-def _params_at_upper_bounds(params, lb, ub, *, rtol=1e-6, atol=1e-12):
-    params = np.asarray(params, dtype=float).ravel()
-    ub = np.asarray(ub, dtype=float).ravel()
-    return np.isclose(params, ub, rtol=rtol, atol=atol)
+def _params_at_bounds(params, lb, ub, *, which="both", rtol=1e-6, atol=1e-12):
+    """
+    Return a boolean mask for parameters that are (numerically) at bounds.
+
+    Parameters
+    ----------
+    params, lb, ub : array-like
+        Parameter vector and corresponding lower/upper bounds.
+    which : {"lower", "upper", "both"}
+        Which bounds to check.
+    rtol, atol : float
+        np.isclose tolerances.
+
+    Returns
+    -------
+    mask : ndarray[bool]
+        True where param is at the selected bound(s).
+    """
+    p = np.asarray(params, dtype=float).ravel()
+    lo = np.asarray(lb, dtype=float).ravel()
+    hi = np.asarray(ub, dtype=float).ravel()
+
+    if p.size != lo.size or p.size != hi.size:
+        raise ValueError("params/lb/ub length mismatch.")
+
+    which = (which or "both").lower().strip()
+    if which not in {"lower", "upper", "both"}:
+        raise ValueError("which must be one of: 'lower', 'upper', 'both'.")
+
+    at_lo = np.isclose(p, lo, rtol=rtol, atol=atol)
+    at_hi = np.isclose(p, hi, rtol=rtol, atol=atol)
+
+    if which == "lower":
+        return at_lo
+    if which == "upper":
+        return at_hi
+    return at_lo | at_hi
 
 def seed_p0_from_coord(mapping_obj, coord, seed_roi=None, *, maxfev=6400):
     """
@@ -140,13 +291,15 @@ def seed_p0_from_coord(mapping_obj, coord, seed_roi=None, *, maxfev=6400):
     # midpoint seed
     p0_base = (lower_bound + upper_bound) / 2.0
 
-    # model selection
-    if hasattr(mapping_obj, "lorentzian"):
+    # model selection: respect peak_profile via dispatch if available
+    if hasattr(mapping_obj, "_model_dispatch"):
+        model = mapping_obj._model_dispatch()
+    elif hasattr(mapping_obj, "lorentzian"):
         model = mapping_obj.lorentzian
     elif hasattr(mapping_obj, "lorentzian_raman"):
         model = mapping_obj.lorentzian_raman
     else:
-        raise RuntimeError("mapping_obj must implement lorentzian (PL) or lorentzian_raman (Raman).")
+        raise RuntimeError("mapping_obj must implement _model_dispatch, lorentzian (PL) or lorentzian_raman (Raman).")
 
     # ---- fit ----
     try:
@@ -163,7 +316,15 @@ def seed_p0_from_coord(mapping_obj, coord, seed_roi=None, *, maxfev=6400):
 
     return {"p0": np.asarray(params, dtype=float), "peak_order": list(mapping_obj.peak_params)}
 
-
+def _width_param_to_fwhm(width_param: np.ndarray, profile: str) -> np.ndarray:
+    """Convert model width parameter to FWHM in x-units."""
+    profile = str(profile).lower().strip()
+    w = np.asarray(width_param, dtype=float)
+    if profile == "lorentzian":
+        # width_param is HWHM
+        return 2.0 * w
+    # pvoigt: width_param is already FWHM in your current convention
+    return w
 
 #########################################################################################################################
 
@@ -275,10 +436,22 @@ class PLMapping:
         residual_map (ndarray): Fitting residuals [Y, X]
     """
 
-    def __init__(self, filename, custom_peaks, data_range=None, step_size=0.3,
-                 poly_degree=3, normalize=True, background_remove=True,
-                 baseline_method='poly', smoothing=True, smooth_window=11,
-                 smooth_poly=3, gaussian_sigma=10):
+    def __init__(
+        self,
+        filename,
+        custom_peaks,
+        data_range=None,
+        step_size=0.3,
+        poly_degree=3,
+        normalize=True,
+        background_remove=True,
+        baseline_method="poly",
+        smoothing=True,
+        smooth_window=11,
+        smooth_poly=3,
+        gaussian_sigma=10,
+        peak_profile: str = "lorentzian",
+    ):
         """Initialize PL mapping analyzer.
         
         Args:
@@ -294,14 +467,14 @@ class PLMapping:
             smooth_window: Savitzky-Golay window size
             smooth_poly: Savitzky-Golay polynomial order
             gaussian_sigma: Gaussian filter width
+            peak_profile: str = "lorentzian" or "pvoigt"
         """
-
         self.filename = filename
         self.custom_peaks = custom_peaks
         self.data_range = data_range
         self.step_size = step_size
         self.poly_degree = poly_degree
-        self.normalize = normalize
+        self.normalize = normalize          # DISPLAY flag only (fit-space is always normalised)
         self.background_remove = background_remove
         self.baseline_method = baseline_method
         self.smoothing = smoothing
@@ -310,21 +483,26 @@ class PLMapping:
         self.gaussian_sigma = gaussian_sigma
         self.peak_params = list(custom_peaks.keys())
 
-        # --- identity metadata for exports (added in v0.2.8) ---
+        # --- identity metadata for exports ---
         self.spectrum_type = "Photoluminescence"
         self.x_quantity = "Photon energy"
         self.x_unit = "eV"
-        self.step_unit = "um"  # keep consistent with your plotting labels "μm"
+        self.step_unit = "um"
 
-
-        # New in v0.2.5: Baseline configuration (single source of truth)
+        # Baseline config (single source of truth)
         self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
             baseline_method,
             poly_degree=poly_degree,
-            gaussian_sigma=gaussian_sigma
+            gaussian_sigma=gaussian_sigma,
         )
 
-        # If user supplied a data_range, trim at load-time to reduce memory and speed downstream work.
+        # ---- model choice ----
+        self.peak_profile = str(peak_profile).lower().strip()
+        if self.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+
+        # ---- load mapping data (optionally trimmed) ----
         if self.data_range is not None:
             loader = MappingFileLoader(filename, x_range=self.data_range, axis="energy")
             self._x_trimmed_on_load = True
@@ -338,19 +516,17 @@ class PLMapping:
         self.spectra = loader.spectra
         self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
 
-        # If not provided, default to the full (possibly already trimmed) x-range
         if self.data_range is None:
             self.data_range = (float(np.min(self.xdata)), float(np.max(self.xdata)))
 
+        # ---- allocate output arrays ----
         num_peaks = len(self.custom_peaks)
-        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan)
-        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan)
-        self.fitted_params = np.zeros((self.Y, self.X, num_peaks * 3))
-        
-        ### UPDATED INITIALIZATION in v0.2.2 ###
-        self.residual_map = np.full((self.Y, self.X), np.nan)
-        self.norm_scale_map = np.full((self.Y, self.X), np.nan)
-        ### END UPDATED INITIALIZATION ###
+        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
+        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
+        self.fitted_params = np.full((self.Y, self.X, num_peaks * self.params_per_peak), np.nan, dtype=float)
+
+        self.residual_map = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.norm_scale_map = np.full((self.Y, self.X), np.nan, dtype=float)
 
 
     ### NEW METHOD IN v0.2.7 ###
@@ -373,6 +549,7 @@ class PLMapping:
         smooth_window=11,
         smooth_poly=3,
         gaussian_sigma=10,
+        peak_profile: str = "lorentzian",
     ):
         """
         Create a PLMapping instance from in-memory mapping arrays (no file IO).
@@ -435,13 +612,16 @@ class PLMapping:
         if obj.data_range is None:
             obj.data_range = (float(np.min(obj.xdata)), float(np.max(obj.xdata)))
 
+        obj.peak_profile = str(peak_profile).lower().strip()
+        if obj.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
+
         # Allocate output arrays (same as __init__)
         num_peaks = len(obj.custom_peaks)
-        obj.peak_positions = np.zeros((obj.Y, obj.X, num_peaks))
-        obj.peak_intensities = np.zeros((obj.Y, obj.X, num_peaks))
-        obj.fitted_params = np.zeros((obj.Y, obj.X, num_peaks * 3))
-        obj.residual_map = np.full((obj.Y, obj.X), np.nan)
-        obj.norm_scale_map = np.full((obj.Y, obj.X), np.nan)
+        obj.peak_positions = np.full((obj.Y, obj.X, num_peaks), np.nan)
+        obj.peak_intensities = np.full((obj.Y, obj.X, num_peaks), np.nan)
+        obj.fitted_params = np.full((obj.Y, obj.X, num_peaks * obj.params_per_peak), np.nan)
 
         return obj
 
@@ -542,9 +722,21 @@ class PLMapping:
         )
         return result.y_corrected
 
+    # New in v0.3.3
+    def _model_dispatch(self):
+        if self.peak_profile == "lorentzian":
+            return self.lorentzian
+        return self.pvoigt  # you must implement pvoigt analogous to lorentzian using peak_models.sum_peaks
+
+    def pvoigt(self, x, *params):
+        try:
+            from .peak_models import sum_peaks
+        except Exception:  # pragma: no cover
+            from peak_models import sum_peaks
+        return sum_peaks(np.asarray(x), params, profile="pvoigt", stride=4)
 
 
-    ## UPDATED METHOD in v0.3.0 ##
+    ## UPDATED METHOD in v0.3.3 ##
     def fit_spectra(
         self,
         initial_p0=None,
@@ -556,7 +748,8 @@ class PLMapping:
         warm_start_rmse_gate=0.06,
         maxfev = 6400,
         fit_spectrum_kwargs=None,
-        fit_normalize=True
+        fit_normalize=True,
+        compute_peak_maps=True
     ):
         """
         Fit all map spectra using self.custom_peaks as bounds.
@@ -577,7 +770,8 @@ class PLMapping:
             RMSE threshold (normalised space) for accepting warm-start propagation.
         fit_normalize : bool
             If True, internal scaling for optimisation is normalised
-
+        compute_peak_maps : bool
+            If True, compute the peak maps and store them internally
         Returns
         -------
         params_map : ndarray
@@ -675,20 +869,38 @@ class PLMapping:
                 # If your existing code already fills norm_scale_map/residual_map, keep it consistent.
                 y = y.astype(float)
 
+                # --- preprocessing consistent with your class flags ---
                 if fit_normalize:
-                    s = np.nanmax(y)
-                    if not np.isfinite(s) or s == 0:
-                        s = 1.0
-                    self.norm_scale_map[j, i] = s
-                    y_fitspace = y / s
+                    y_fitspace, s = self._preprocess_single_spectrum(x, y)
+                    if y_fitspace is None:
+                        self.norm_scale_map[j, i] = np.nan
+                        self.residual_map[j, i] = np.nan
+                        self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
+                        if reset_on_fail:
+                            p0_current = p0_base.copy()
+                        continue
+                    self.norm_scale_map[j, i] = float(s)
                 else:
-                    self.norm_scale_map[j, i] = 1.0
-                    y_fitspace = y
+                    # still apply smoothing/background removal, but don't normalise
+                    y_proc = np.asarray(y, dtype=float)
+                    if self.smoothing:
+                        y_proc = savgol_filter(y_proc, self.smooth_window, self.smooth_poly)
+                    if self.background_remove:
+                        y_proc = self.remove_background(x, y_proc)
 
+                    s = np.nanmax(y_proc)
+                    if (not np.isfinite(s)) or s <= 0:
+                        self.norm_scale_map[j, i] = np.nan
+                        self.residual_map[j, i] = np.nan
+                        self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
+                        if reset_on_fail:
+                            p0_current = p0_base.copy()
+                        continue
+
+                    self.norm_scale_map[j, i] = float(s)
+                    y_fitspace = y_proc
 
                 # (If you already do baseline removal / smoothing in Mapping, do it here exactly as before.)
-                # IMPORTANT: do not duplicate preprocessing in PLfit at this stage.
-
                 # --- multi-start setup ---
                 n_starts = int(fit_spectrum_kwargs.get("n_starts", 1))
                 p0_strategy = fit_spectrum_kwargs.get("p0_strategy", "midpoint")
@@ -715,10 +927,11 @@ class PLMapping:
                 prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
                 score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))  # tolerance in score space
 
+                model_fn = self._model_dispatch()
                 for p0_try in p0_trials:
                     try:
                         params, cov = optimize.curve_fit(
-                            self.lorentzian,
+                            model_fn,
                             x,
                             y_fitspace,
                             p0=p0_try,
@@ -729,16 +942,18 @@ class PLMapping:
                         n_fail += 1
                         continue
 
-                    y_hat = self.lorentzian(x, *params)
+                    y_hat = model_fn(x, *params)
                     rmse = float(np.sqrt(np.mean((y_fitspace - y_hat) ** 2)))
+                    
+                    hits = int(np.count_nonzero(_params_at_bounds(params, lower_bound, upper_bound, which="both", rtol=1e-6)))
 
-                    # count upper-bound hits (diagnostic + tie-breaker)
-                    hits = int(np.count_nonzero(_params_at_upper_bounds(params, lower_bound, upper_bound, rtol=1e-6)))
-
-                    # score: RMSE + (optional) width regularisation
+                    # Width penalty: stride-aware
                     if width_penalty > 0:
-                        widths = np.asarray(params[1::3], dtype=float)
-                        width_ub = np.asarray(upper_bound[1::3], dtype=float)
+                        stride = int(self.params_per_peak)
+                        widths = np.asarray(params[1::stride], dtype=float)
+                        width_ub = np.asarray(upper_bound[1::stride], dtype=float)
+                        # avoid divide-by-zero
+                        width_ub = np.where(width_ub > 0, width_ub, 1.0)
                         pen = float(np.mean((widths / width_ub) ** 2))
                         score = rmse + width_penalty * pen
                     else:
@@ -785,39 +1000,46 @@ class PLMapping:
                     "p0_strategy": p0_strategy,
                     "best_p0": np.asarray(best_p0, dtype=float),
                 }
-                at_ub = _params_at_upper_bounds(best_params, lower_bound, upper_bound, rtol=1e-6)
-                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_ub))
-                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_ub
-
+                at_lo = _params_at_bounds(best_params, lower_bound, upper_bound, which="lower", rtol=1e-6)
+                at_hi = _params_at_bounds(best_params, lower_bound, upper_bound, which="upper", rtol=1e-6)
+                self.fit_diagnostics_map[j, i]["n_params_at_lower_bounds"] = int(np.count_nonzero(at_lo))
+                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_hi))
+                self.fit_diagnostics_map[j, i]["params_at_lower_bounds_mask"] = at_lo
+                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_hi
 
                 # --- derive peak centre + peak height per component ---
                 # best_params ordering: [centre, width(scale), amp] repeated
                 n_peaks = len(self.peak_params)
-                for k in range(n_peaks):
-                    idx = 3 * k
-                    centre = float(best_params[idx])
-                    width  = float(best_params[idx + 1])
-                    amp    = float(best_params[idx + 2])
+                stride = int(self.params_per_peak)
 
+                for k in range(n_peaks):
+                    block = np.asarray(best_params[stride*k:stride*(k+1)], dtype=float)
+                    centre = float(block[0])
                     self.peak_positions[j, i, k] = centre
 
-                    # Peak height at x = centre for your Lorentzian definition:
-                    # height = amp / (pi * width)
-                    if (not np.isfinite(width)) or width <= 0:
-                        height_fitspace = np.nan
+                    # peak height in FIT SPACE
+                    if self.peak_profile == "lorentzian":
+                        hwhm = float(block[1])
+                        amp_area = float(block[2])
+                        if (not np.isfinite(hwhm)) or hwhm <= 0:
+                            height_fitspace = np.nan
+                        else:
+                            height_fitspace = amp_area / (np.pi * hwhm)
                     else:
-                        height_fitspace = amp / (np.pi * width)
+                        # pVoigt: height is not your "amp" parameter; compute from the profile
+                        # single_peak returns the (normalised-space) y(x) for that one peak
+                        y_one = single_peak(x, block, profile="pvoigt")
+                        height_fitspace = float(np.nanmax(y_one))
 
                     # Convert to display convention:
-                    # - if self.normalize: store fit-space height (dimensionless if fit_normalize=True)
-                    # - else: store raw height using the per-pixel scale ONLY when fit_normalize=True
+                    # normalize=True  -> store fit-space height
+                    # normalize=False -> store raw height using per-pixel scale when fit_normalize=True
                     if self.normalize:
                         self.peak_intensities[j, i, k] = height_fitspace
                     else:
                         if fit_normalize:
                             self.peak_intensities[j, i, k] = height_fitspace * float(self.norm_scale_map[j, i])
                         else:
-                            # already fit in raw intensity space
                             self.peak_intensities[j, i, k] = height_fitspace
 
 
@@ -886,7 +1108,8 @@ class PLMapping:
         if np.any(np.isnan(params)):
             raise ValueError(f"Fit parameters are NaN at (X={x}, Y={y}). Fit may have failed.")
 
-        fitted_norm = self.lorentzian(xdata, *params)
+        model_fn = self._model_dispatch()
+        fitted_norm = model_fn(xdata, *params)
         fitted_raw = fitted_norm * scale
 
         # --- Plot
@@ -1055,7 +1278,8 @@ class PLMapping:
                     if np.any(np.isnan(params)):
                         continue  # fit failed
 
-                    y_norm = self.lorentzian(specific_xdata, *params)
+                    model_fn = self._model_dispatch()
+                    y_norm = model_fn(np.asarray([specific_xdata], dtype=float), *params)[0]
 
                     if self.normalize:
                         # display normalised model intensity (dimensionless)
@@ -1149,6 +1373,57 @@ class PLMapping:
                 else:
                     yield (i, j, j, i)
 
+    def _params_to_export_dict(self, xaxis, peak_labels, params, intensity_scale=1.0):
+        """
+        Convert a parameter vector into per-peak export dict entries.
+
+        Conventions
+        -----------
+        - Lorentzian: width is HWHM; FWHM = 2*HWHM; peak_height_norm = amp_area/(pi*HWHM)
+        - pVoigt: width parameter is treated as FWHM (consistent with your PLfit/RamanFit pVoigt step);
+                peak_height_norm is computed numerically as max(single_peak(xaxis)).
+        """
+        profile = self.peak_profile
+        stride = int(self.params_per_peak)
+        p = np.asarray(params, dtype=float).ravel()
+        xaxis = np.asarray(xaxis, dtype=float).ravel()
+
+        out = {}
+        for i, name in enumerate(peak_labels):
+            block = p[stride*i:stride*(i+1)]
+            centre = float(block[0])
+
+            if profile == "lorentzian":
+                hwhm = float(block[1])
+                amp_area = float(block[2])
+                fwhm = 2.0 * hwhm
+                peak_height_norm = (amp_area / (np.pi * hwhm)) if hwhm != 0 else np.nan
+                peak_height = float(peak_height_norm * intensity_scale)
+                out[name] = dict(
+                    centre=centre, fwhm=fwhm,
+                    peak_height=peak_height,
+                    peak_height_norm=float(peak_height_norm),
+                    amp=amp_area, scale=hwhm,
+                )
+            else:
+                fwhm = float(block[1])       # pVoigt width treated as FWHM
+                amp_area = float(block[2])
+                eta = float(block[3])
+
+                y_norm = single_peak(xaxis, block, profile="pvoigt")
+                peak_height_norm = float(np.nanmax(y_norm))
+                peak_height = float(peak_height_norm * intensity_scale)
+
+                out[name] = dict(
+                    centre=centre, fwhm=fwhm,
+                    peak_height=peak_height,
+                    peak_height_norm=peak_height_norm,
+                    amp=amp_area, scale=fwhm, eta=eta,
+                )
+
+        return out
+
+
     ### Added in v0.2.8
     def export_fit_map(
         self,
@@ -1173,7 +1448,9 @@ class PLMapping:
         peak_labels = list(self.peak_params)  # authoritative ordering in your mapping class :contentReference[oaicite:14]{index=14}
         fields = ["x", "y"]
 
-        per_peak_fields = ["centre", "fwhm", "height_scaled", "height_norm", "amp", "scale"]
+        per_peak_fields = ["centre", "fwhm", "peak_height", "peak_height_norm", "amp", "scale"]
+        if self.peak_profile == "pvoigt":
+            per_peak_fields.append("eta")
         for p in peak_labels:
             for f in per_peak_fields:
                 fields.append(f"{p}_{f}")
@@ -1190,21 +1467,19 @@ class PLMapping:
             if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
                 intensity_scale = float(self.norm_scale_map[j, i])
 
-            peak_rows = params_to_rows(
-                peak_labels=peak_labels,
-                params=params,
-                intensity_scale=intensity_scale,
-            )
+            per_peak = self._params_to_export_dict(self.xdata, peak_labels, params, intensity_scale=intensity_scale)
 
             r = {"x": x, "y": y}
-            for pr in peak_rows:
-                name = pr.peak
-                r[f"{name}_centre"] = pr.centre
-                r[f"{name}_fwhm"] = pr.fwhm
-                r[f"{name}_height_scaled"] = pr.height_scaled
-                r[f"{name}_height_norm"] = pr.height_norm
-                r[f"{name}_amp"] = pr.amp
-                r[f"{name}_scale"] = pr.scale
+            for name in peak_labels:
+                d = per_peak[name]
+                r[f"{name}_centre"] = d["centre"]
+                r[f"{name}_fwhm"] = d["fwhm"]
+                r[f"{name}_peak_height"] = d["peak_height"]
+                r[f"{name}_peak_height_norm"] = d["peak_height_norm"]
+                r[f"{name}_amp"] = d["amp"]
+                r[f"{name}_scale"] = d["scale"]
+                if self.peak_profile == "pvoigt":
+                    r[f"{name}_eta"] = d["eta"]
 
             rows.append(r)
 
@@ -1593,9 +1868,22 @@ class RamanMapping:
         ratio_A1g_E2g (ndarray): A1g/E2g intensity ratios [Y, X]
         ratio_E2g_A1g (ndarray): E2g/A1g intensity ratios [Y, X]
     """
-    def __init__(self, filename, custom_peaks, data_range, step_size=0.3, poly_degree=3,
-                 normalize=False, background_remove=True, smoothing=True, baseline_method='poly', smooth_window=11,
-                 smooth_poly=3, gaussian_sigma=10):
+    def __init__(
+        self,
+        filename,
+        custom_peaks,
+        data_range,
+        step_size=0.3,
+        poly_degree=3,
+        normalize=False,
+        background_remove=True,
+        smoothing=True,
+        baseline_method="poly",
+        smooth_window=11,
+        smooth_poly=3,
+        gaussian_sigma=10,
+        peak_profile: str = "lorentzian",
+    ):
         """Initialize Raman mapping analyzer.
         
         Args:
@@ -1611,13 +1899,14 @@ class RamanMapping:
             smooth_window: Savitzky-Golay window size
             smooth_poly: Savitzky-Golay polynomial order
             gaussian_sigma: Gaussian filter width
+            peak_profile: str = "lorentzian" or "pvoigt"
         """
         self.filename = filename
         self.custom_peaks = custom_peaks
         self.data_range = data_range
         self.step_size = step_size
         self.poly_degree = poly_degree
-        self.normalize = normalize
+        self.normalize = normalize          # DISPLAY flag only (fit-space can still be normalised)
         self.background_remove = background_remove
         self.smoothing = smoothing
         self.baseline_method = baseline_method
@@ -1626,21 +1915,26 @@ class RamanMapping:
         self.gaussian_sigma = gaussian_sigma
         self.peak_params = list(custom_peaks.keys())
 
-        # --- identity metadata for exports (added in v0.2.8) ---
+        # --- identity metadata for exports ---
         self.spectrum_type = "Raman"
         self.x_quantity = "Raman shift"
         self.x_unit = "cm^-1"
         self.step_unit = "um"
 
-
-        # New in v0.2.5: Baseline configuration (single source of truth)
+        # Baseline config
         self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
             baseline_method,
             poly_degree=poly_degree,
-            gaussian_sigma=gaussian_sigma
+            gaussian_sigma=gaussian_sigma,
         )
 
-        # data_range is mandatory for RamanMapping in your current signature; trim at load-time.
+        # ---- model choice ----
+        self.peak_profile = str(peak_profile).lower().strip()
+        if self.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+
+        # ---- load mapping data (Raman always wavenumber axis) ----
         loader = MappingFileLoader(filename, x_range=self.data_range, axis="wavenumber")
         self._x_trimmed_on_load = True
 
@@ -1649,22 +1943,19 @@ class RamanMapping:
         self.wavenumber = loader.xdata
         self.spectra = loader.spectra
         self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
-        
-        # Initialize arrays with dynamic dimensions based on number of peaks
+
+        # ---- allocate output arrays ----
         num_peaks = len(self.custom_peaks)
+        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
+        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
+        self.fitted_params = np.full((self.Y, self.X, num_peaks * self.params_per_peak), np.nan, dtype=float)
 
-        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan)
-        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan)
-        self.fitted_params = np.full((self.Y, self.X, num_peaks * 3), np.nan)
+        self.residual_map = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.norm_scale_map = np.full((self.Y, self.X), np.nan, dtype=float)
 
-        ## Updated in v0.2.4 ##
-        self.residual_map = np.full((self.Y, self.X), np.nan)
-        self.norm_scale_map = np.full((self.Y, self.X), np.nan)
-        # Initialise derived maps as NaN (so “not computed / invalid” is visible)
         self.Peaks_distance = np.full((self.Y, self.X), np.nan, dtype=float)
         self.ratio_A1g_E2g = np.full((self.Y, self.X), np.nan, dtype=float)
         self.ratio_E2g_A1g = np.full((self.Y, self.X), np.nan, dtype=float)
-        #####################
 
     ### New in v0.2.7 ###
     @classmethod
@@ -1686,6 +1977,7 @@ class RamanMapping:
         smooth_window=11,
         smooth_poly=3,
         gaussian_sigma=10,
+        peak_profile: str = "lorentzian",
     ):
         """
         Create a RamanMapping instance from in-memory mapping arrays (no file IO).
@@ -1729,6 +2021,12 @@ class RamanMapping:
         obj.wavenumber = np.asarray(xdata, dtype=float).ravel()
         obj.spectra = np.asarray(spectra, dtype=float)
 
+        # New in v0.3.3
+        obj.peak_profile = str(peak_profile).lower().strip()
+        if obj.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
+
         # Validate shapes
         if obj.spectra.ndim != 3:
             raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
@@ -1746,7 +2044,7 @@ class RamanMapping:
         num_peaks = len(obj.custom_peaks)
         obj.peak_positions = np.full((obj.Y, obj.X, num_peaks), np.nan)
         obj.peak_intensities = np.full((obj.Y, obj.X, num_peaks), np.nan)
-        obj.fitted_params = np.full((obj.Y, obj.X, num_peaks * 3), np.nan)
+        obj.fitted_params = np.full((obj.Y, obj.X, num_peaks * obj.params_per_peak), np.nan)
 
         obj.residual_map = np.full((obj.Y, obj.X), np.nan)
         obj.norm_scale_map = np.full((obj.Y, obj.X), np.nan)
@@ -1901,9 +2199,20 @@ class RamanMapping:
         )
         return result.y_corrected
 
+    def _model_dispatch(self):
+        if self.peak_profile == "lorentzian":
+            return self.lorentzian_raman
+        return self.pvoigt  # you must implement pvoigt analogous to lorentzian using peak_models.sum_peaks
+
+    def pvoigt(self, x, *params):
+        try:
+            from .peak_models import sum_peaks
+        except Exception:  # pragma: no cover
+            from peak_models import sum_peaks
+        return sum_peaks(np.asarray(x), params, profile="pvoigt", stride=4)
 
 
-    ### UPDATED METHOD IN v0.3.0 ###
+    ### UPDATED METHOD IN v0.3.3 ###
     def fit_spectra(
         self,
         initial_p0=None,
@@ -1944,35 +2253,44 @@ class RamanMapping:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising RamanMapping.")
 
         # ---------- helpers ----------
-        def _params_plausible(params, lb, ub, n_peaks, tol=1e-10):
+        def _params_plausible(params, lb, ub, n_peaks, stride, profile, tol=1e-10):
             """
-            Reject fits that are stuck at bounds or have non-physical widths.
-            params are [center, width, amp] repeated.
+            Reject fits likely stuck at bounds or non-physical.
+            stride = params_per_peak (3 lorentzian, 4 pvoigt)
             """
             params = np.asarray(params, dtype=float)
+            lb = np.asarray(lb, dtype=float)
+            ub = np.asarray(ub, dtype=float)
+
             for k in range(n_peaks):
-                c = params[3*k]
-                w = params[3*k + 1]
-                a = params[3*k + 2]
+                base = stride * k
+                c = params[base + 0]
+                w = params[base + 1]
+                a = params[base + 2]
 
-                # width must be positive and not absurdly small
-                if not np.isfinite(w) or w <= 1e-8:
-                    return False
-
-                # centre/width at bounds often indicates a constrained "fallback" minimum
-                if abs(c - lb[3*k]) < tol or abs(c - ub[3*k]) < tol:
-                    return False
-                if abs(w - lb[3*k + 1]) < tol or abs(w - ub[3*k + 1]) < tol:
+                # width must be positive
+                if (not np.isfinite(w)) or w <= 1e-8:
                     return False
 
-                # amplitude exactly at bound is also suspicious in mapping (can indicate saturation)
-                if abs(a - lb[3*k + 2]) < tol or abs(a - ub[3*k + 2]) < tol:
+                # centre/width at bounds often indicates constrained "fallback"
+                if abs(c - lb[base + 0]) < tol or abs(c - ub[base + 0]) < tol:
                     return False
+                if abs(w - lb[base + 1]) < tol or abs(w - ub[base + 1]) < tol:
+                    return False
+
+                # amplitude at bounds is suspicious in mapping
+                if abs(a - lb[base + 2]) < tol or abs(a - ub[base + 2]) < tol:
+                    return False
+
+                if profile == "pvoigt":
+                    eta = params[base + 3]
+                    # eta should be in [0,1] and not stuck at bounds
+                    if (not np.isfinite(eta)) or eta < -1e-6 or eta > 1 + 1e-6:
+                        return False
+                    if abs(eta - lb[base + 3]) < tol or abs(eta - ub[base + 3]) < tol:
+                        return False
 
             return True
-        
-        # tolerance for "stuck at bound" detection
-        bound_tol = 1e-10
 
         # ---------- mask + x-axis ----------
         if getattr(self, "_x_trimmed_on_load", False):
@@ -1993,6 +2311,11 @@ class RamanMapping:
         upper_bound = np.asarray(upper_bound, dtype=float)
         n_params = lower_bound.size
         n_peaks = len(self.peak_params)
+
+        idx_a1g = self._find_peak_index("A1g")
+        idx_e2g = self._find_peak_index("E2g")
+        if idx_e2g is None:
+            idx_e2g = self._find_peak_index("E12g")
 
         # baseline p0
         p0_base = (lower_bound + upper_bound) / 2.0
@@ -2089,11 +2412,13 @@ class RamanMapping:
                 width_penalty = float(fit_spectrum_kwargs.get("width_penalty", 0.0))
                 prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
                 score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))
-
+                
+                model_fn = self._model_dispatch()
+                stride = int(self.params_per_peak)
                 for p0_try in p0_trials:
                     try:
                         params, _ = optimize.curve_fit(
-                            self.lorentzian_raman,
+                            model_fn,
                             xdata,
                             spec_fit,
                             p0=p0_try,
@@ -2104,17 +2429,21 @@ class RamanMapping:
                         n_fail += 1
                         continue
 
-                    model = self.lorentzian_raman(xdata, *params)
-                    rmse = float(np.sqrt(np.mean((spec_fit - model) ** 2)))
+                    y_hat = model_fn(xdata, *params)
+                    rmse = float(np.sqrt(np.mean((spec_fit - y_hat) ** 2)))
 
-
-                    hits = int(np.count_nonzero(_params_at_upper_bounds(params, lower_bound, upper_bound, rtol=1e-6)))
+                    hits = int(np.count_nonzero(_params_at_bounds(params, lower_bound, upper_bound, which="both", rtol=1e-6)))
 
                     # Penalised objective (score)
                     if width_penalty > 0:
-                        widths = np.asarray(params[1::3], dtype=float)
-                        width_ub = np.asarray(upper_bound[1::3], dtype=float)
-                        pen = float(np.mean((widths / width_ub) ** 2))
+                        widths = np.asarray(params[1::stride], dtype=float)
+                        width_ub = np.asarray(upper_bound[1::stride], dtype=float)
+
+                        fwhm = _width_param_to_fwhm(widths, self.peak_profile)
+                        fwhm_ub = _width_param_to_fwhm(width_ub, self.peak_profile)
+
+                        fwhm_ub = np.where(fwhm_ub > 0, fwhm_ub, 1.0)
+                        pen = float(np.mean((fwhm / fwhm_ub) ** 2))
                         score = rmse + width_penalty * pen
                     else:
                         score = rmse
@@ -2162,38 +2491,54 @@ class RamanMapping:
                     "p0_strategy": p0_strategy,
                     "best_p0": np.asarray(best_p0, dtype=float),
                 }
-                at_ub = _params_at_upper_bounds(best_params, lower_bound, upper_bound, rtol=1e-6)
-                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_ub))
-                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_ub
+                at_lo = _params_at_bounds(best_params, lower_bound, upper_bound, which="lower", rtol=1e-6)
+                at_hi = _params_at_bounds(best_params, lower_bound, upper_bound, which="upper", rtol=1e-6)
+                self.fit_diagnostics_map[j, i]["n_params_at_lower_bounds"] = int(np.count_nonzero(at_lo))
+                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_hi))
+                self.fit_diagnostics_map[j, i]["params_at_lower_bounds_mask"] = at_lo
+                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_hi
 
-                # ---- store peak centre + intensity (height) ----
+                # ---- store peak centre + intensity (peak height) ----
+                stride = int(self.params_per_peak)
+
+                try:
+                    from .peak_models import single_peak
+                except Exception:  # pragma: no cover
+                    from peak_models import single_peak
+
                 for k in range(n_peaks):
-                    idx = 3 * k
-                    center = float(best_params[idx])
-                    width  = float(best_params[idx + 1])
-                    amp    = float(best_params[idx + 2])
+                    block = np.asarray(best_params[stride*k:stride*(k+1)], dtype=float)
 
+                    center = float(block[0])
                     self.peak_positions[j, i, k] = center
 
-                    if (not np.isfinite(width)) or width <= 0:
-                        height_fitspace = np.nan
+                    if self.peak_profile == "lorentzian":
+                        width = float(block[1])       # HWHM
+                        amp  = float(block[2])        # area-like
+                        if (not np.isfinite(width)) or width <= 0:
+                            height_fitspace = np.nan
+                        else:
+                            height_fitspace = amp / (np.pi * width)
                     else:
-                        height_fitspace = amp / (np.pi * width)
+                        # pVoigt: compute peak height numerically in fit space
+                        y_one = single_peak(xdata, block, profile="pvoigt")
+                        height_fitspace = float(np.nanmax(y_one))
 
-                    # Display convention: normalize=True => store fit-space height
-                    # normalize=False => store raw height using scale only if fit_normalize=True
+                    # DISPLAY convention: normalize=True -> store fit-space height
+                    # normalize=False -> store raw height using per-pixel scale when fit_normalize=True
                     if self.normalize:
                         self.peak_intensities[j, i, k] = height_fitspace
                     else:
                         if fit_normalize:
                             self.peak_intensities[j, i, k] = height_fitspace * float(scale)
                         else:
-                            # already fit in raw intensity space
                             self.peak_intensities[j, i, k] = height_fitspace
 
+
+
                 # ---- derived maps (compute once per pixel) ----
-                idx_a1g = self._find_peak_index("A1g")
-                idx_e2g = self._find_peak_index("E2g")
+                # idx_a1g = self._find_peak_index("A1g")
+                # idx_e2g = self._find_peak_index("E2g")
                 if idx_e2g is None:
                     idx_e2g = self._find_peak_index("E12g")
 
@@ -2214,92 +2559,14 @@ class RamanMapping:
                 # ---- gated warm-start (RMSE + plausibility) ----
                 if warm_start:
                     ok_rmse = (best_rmse <= warm_start_rmse_gate)
-                    ok_params = _params_plausible(best_params, lower_bound, upper_bound, n_peaks)
+                    stride = int(self.params_per_peak)
+                    ok_params = _params_plausible(best_params, lower_bound, upper_bound, n_peaks, stride, self.peak_profile)
 
                     if ok_rmse and ok_params:
                         p0_current = np.asarray(best_params, dtype=float)
                     else:
                         if reset_on_fail:
                             p0_current = p0_base.copy()
-
-                # raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
-
-                # spec_norm, scale = self._preprocess_single_spectrum(xdata, raw_spec)
-                # if spec_norm is None:
-                #     self.norm_scale_map[j, i] = np.nan
-                #     self.residual_map[j, i] = np.nan
-                #     if reset_on_fail:
-                #         p0_current = p0_base.copy()
-                #     continue
-
-                # self.norm_scale_map[j, i] = scale
-
-                # try:
-                #     params, _ = optimize.curve_fit(
-                #         self.lorentzian_raman,
-                #         xdata,
-                #         spec_norm,
-                #         p0=p0_current,
-                #         bounds=(lower_bound, upper_bound),
-                #         maxfev=maxfev
-                #     )
-
-                #     # residual in fit space (normalised)
-                #     model_norm = self.lorentzian_raman(xdata, *params)
-                #     residual_norm = spec_norm - model_norm
-                #     rmse_norm = np.sqrt(np.mean(residual_norm ** 2))
-                #     self.residual_map[j, i] = rmse_norm
-
-                #     fitted_params[j, i, :] = params
-
-                #     # store peak centre + intensity (height)
-                #     for k in range(n_peaks):
-                #         idx = 3 * k
-                #         center, width, amp = params[idx:idx + 3]
-                #         self.peak_positions[j, i, k] = center
-
-                #         peak_height_norm = amp / (np.pi * width)
-                #         if self.normalize:
-                #             self.peak_intensities[j, i, k] = peak_height_norm
-                #         else:
-                #             self.peak_intensities[j, i, k] = peak_height_norm * scale
-
-                #     # derived maps: compute ONCE per pixel (not inside the peak loop)
-                #     idx_a1g = self._find_peak_index("A1g")
-                #     idx_e2g = self._find_peak_index("E2g")
-                #     if idx_e2g is None:
-                #         idx_e2g = self._find_peak_index("E12g")
-
-                #     if (idx_a1g is not None) and (idx_e2g is not None):
-                #         a1g_pos = self.peak_positions[j, i, idx_a1g]
-                #         e2g_pos = self.peak_positions[j, i, idx_e2g]
-                #         a1g_I = self.peak_intensities[j, i, idx_a1g]
-                #         e2g_I = self.peak_intensities[j, i, idx_e2g]
-
-                #         self.Peaks_distance[j, i] = (a1g_pos - e2g_pos) if (np.isfinite(a1g_pos) and np.isfinite(e2g_pos)) else np.nan
-                #         self.ratio_A1g_E2g[j, i] = (a1g_I / e2g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and e2g_I > 0) else np.nan
-                #         self.ratio_E2g_A1g[j, i] = (e2g_I / a1g_I) if (np.isfinite(a1g_I) and np.isfinite(e2g_I) and a1g_I > 0) else np.nan
-                #     else:
-                #         self.Peaks_distance[j, i] = np.nan
-                #         self.ratio_A1g_E2g[j, i] = np.nan
-                #         self.ratio_E2g_A1g[j, i] = np.nan
-
-                #     # gated warm-start: RMSE + plausibility
-                #     if warm_start:
-                #         ok_rmse = (rmse_norm <= warm_start_rmse_gate)
-                #         ok_params = _params_plausible(params, lower_bound, upper_bound, n_peaks)
-
-                #         if ok_rmse and ok_params:
-                #             p0_current = params
-                #         else:
-                #             if reset_on_fail:
-                #                 p0_current = p0_base.copy()
-
-                # except (RuntimeError, ValueError):
-                #     self.residual_map[j, i] = np.nan
-                #     if reset_on_fail:
-                #         p0_current = p0_base.copy()
-                #     continue
 
         self.fitted_params = fitted_params
         n_fit = np.sum(~np.isnan(self.residual_map))
@@ -2362,7 +2629,8 @@ class RamanMapping:
         if np.any(np.isnan(params)):
             raise ValueError(f"Fit parameters are NaN at (X={x}, Y={y}). Fit may have failed.")
 
-        fitted_norm = self.lorentzian_raman(xdata, *params)
+        model_fn = self._model_dispatch()
+        fitted_norm = model_fn(xdata, *params)
         fitted_raw = fitted_norm * scale
 
         # --- Plot
@@ -2588,6 +2856,63 @@ class RamanMapping:
                 else:
                     yield (i, j, j, i)
 
+    def _params_to_export_dict(self, xaxis, peak_labels, params, intensity_scale=1.0):
+        """
+        Convert a parameter vector into per-peak export dict entries.
+
+        Conventions
+        -----------
+        - Lorentzian: width is HWHM; FWHM = 2*HWHM; peak_height_norm = amp_area/(pi*HWHM)
+        - pVoigt: width parameter is treated as FWHM (consistent with your PLfit/RamanFit pVoigt step);
+                peak_height_norm is computed numerically as max(single_peak(xaxis)).
+        """
+        import numpy as np
+        try:
+            from .peak_models import single_peak
+        except Exception:  # pragma: no cover
+            from peak_models import single_peak
+
+        profile = self.peak_profile
+        stride = int(self.params_per_peak)
+        p = np.asarray(params, dtype=float).ravel()
+        xaxis = np.asarray(xaxis, dtype=float).ravel()
+
+        out = {}
+        for i, name in enumerate(peak_labels):
+            block = p[stride*i:stride*(i+1)]
+            centre = float(block[0])
+
+            if profile == "lorentzian":
+                hwhm = float(block[1])
+                amp_area = float(block[2])
+                fwhm = 2.0 * hwhm
+                peak_height_norm = (amp_area / (np.pi * hwhm)) if hwhm != 0 else np.nan
+                peak_height = float(peak_height_norm * intensity_scale)
+                out[name] = dict(
+                    centre=centre, fwhm=fwhm,
+                    peak_height=peak_height,
+                    peak_height_norm=float(peak_height_norm),
+                    amp=amp_area, scale=hwhm,
+                )
+            else:
+                fwhm = float(block[1])       # pVoigt width treated as FWHM
+                amp_area = float(block[2])
+                eta = float(block[3])
+
+                y_norm = single_peak(xaxis, block, profile="pvoigt")
+                peak_height_norm = float(np.nanmax(y_norm))
+                peak_height = float(peak_height_norm * intensity_scale)
+
+                out[name] = dict(
+                    centre=centre, fwhm=fwhm,
+                    peak_height=peak_height,
+                    peak_height_norm=peak_height_norm,
+                    amp=amp_area, scale=fwhm, eta=eta,
+                )
+
+        return out
+
+
     ### Added in v0.2.8
     def export_fit_map(
         self,
@@ -2612,7 +2937,9 @@ class RamanMapping:
         peak_labels = list(self.peak_params)  # authoritative ordering in your mapping class :contentReference[oaicite:14]{index=14}
         fields = ["x", "y"]
 
-        per_peak_fields = ["centre", "fwhm", "height_scaled", "height_norm", "amp", "scale"]
+        per_peak_fields = ["centre", "fwhm", "peak_height", "peak_height_norm", "amp", "scale"]
+        if self.peak_profile == "pvoigt":
+            per_peak_fields.append("eta")        
         for p in peak_labels:
             for f in per_peak_fields:
                 fields.append(f"{p}_{f}")
@@ -2629,21 +2956,19 @@ class RamanMapping:
             if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
                 intensity_scale = float(self.norm_scale_map[j, i])
 
-            peak_rows = params_to_rows(
-                peak_labels = list(self.peak_params),
-                params=params,
-                intensity_scale=intensity_scale,
-            )
+            per_peak = self._params_to_export_dict(self.wavenumber, peak_labels, params, intensity_scale=intensity_scale)
 
             r = {"x": x, "y": y}
-            for pr in peak_rows:
-                name = pr.peak
-                r[f"{name}_centre"] = pr.centre
-                r[f"{name}_fwhm"] = pr.fwhm
-                r[f"{name}_height_scaled"] = pr.height_scaled
-                r[f"{name}_height_norm"] = pr.height_norm
-                r[f"{name}_amp"] = pr.amp
-                r[f"{name}_scale"] = pr.scale
+            for name in peak_labels:
+                d = per_peak[name]
+                r[f"{name}_centre"] = d["centre"]
+                r[f"{name}_fwhm"] = d["fwhm"]
+                r[f"{name}_peak_height"] = d["peak_height"]
+                r[f"{name}_peak_height_norm"] = d["peak_height_norm"]
+                r[f"{name}_amp"] = d["amp"]
+                r[f"{name}_scale"] = d["scale"]
+                if self.peak_profile == "pvoigt":
+                    r[f"{name}_eta"] = d["eta"]
 
             rows.append(r)
 
@@ -2714,7 +3039,8 @@ class RamanMapping:
                     if np.any(np.isnan(params)):
                         continue  # fit failed / not available
 
-                    y_norm = self.lorentzian_raman(specific_wavenumber, *params)
+                    model_fn = self._model_dispatch()
+                    y_norm = model_fn(np.asarray([specific_wavenumber], dtype=float), *params)[0]
 
                     if self.normalize:
                         # display normalised model intensity
@@ -3085,3 +3411,11 @@ class Raman_Integration:
             meta=meta,
             headers=headers,
         )
+
+## Added in v0.3.3
+def _fit_summary_method(self, **kwargs):
+    return fit_summary(self, **kwargs)
+
+# Attach to both mapping classes (no code duplication)
+RamanMapping.fit_summary = _fit_summary_method
+PLMapping.fit_summary = _fit_summary_method

@@ -1,3 +1,63 @@
+## v0.3.3 — Unified Line-Shape Architecture & pVoigt Integration (2026-2-17)
+
+### Added
+
+- Full pseudo-Voigt peak model support for:
+  - RamanFit
+  - PLfit
+  - RamanMapping
+  - PLMapping
+  - Batch processing
+- Unified model dispatcher (`_model`)
+- Consistent parameter stride handling (`params_per_peak`)
+- Explicit peak height reporting (`peak_height`)
+- pVoigt η parameter support
+- FWHM definition unification:
+  - Lorentzian → width parameter = HWHM
+  - pVoigt → width parameter = FWHM
+- Bound diagnostics in Mapping:
+  - lower-bound hits
+  - upper-bound hits
+  - per-parameter masks
+- Warm-start plausibility gating to reduce scanline artefacts
+
+### Changed
+
+- Peak reporting now emphasises:
+  - `peak_height`
+  - `fwhm`
+  - `amp`
+- `intensity` retained only for backward compatibility where required
+- Materials library automatically adapts to selected peak profile
+- Export metadata now records:
+  - peak_profile
+  - normalization behaviour
+  - custom_peaks usage
+- Width penalty now evaluated consistently in FWHM space
+
+### Internal Refactoring
+
+- Centralised peak summation in `peak_models.sum_peaks`
+- Unified `get_fitted_parameters()` logic across RamanFit and PLfit
+- Mapping peak-height calculation aligned with single-spectrum logic
+- Removal of duplicate bound-check utilities
+- Stride-aware parameter handling across all fitters
+
+### Performance Note
+
+Pseudo-Voigt mapping may be substantially slower than Lorentzian fitting due to:
+
+- Increased parameter dimensionality
+- Numerical peak-height evaluation
+- More complex optimisation landscape
+
+Recommended practice:
+
+- Use Lorentzian for initial scans
+- Apply pVoigt selectively for refined analysis
+
+-------------
+
 ## v0.3.0 — Multi-start mapping fits, diagnostics, and bound-sticking mitigation (2026-02-09)
 
 ### Added

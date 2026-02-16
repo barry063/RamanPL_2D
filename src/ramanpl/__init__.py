@@ -5,7 +5,8 @@ Public API:
 - Single spectra: PLfit, RamanFit
 - Mapping: PLMapping, RamanMapping, PL_Integration, Raman_Integration
 - Arithmetic operations: Spectrum, ArithmeticSpectrum
-- Utilities: DataImporter, BaselineAPI
+- Utilities: DataImporter, BaselineAPI, peak_models, exporter
+- Multiple data processing: Batch
 """
 
 from __future__ import annotations
