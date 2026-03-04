@@ -272,7 +272,8 @@ def bound_hit_report(mapping_obj, *, rtol=1e-6, atol=1e-12):
 
 ## To-do
 
-- v0.3.4 Optimisation of codes and add two-tier fitting in Mapping
+- v0.3.5: Add `pipeline` like modules for data pre-processing, fitting, and post-processing to streamline common workflows (e.g. mapping with multi-start fitting and bound-hit reporting).
+- v0.4.0: Integrate methods with `RamanSPy` for better standardisation.
 
 ## License
 
