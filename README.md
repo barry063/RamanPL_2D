@@ -1,72 +1,106 @@
 # RamanPL_2D
 
-**RamanPL_2D** is a Python-based toolkit designed for the analysis and visualisation of Raman and photoluminescence (PL) spectra in two-dimensional materials. It facilitates the extraction of peak positions, intensities, and full width at half maximum (FWHM) from spectral data, offering an intuitive interface for researchers working with 2D materials.
+**RamanPL_2D** is a Python toolkit for the analysis and visualisation of **Raman and photoluminescence (PL) spectra** in two-dimensional materials.  
+It provides tools for extracting **peak positions, intensities, and FWHM**, performing **single-spectrum fitting, batch analysis, and spectral mapping**.
+
+The package is designed to support reproducible analysis workflows for 2D material spectroscopy experiments.
+
 
 ## Features
 
-- Compatible analysis tools with most Renishaw Raman spectroscopy systems
-- Import and process Raman and PL spectra from `.txt` and `.wdf`
-- Single-spectrum fitting of 2 models for Raman and PL：
+### Spectral analysis
+
+- Import and process Raman and PL spectra from **`.txt` and `.wdf`**
+- Compatible with **Renishaw WiRE exported data**
+- Single-spectrum fitting using two peak models:
+
   - **Lorentzian** (default; compatible with materials library)
   - **Pseudo-Voigt (pVoigt)** — linear combination of Lorentzian and Gaussian
-- **Batch processing** of multiple spectra (RamanBatch / PLBatch):
-  - automated fitting across many spectra
-  - consistent peak parameter extraction (position, FWHM, intensity)
-  - summary statistics of fitted parameters **by peak**
-  - export of batch results to `.csv` / `.txt`
-- **Flexible peak definition system**:
-  - library-based default peaks using `materials` and `substrate`
-  - fully user-defined `custom_peaks` (replaces defaults)
-  - selective suppression of unwanted peaks via `remove_peaks`
-  - consistent behaviour across single fit, batch, and mapping
-- Visualisation of raw and fitted spectra (overlay & waterfall plots)
-- **Sanity checks for fitting quality**:
-  - normalised residual calculation
-  - residual distribution diagnostics
-  - dynamic spectrum fitting view
-- Raman and PL **mapping analysis**:
-  - heatmaps of integrated intensity within selected ranges
-  - heatmaps of fitted peak intensity, position, and FWHM
-  - heatmaps of Raman **A1g − E2g** peak separation
-  - heatmaps of **E2g / A1g** peak ratio
-- Arithmetic processing of spectra and mapping data for flexible operations
 
-Batch processing and mapping workflows share the same peak-definition logic as single-spectrum fitting. Users may rely on built-in material libraries for
-rapid analysis, or fully override peak definitions using `custom_peaks` and `remove_peaks` for advanced or non-standard systems.
+### Flexible peak definitions
 
-### Change log
+- Library-based peak definitions via `materials` and `substrate`
+- Fully user-defined peaks using `custom_peaks`
+- Remove unwanted peaks via `remove_peaks`
+- Consistent behaviour across:
+  - single spectrum fitting
+  - batch fitting
+  - mapping
 
-See [CHANGELOG](CHANGELOG)
+### Batch processing
+
+Batch workflows allow automated analysis of many spectra:
+
+- automated fitting across multiple spectra
+- extraction of peak parameters (position, FWHM, intensity)
+- summary statistics **per peak**
+- export to `.csv` / `.txt`
+
+### Mapping analysis
+
+- Heatmaps of fitted parameters:
+  - peak intensity
+  - peak position
+  - FWHM
+- Raman specific derived maps:
+  - **A1g − E2g peak separation**
+  - **E2g / A1g intensity ratio**
+- Heatmaps of **integrated spectral intensity**
+
+### Visualisation
+
+- Raw vs fitted spectra overlay
+- Waterfall plots for spectral collections
+- Dynamic inspection of spectral fitting results
+
+### Quality diagnostics
+
+- residual analysis
+- residual distribution inspection
+- dynamic spectrum fitting view
+
+For features like `pipeline` and `multistart`, please check [code examples](#demostration).
+
+For more details on the features and example of spefici use, please refer to the [example usage notebooks](example-usage/).
+
+---
 
 ## Repository Structure
 
 ```bash
 RamanPL_2D/
-    ├── example-usage/ # Sample spectral data files and demonstrated usage of python codes by jupyter-notebook (`.ipynb`files)
-    │ ├── Mapping/      # PL, Raman data mapping using `Mapping.py`
-    │ ├── multi-plot/   # Demonstrate batch fitting, plotting, and parameter analysis using `batch.py`
-    │ ├── PLfit/        # PL component curve fitting using `PLfit.py`
-    │ └── Ramanfit/     # Raman spectrum and component peak fitting using `RamanFit.py` and `raman_materials.json`
-    ├── src/                # Source code for data processing and analysis DON'T CHANGE THE FOLDER STRUCTURE!
-    │ ├── ramanpl/          # header of the pacakage name, so you should use "from ramanpl import RamanFit" forspecific module
-    │ │ ├── __init__.py               # For package installation only, header to indicate this is a folder of python packages
-    │ │ ├── RamanFit.py               # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
-    │ │ ├── raman_materials.json      # Class modules for Raman spectra fitting and plotting, to be used with raman_materials.json
-    │ │ ├── PLfit.py                  # Class modules for Raman spectra fitting and plotting
-    │ │ ├── baselinAPI.py             # Helper codes for Raman/PL background subtration
-    │ │ ├── dataImporter.py           # Helper codes for importing .wdf/.txt data files
-    │ │ ├── peak_model.py             # Helper codes for calling lorentzian/pesudo-voigt model when fitting
-    │ │ ├── operation.py              # Classs modules for making math operations of multiple data files.
-    │ │ ├── batch.py                  # Batch fitting, statistical analysis, plotting, and export of multiple spectra
-    │ │ ├── exporter.py               # Classs modules for exporting the fitted data and parameters into .csv files
-    │ │ └── Mapping.py                # Mapping of Raman, PL and integration of spectra
-    │ ├── install.ipynb     # A jupyter-notebook run to install  our package
-    │ └── setup.py          # For package installation only, include some required python packages for using
-    ├── requirements.txt    # List of required Python packages
-    └── README.md           # Project documentation
+    ├── example-usage/
+    │ ├── Mapping/
+    │ ├── multi-plot/
+    │ ├── PLfit/
+    │ └── Ramanfit/
+    │
+    ├── src/
+    │ ├── ramanpl/
+    │ │ ├── __init__.py
+    │ │ ├── RamanFit.py
+    │ │ ├── PLfit.py
+    │ │ ├── preprocessing.py
+    │ │ ├── raman_materials.json
+    │ │ ├── baselineAPI.py
+    │ │ ├── dataImporter.py
+    │ │ ├── peak_models.py
+    │ │ ├── operation.py
+    │ │ ├── batch.py
+    │ │ ├── exporter.py
+    │ │ └── Mapping.py
+    │
+    │ ├── install.ipynb
+    │ └── setup.py
+    │
+    ├── requirements.txt
+    └── README.md
 ```
 
----
+## Change log
+
+See [CHANGELOG](CHANGELOG) for details on recent updates and new features.
+
 
 ## Getting Started
 
@@ -168,14 +202,87 @@ from ramanpl import RamanFit
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
 
+---
 
-------
+# Demostration
+
+## Preprocessing Pipelines (v0.3.4)
+
+Version **0.3.4** introduces a modular **spectral preprocessing pipeline framework**.
+
+This enables standardised preprocessing workflows for Raman and PL spectra before fitting.
+
+The pipeline design is inspired by modern data-processing frameworks and allows users to construct reproducible analysis chains.
+
+Typical preprocessing steps include:
+
+- spectral cropping
+- smoothing
+- baseline subtraction
+- future extensions (normalisation, filtering, etc.)
+
+---
+
+### Pipeline architecture
+
+A pipeline consists of ordered preprocessing steps:
+
+```python
+from ramanpl.preprocessing import Pipeline
+```
+
+Each step modifies a `SpectralDataset` object and passes the result to the next step.
+
+Example steps currently included:
+
+| Step               | Description                                                      |
+| ------------------ | ---------------------------------------------------------------- |
+| `CropByRange`      | Crop spectra to selected spectral window                         |
+| `SmoothSavGol`     | Savitzky–Golay smoothing                                         |
+| `BaselineSubtract` | Background subtraction (poly / airPLS / arPLS / AsLS / Gaussian) |
+
+### Legacy preprocessing arguments
+
+For backward compatibility, the following arguments still work:
+
+```python
+smoothing=True
+background_remove=True
+baseline_method="poly"
+baseline_kwargs={"poly_order": 3}
+```
+However, **pipeline-based preprocessing is recommended for new workflows.** The legacy arguments will be deprecated in a future release (By version v0.4.0).
+
+## Baseline specification
+
+Baseline algorithms are now configured using a dictionary specification:
+
+Example of `airPLS` baseline specification:
+```python
+baseline_spec = {   "method": "airpls",
+                    "lam": 1e6,
+                    "niter": 50,
+                    "tol": 1e-6,
+                }
+```
+
+Example polynomial baseline:
+
+```python
+baseline_spec = {   "method": "poly",
+                    "poly_order": 3,
+                }
+```
+The legacy argument poly_degree is deprecated and will be removed in a future release (By release v0.4.0).
 
 ## Multi-start fitting (v0.3.0)
 
-Multi-start fitting reduces “bound-sticking” artefacts in multi-peak Lorentzian models by running several fits from different initial guesses (`p0` trials) and selecting the best result (lowest score / RMSE with optional penalties).
+Multi-start fitting helps reduce bound-sticking artefacts in multi-peak fits.
+
+The fitter performs several fits from different starting parameters and selects the best solution.
 
 ### How it works
+
 - Fitting is performed in **peak-normalised space** for stability.
 - The fitter generates `n_starts` initial guesses using one of:
   - `p0_strategy="midpoint"`: midpoint of bounds (baseline behaviour)
@@ -183,37 +290,24 @@ Multi-start fitting reduces “bound-sticking” artefacts in multi-peak Lorentz
   - `p0_strategy="jitter"`: Gaussian perturbations around the current `p0`, clipped to bounds
 - The best candidate is selected using RMSE (and optionally a penalty term for width “inflation” toward its upper bound).
 
-### Example (Raman mapping)
+### Available strategies:
+
+| Strategy | Description                                |
+| -------- | ------------------------------------------ |
+| midpoint | midpoint of parameter bounds               |
+| random   | random uniform sampling within bounds      |
+| jitter   | Gaussian perturbation around initial guess |
+
+
+#### Example
 
 ```python
-from ramanpl import Mapping
-
-custom_peaks = {
-    "E2g":   ([348, 0, 0], [360, 10, 10]),
-    "A1g":   ([418, 0, 0], [424, 10, 10]),
-    "Si":    ([518, 0, 0], [525, 20, 10]),
-    "2LA(M)":([340, 0, 0], [350,  5,  5]),
-}
-
-raman_map = Mapping.RamanMapping(
-    "Mapping Raman Sample.wdf",
-    custom_peaks=custom_peaks,
-    data_range=(320, 560),
-    normalize=True,            # display scaling only
-    background_remove=True,
-    step_size=0.5,
-)
-
-_ = raman_map.fit_spectra(
+raman_map.fit_spectra(
     warm_start=True,
     fit_spectrum_kwargs=dict(
         n_starts=10,
         p0_strategy="jitter",
-        random_state=0,
-        # optional robustness knobs if exposed in your build:
-        # width_penalty=0.25,
-        # prefer_nonbound=True,
-        # rmse_tie_tol=1e-3,
+        random_state=0
     )
 )
 ```
@@ -223,62 +317,24 @@ _ = raman_map.fit_spectra(
 After fitting, you can quantify how often fitted parameters sit on their bounds. This is a practical sanity check for over-restrictive bounds or model misspecification.
 
 ### Generic bound-hit check from fitted parameters
+
 ```python
-import numpy as np
-
-def bounds_from_custom_peaks(custom_peaks):
-    lb, ub = [], []
-    for v in custom_peaks.values():
-        lb.extend(v[0]); ub.extend(v[1])
-    return np.asarray(lb, float), np.asarray(ub, float)
-
-def bound_hit_report(mapping_obj, *, rtol=1e-6, atol=1e-12):
-    lb, ub = bounds_from_custom_peaks(mapping_obj.custom_peaks)
-    P = np.asarray(mapping_obj.fitted_params, float)  # shape [Y, X, 3*n_peaks]
-    P2 = P.reshape(-1, P.shape[-1])
-
-    valid = np.isfinite(P2).all(axis=1)
-    P2 = P2[valid]
-
-    hit_upper = np.isclose(P2, ub, rtol=rtol, atol=atol)
-    hit_lower = np.isclose(P2, lb, rtol=rtol, atol=atol)
-
-    centres_u = hit_upper[:, 0::3].mean(axis=0)
-    widths_u  = hit_upper[:, 1::3].mean(axis=0)
-    amps_u    = hit_upper[:, 2::3].mean(axis=0)
-
-    names = list(mapping_obj.custom_peaks.keys())
-    print("Peaks:", names)
-    print("Upper-bound hit fraction per peak (centre):", centres_u)
-    print("Upper-bound hit fraction per peak (width) :", widths_u)
-    print("Upper-bound hit fraction per peak (amp)   :", amps_u)
-    print("Overall upper-bound hit fraction centre:", float(hit_upper[:,0::3].mean()))
-    print("Overall upper-bound hit fraction width :", float(hit_upper[:,1::3].mean()))
-    print("Overall upper-bound hit fraction amp   :", float(hit_upper[:,2::3].mean()))
-
-    return dict(
-        peaks=names,
-        upper_centre=centres_u, upper_width=widths_u, upper_amp=amps_u,
-        lower_centre=hit_lower[:,0::3].mean(axis=0),
-        lower_width =hit_lower[:,1::3].mean(axis=0),
-        lower_amp   =hit_lower[:,2::3].mean(axis=0),
-    )
-
-# usage:
-# rep = bound_hit_report(raman_map)
+rep = bound_hit_report(raman_map)
 ```
 
--------
+---
 
-## To-do
+## TO-DO
 
-- v0.3.5: Add `pipeline` like modules for data pre-processing, fitting, and post-processing to streamline common workflows (e.g. mapping with multi-start fitting and bound-hit reporting).
-- v0.4.0: Integrate methods with `RamanSPy` for better standardisation.
+| Version | Planned feature                                   |
+| ------- | ------------------------------------------------- |
+| v0.3.5  | propagate pipeline framework to Mapping workflows |
+| v0.4.0  | integrate standardised analysis with RamanSPy     |
+
 
 ## License
 
-This project is licensed for **non-commercial academic use only**.  
-Commercial use is prohibited without prior written permission.  
+This project is licensed for **BSD 3-Clause License**.  
 See the [LICENSE](LICENSE) file for details.
 
 ## Contact

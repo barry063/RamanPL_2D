@@ -1,19 +1,22 @@
-# RamanPL_2D fit export
+# RamanPL_2D export
 # spectrum_type: Photoluminescence
 # x_quantity: Photon energy
 # x_unit: eV
 # background_remove: False
-# baseline_method: poly
+# baseline_method: ('poly', 1)
 # poly_degree: 3
 # gaussian_sigma: 50
 # smoothing: False
 # smooth_window: 11
 # smooth_order: 3
-# normalize: False
-# intensity_scale(peak_intensity): 1152.0439453125
+# normalize: True
+# intensity_scale(peak_intensity): 1117.8316476004475
 # peak_labels: ['trion', 'exciton']
 # custom_peaks: False
-#
-Peak	Centre	FWHM	Scale	Amp	Height_norm	Height_scaled
-trion	1.8085957233272778	0.06882505842134964	0.03441252921067482	0.04999999999966652	0.462491269143518	532.8102663766838
-exciton	1.834077936686178	0.05317969408509458	0.02658984704254729	0.05250959413906687	0.6285979346634932	724.1724446650198
+# remove_peaks: []
+# peak_profile: pvoigt
+# preprocessing: {'name': 'pl_smooth_only', 'steps': [{'name': 'savgol', 'window_length': 7, 'polyorder': 2}]}
+# 
+Peak	Centre	FWHM	Eta	Amp	PeakHeight_norm	PeakHeight
+trion	1.810028804209405	0.08253033177136826	0.9618105386284458	0.07067367658566062	0.5550631940379099	620.4672047137637
+exciton	1.8343291731486608	0.05142857948056641	0.35639125546881856	0.03262132983966053	0.5274313914066576	589.5795012523006

@@ -14,9 +14,11 @@ import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 import json
 import os
+import warnings
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
-from ramanpl.exporter import params_to_rows, write_rows
+from ramanpl.exporter import params_to_rows, write_rows, write_table
+from ramanpl.preprocessing import SpectralDataset, Pipeline, build_legacy_single_spectrum_pipeline
 
 
 class DataImporter:
@@ -111,47 +113,86 @@ def _generate_p0_trials(
 
     return trials
 
+# Sentinel used to detect whether user explicitly passed poly_degree
+_POLY_DEGREE_SENTINEL = object()
+
+
+def _resolve_baseline_method_with_deprecation(
+    baseline_method,
+    poly_degree=_POLY_DEGREE_SENTINEL,
+):
+    """
+    Resolve baseline_method into the modern single-spec form.
+
+    New preferred style
+    -------------------
+    baseline_method={"method": "poly", "poly_degree": 3}
+
+    Deprecated legacy style
+    -----------------------
+    baseline_method="poly", poly_degree=3
+    baseline_method=("poly", 3)
+
+    Returns
+    -------
+    resolved_baseline_method
+        Usually a string or dict, suitable for downstream pipeline/baseline parsing.
+    """
+
+    # Legacy tuple style: ("poly", 3)
+    if isinstance(baseline_method, tuple) and len(baseline_method) == 2:
+        method, deg = baseline_method
+        if str(method).lower() == "poly":
+            warnings.warn(
+                "baseline_method=('poly', degree) is deprecated and will be removed in a future version. "
+                "Use baseline_method={'method': 'poly', 'poly_degree': degree} instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            return {"method": "poly", "poly_degree": int(deg)}
+        return baseline_method
+
+    # Legacy split style: baseline_method='poly', poly_degree=...
+    if poly_degree is not _POLY_DEGREE_SENTINEL:
+        warnings.warn(
+            "poly_degree is deprecated and will be removed in a future version. "
+            "Use baseline_method={'method': 'poly', 'poly_degree': degree} instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+        # If baseline_method is already a dict, only inject poly_degree if missing
+        if isinstance(baseline_method, dict):
+            spec = dict(baseline_method)
+            spec.setdefault("poly_degree", int(poly_degree))
+            return spec
+
+        # If baseline_method is plain 'poly', convert to the modern dict form
+        if str(baseline_method).lower() == "poly":
+            return {"method": "poly", "poly_degree": int(poly_degree)}
+
+        # Non-poly methods ignore poly_degree scientifically, but keep old behaviour safe
+        return baseline_method
+
+    # Already modern dict spec
+    return baseline_method
+
 
 class RamanFit:
-    """A class for fitting and analyzing Raman spectra using configurable multi-peak Lorentzian models.
-    
-    Handles material-specific peak configurations, substrate peaks, preprocessing, and visualization.
+    """
+    A class for fitting and analysing Raman spectra with configurable peak models.
 
-    Attributes
-    ----------
-    raw_spectra : ndarray
-        Raw Raman intensity values (counts)
-    processed_spectra : ndarray
-        Processed intensity values after preprocessing
-    wavenumber : ndarray
-        Raman shift values (cm⁻¹) for the spectrum
-    peak_intensity : float
-        Maximum intensity value used for normalization
-    intensity_normal : ndarray
-        Normalized intensity values
-    lower_bound : list
-        Lower bounds for fitting parameters [loc, scale, amp] for each peak
-    upper_bound : list
-        Upper bounds for fitting parameters [loc, scale, amp] for each peak
-    peak_labels : list
-        Names of peaks being fitted
-    p0 : list
-        Initial parameter guesses (midpoints between bounds)
+    Supports:
+    - material/substrate library peaks or fully custom peak definitions
+    - preprocessing via legacy flags or a user-supplied preprocessing Pipeline
+    - Lorentzian and pseudo-Voigt peak profiles
+    - peak removal, bound updates, multi-start fitting, and export helpers
 
-    Methods
-    -------
-    load_material_parameters(materials)
-        Load peak parameters from material library
-    load_substrate(substrate)
-        Load substrate peak parameters from library
-    update_bounds(**kwargs)
-        Modify fitting bounds for specific peaks
-    remove_peaks(*peak_names)
-        Remove peaks from fitting model
-    fit_spectrum()
-        Perform curve fitting
-    plot_fit(params, **kwargs)
-        Visualize fitting results
+    Notes
+    -----
+    - Fitting is always performed in peak-normalised intensity space.
+    - `normalize` controls display/output scaling only.
+    - When `preprocessing` is supplied, it overrides the legacy smoothing/background flags.
     """
     def __init__(
         self,
@@ -160,13 +201,14 @@ class RamanFit:
         materials=None,
         substrate=None,
         background_remove=False,
-        baseline_method="poly",
-        poly_degree=3,
+        baseline_method={"method": "poly", "poly_degree": 3},
+        poly_degree=_POLY_DEGREE_SENTINEL,
         gaussian_sigma=50,
         smoothing=False,
         smooth_window=11,
         smooth_order=3,
         normalize=False,
+        preprocessing=None,
         custom_peaks=None,
         remove_peaks=None,
         peak_order=None,
@@ -184,12 +226,24 @@ class RamanFit:
             Material identifiers from library (e.g., ['WS2', 'WO3'])
         substrate : str, optional
             Substrate identifier from library (e.g., 'Si')
-        background_remove : bool, optional
-            Enable background subtraction (default: False)
-        baseline_method : {'poly', 'gaussian'}, optional
+        baseline_method : str or dict, optional
+            Baseline specification. Preferred modern style is a dict, for example:
+            {"method": "poly", "poly_degree": 3}
+            or
+            {"method": "airpls", "lam": 1e6, "niter": 50, "tol": 1e-6}.
+        normalize : bool, optional
+            Controls DISPLAY/OUTPUT scaling only. Fitting is always performed in
+            peak-normalised space.
+        preprocessing : Pipeline or None, optional
+            Optional preprocessing pipeline. If supplied, it overrides the legacy
+            smoothing/background_remove settings.
+        peak_profile : {'lorentzian', 'pvoigt'}, optional
+            Peak line-shape model used for fitting.
             Background removal method (default: 'poly')
         poly_degree : int, optional
-            Polynomial degree for poly background (default: 3)
+            Deprecated. Use baseline_method={"method": "poly", "poly_degree": degree}
+            instead. If supplied, a DeprecationWarning is issued and the value is folded
+            into baseline_method for backwards compatibility.
         gaussian_sigma : int, optional
             Sigma for Gaussian filter (default: 50)
         smoothing : bool, optional
@@ -198,8 +252,6 @@ class RamanFit:
             Window size for smoothing filter (default: 11)
         smooth_order : int, optional
             Polynomial order for smoothing (default: 3)
-        normalize : bool, optional
-            Normalize intensity to maximum value (default: False)
 
         Raises
         ------
@@ -292,6 +344,11 @@ class RamanFit:
         self.wavenumber = np.array(wavenumber)
         self.processed_spectra = np.array(spectra.copy())
         
+        baseline_method = _resolve_baseline_method_with_deprecation(
+            baseline_method=baseline_method,
+            poly_degree=poly_degree,
+        )
+
         # Added in build v0.2.7.1
         self._smoothed_spectra = None
         self._baseline = None
@@ -308,45 +365,77 @@ class RamanFit:
 
         self.background_remove = background_remove
         self.baseline_method = baseline_method
-        self.poly_degree = poly_degree
+        # Deprecated legacy field kept for backwards compatibility only.
+        # Canonical polynomial degree now lives inside baseline_method when relevant.
+        if isinstance(baseline_method, dict) and str(baseline_method.get("method", "")).lower() == "poly":
+            self.poly_degree = baseline_method.get("poly_degree", None)
+        else:
+            self.poly_degree = None
         self.gaussian_sigma = gaussian_sigma
 
         self.smoothing = smoothing
         self.smooth_window = smooth_window
         self.smooth_order = smooth_order
 
-        # Apply smoothing
-        if smoothing:
-            self.processed_spectra = savgol_filter(self.processed_spectra,
-                                                smooth_window, smooth_order)
-            self._smoothed_spectra = self.processed_spectra.copy()
+        # ------------------------------------------------------------
+        # Preprocessing via Pipeline (v0.3.4): behaviour-preserving
+        # Order matches legacy: smoothing -> baseline subtraction
+        # ------------------------------------------------------------
+        ds0 = SpectralDataset(
+            x=self.wavenumber,
+            y=np.asarray(self.processed_spectra, dtype=float).ravel(),
+            modality="Raman",
+            axis_kind="raman_shift_cm-1",
+            meta={
+                "x_trimmed_on_load": bool(getattr(self, "_x_trimmed_on_load", False)),
+            },
+        )
 
-        # Background subtraction (smoothing happens before this; unchanged)
-        if background_remove:
-            method, bkwargs = BaselineAPI.parse_spec(
-                baseline_method,
-                poly_degree=poly_degree,
-                gaussian_sigma=gaussian_sigma
+        # Choose preprocessing pipeline:
+        # - If user supplies `preprocessing`, it overrides legacy flags.
+        # - Otherwise, reproduce legacy behaviour using the legacy builder.
+        if preprocessing is None:
+            pipe = build_legacy_single_spectrum_pipeline(
+                data_range=None,
+                smoothing=bool(smoothing),
+                smooth_window=int(smooth_window),
+                smooth_order=int(smooth_order),
+                background_remove=bool(background_remove),
+                baseline_method=baseline_method,   # already resolved to modern spec
+                poly_degree=None,                  # deprecated, no longer canonical
+                gaussian_sigma=int(gaussian_sigma),
             )
-
-            result = BaselineAPI.subtract(
-                x=self.wavenumber,
-                y=self.processed_spectra,
-                method=method,
-                clip_nonnegative=True,
-                **bkwargs,
-            )
-
-            # --- store intermediates for comparison plotting ---
-            self._baseline = np.asarray(result.baseline, dtype=float).ravel()
-            self._corrected_spectra = np.asarray(result.y_corrected, dtype=float).ravel()
-
-            # existing behaviour
-            self.processed_spectra = result.y_corrected
+        elif isinstance(preprocessing, Pipeline):
+            pipe = preprocessing
         else:
-            # If no baseline subtraction but smoothing occurred, corrected == processed.
-            if smoothing:
-                self._corrected_spectra = self.processed_spectra.copy()
+            raise TypeError(
+                "preprocessing must be None or a ramanpl.preprocessing.Pipeline instance."
+            )
+
+        ds = pipe.apply(ds0)
+
+        # Propagate possibly modified axis/intensity back to fitter state
+        self.wavenumber = np.asarray(ds.x, dtype=float).ravel()
+        self.processed_spectra = np.asarray(ds.y, dtype=float).ravel()
+
+        # If crop was applied, crop the stored raw trace to the same axis for safe plotting.
+        crop_mask = ds.meta.get("crop_mask", None)
+        if crop_mask is not None:
+            self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()[crop_mask]
+        else:
+            self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()
+
+        # --- store intermediates for comparison plotting ---
+        self._smoothed_spectra = ds.meta.get("_smoothed_last", None)
+        self._baseline = ds.meta.get("_baseline_last", None)
+
+        if (self._smoothed_spectra is not None) or (self._baseline is not None):
+            self._corrected_spectra = self.processed_spectra.copy()
+        else:
+            self._corrected_spectra = None
+
+        # optional: store preprocessing recipe for export/debug
+        self.preprocessing = ds.meta.get("pipeline", None)
         
         ### Updated in v.0.2.4 ###
         # Fit is ALWAYS performed in peak-normalised space.
@@ -586,23 +675,39 @@ class RamanFit:
         return out
 
 
-    ### Added in v.0.2.8 ###
+    ### Updated in v0.3.3 to handle both profiles and include metadata
     def fit_table(self, params=None, *, scaled: bool = True):
         """
         Return per-peak fitted parameters as a list of dicts.
 
-        scaled=True:
-            height_scaled is reported in approximate original units by multiplying
-            normalised peak height by self.peak_intensity (if available).
-            This matches your plotting logic where you scale fitted curves back
-            using peak_intensity when not displaying purely normalised output. :contentReference[oaicite:8]{index=8}
+        Notes
+        -----
+        - Lorentzian rows include: Peak, Position(cm^-1), FWHM(cm^-1), Scale, Amp,
+        Height_norm, Height_scaled
+        - pseudo-Voigt rows include: Peak, Position(cm^-1), FWHM(cm^-1), Eta, Amp,
+        Height_norm, Height_scaled
         """
         if params is None:
             if not hasattr(self, "params_fit") or self.params_fit is None:
                 raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
             params = self.params_fit
 
-        # Best-effort scale factor: if you always fit in normalised space, this should be peak_intensity.
+        if self.peak_profile == "pvoigt":
+            fitted = self.get_fitted_parameters()
+            rows = []
+            for peak in self.peak_labels:
+                d = fitted[peak]
+                rows.append({
+                    "Peak": peak,
+                    "Position(cm^-1)": d["position"],
+                    "FWHM(cm^-1)": d["fwhm"],
+                    "Eta": d.get("eta", ""),
+                    "Amp": d["amp"],
+                    "Height_norm": d["height_norm"],
+                    "Height_scaled": d["peak_height"],
+                })
+            return rows
+
         intensity_scale = 1.0
         if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
             intensity_scale = float(self.peak_intensity)
@@ -613,7 +718,6 @@ class RamanFit:
             intensity_scale=intensity_scale,
         )
 
-        # Convert to plain dicts (easy to consume / unit test)
         return [
             {
                 "Peak": r.peak,
@@ -621,13 +725,13 @@ class RamanFit:
                 "FWHM(cm^-1)": r.fwhm,
                 "Scale": r.scale,
                 "Amp": r.amp,
-                "Height_norm": r.height_norm,
-                "Height_scaled": r.height_scaled,
+                "Height_norm": r.peak_height_norm,
+                "Height_scaled": r.peak_height,
             }
             for r in rows
         ]
 
-
+    ### Updated in v0.3.3 to handle both profiles and include metadata
     def export_fit(
         self,
         out_path: str,
@@ -640,6 +744,11 @@ class RamanFit:
     ) -> str:
         """
         Export fitted parameters to CSV or TXT/TSV.
+
+        Notes
+        -----
+        - Lorentzian exports use the standard exporter row format.
+        - pseudo-Voigt exports use a dict-table export with Eta included.
 
         headers:
             If True, write a metadata header block in TXT/TSV outputs.
@@ -654,13 +763,6 @@ class RamanFit:
         if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
             intensity_scale = float(self.peak_intensity)
 
-        rows = params_to_rows(
-            peak_labels=self.peak_labels,
-            params=params,
-            intensity_scale=intensity_scale,
-        )
-
-        # Build metadata (best-effort: only include fields that exist)
         meta = {
             "spectrum_type": getattr(self, "spectrum_type", None),
             "x_quantity": getattr(self, "x_quantity", None),
@@ -671,7 +773,7 @@ class RamanFit:
 
             "background_remove": getattr(self, "background_remove", None),
             "baseline_method": getattr(self, "baseline_method", None),
-            "poly_degree": getattr(self, "poly_degree", None),
+            "poly_degree": getattr(self, "poly_degree", None),  # deprecated legacy metadata
             "gaussian_sigma": getattr(self, "gaussian_sigma", None),
 
             "smoothing": getattr(self, "smoothing", None),
@@ -680,12 +782,47 @@ class RamanFit:
 
             "normalize": getattr(self, "normalize", None),
             "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
-            
+
             "peak_labels": getattr(self, "peak_labels", None),
             "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
             "remove_peaks": getattr(self, "remove_peaks_list", None),
+            "peak_profile": getattr(self, "peak_profile", None),
+            "preprocessing": getattr(self, "preprocessing", None),
         }
         meta = {k: v for k, v in meta.items() if v is not None}
+
+        if self.peak_profile == "pvoigt":
+            fitted = self.get_fitted_parameters()
+            rows_dict = []
+            for peak in self.peak_labels:
+                d = fitted[peak]
+                rows_dict.append({
+                    "Peak": peak,
+                    "Centre": d["position"],
+                    "FWHM": d["fwhm"],
+                    "Eta": d.get("eta", ""),
+                    "Amp": d["amp"],
+                    "PeakHeight_norm": d["height_norm"],
+                    "PeakHeight": d["peak_height"],
+                })
+
+            from ramanpl.exporter import write_table
+            return write_table(
+                rows_dict,
+                out_path,
+                fieldnames=["Peak", "Centre", "FWHM", "Eta", "Amp", "PeakHeight_norm", "PeakHeight"],
+                delimiter=delimiter,
+                include_header=include_header,
+                meta=meta,
+                headers=headers,
+                meta_in_csv=False,
+            )
+
+        rows = params_to_rows(
+            peak_labels=self.peak_labels,
+            params=params,
+            intensity_scale=intensity_scale,
+        )
 
         return write_rows(
             rows,
@@ -695,7 +832,6 @@ class RamanFit:
             meta=meta,
             headers=headers,
         )
-    ### End of v.0.2.8 ###
 
     # Updated v0.3.3
     def load_substrate(self, substrate):

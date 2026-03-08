@@ -42,11 +42,12 @@ __all__ = [
     "Batch",
     "batch",
     "peak_models",
+    "preprocessing",
 
 ]
 
 # Optional: version string (set manually)
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 
 # -----------------------
@@ -77,6 +78,7 @@ _LAZY_MAP = {
     "dataImporter": ("ramanpl", "dataImporter"),
     "baselineAPI": ("ramanpl", "baselineAPI"),
     "exporter": ("ramanpl", "exporter"),
+    "preprocessing": ("ramanpl", "preprocessing"),
 
     # Batch (optional convenience)
     "Batch": ("ramanpl", "batch"),
@@ -88,7 +90,7 @@ _LAZY_MAP = {
 
 
 def __getattr__(name: str) -> Any:
-    if name in ("Mapping", "operation", "dataImporter", "baselineAPI", "batch"):
+    if name in ("Mapping", "operation", "dataImporter", "baselineAPI", "batch", "preprocessing"):
         return import_module(f"ramanpl.{name}")
 
     if name not in _LAZY_MAP:

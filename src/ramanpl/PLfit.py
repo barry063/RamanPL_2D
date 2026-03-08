@@ -16,6 +16,9 @@ from scipy.signal import savgol_filter
 from ramanpl import BaselineAPI
 from ramanpl import DataImporter
 from ramanpl.exporter import params_to_rows, write_rows, write_table
+from ramanpl.preprocessing import SpectralDataset, Pipeline, build_legacy_single_spectrum_pipeline
+import warnings
+
 
 class DataImporter:
     """
@@ -109,51 +112,118 @@ def _generate_p0_trials(
 
     return trials
 
+# Sentinel used to detect whether user explicitly passed poly_degree
+_POLY_DEGREE_SENTINEL = object()
 
-class PLfit:
-    """A class for processing and fitting photoluminescence spectra with Lorentzian functions.
-    
-    Handles data preprocessing (smoothing, background subtraction), curve fitting,
-    and visualization of results for Exciton and Trion peaks.
 
-    Attributes:
-        raw_spectra (ndarray): Raw intensity values from the input spectrum
-        processed_spectra (ndarray): Processed intensity values after preprocessing
-        energy (ndarray): Energy values (x-axis) for the spectrum in eV
-        peak_intensity (float): Maximum intensity value for normalization
-        intensity_normal (ndarray): Normalized intensity values
-        lower_bound (list): Lower bounds for fitting parameters
-        upper_bound (list): Upper bounds for fitting parameters
-        peak_labels (list): Names of peaks being fit (Trion and Exciton)
-        p0 (list): Initial parameter guesses for curve fitting
+def _resolve_baseline_method_with_deprecation(
+    baseline_method,
+    poly_degree=_POLY_DEGREE_SENTINEL,
+):
+    """
+    Resolve baseline_method into the modern single-spec form.
 
-    Methods:
-        __init__: Initialize PLfit object with data and preprocessing options
-        update_bounds: Modify fitting constraints for specific peaks
-        lorentzian_pl: Static Lorentzian function for curve fitting
-        fit_spectrum: Perform the curve fitting operation
-        plot_fit: Visualize data, fit results, and components
+    New preferred style
+    -------------------
+    baseline_method={"method": "poly", "poly_degree": 3}
+
+    Deprecated legacy style
+    -----------------------
+    baseline_method="poly", poly_degree=3
+    baseline_method=("poly", 3)
+
+    Returns
+    -------
+    resolved_baseline_method
+        Usually a string or dict, suitable for downstream pipeline/baseline parsing.
     """
 
-    def __init__(self, spectra, energy, background_remove=False, baseline_method='poly',
-             poly_degree=3, gaussian_sigma=50, smoothing=False,
-             smooth_window=11, smooth_order=3, normalize=True,
-             custom_peaks=None, remove_peaks=None, peak_order=None,
-             peak_profile: str = "lorentzian"
-             ):
+    # Legacy tuple style: ("poly", 3)
+    if isinstance(baseline_method, tuple) and len(baseline_method) == 2:
+        method, deg = baseline_method
+        if str(method).lower() == "poly":
+            warnings.warn(
+                "baseline_method=('poly', degree) is deprecated and will be removed in a future version. "
+                "Use baseline_method={'method': 'poly', 'poly_degree': degree} instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            return {"method": "poly", "poly_degree": int(deg)}
+        return baseline_method
+
+    # Legacy split style: baseline_method='poly', poly_degree=...
+    if poly_degree is not _POLY_DEGREE_SENTINEL:
+        warnings.warn(
+            "poly_degree is deprecated and will be removed in a future version. "
+            "Use baseline_method={'method': 'poly', 'poly_degree': degree} instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+        # If baseline_method is already a dict, only inject poly_degree if missing
+        if isinstance(baseline_method, dict):
+            spec = dict(baseline_method)
+            spec.setdefault("poly_degree", int(poly_degree))
+            return spec
+
+        # If baseline_method is plain 'poly', convert to the modern dict form
+        if str(baseline_method).lower() == "poly":
+            return {"method": "poly", "poly_degree": int(poly_degree)}
+
+        # Non-poly methods ignore poly_degree scientifically, but keep old behaviour safe
+        return baseline_method
+
+    # Already modern dict spec
+    return baseline_method
+
+
+class PLfit:
+    """A class for processing and fitting photoluminescence spectra.
+
+    Supports:
+    - preprocessing via legacy flags or a user-supplied preprocessing Pipeline
+    - peak fitting with either Lorentzian or pseudo-Voigt peak profiles
+    - custom peak definitions, peak removal, and deterministic peak ordering
+    - export of fitted parameters and mapping-ready initial guesses
+
+    Notes
+    -----
+    - Fitting is always performed in peak-normalised intensity space.
+    - `normalize` controls display/output scaling only.
+    - When `preprocessing` is supplied, it overrides the legacy smoothing/background flags.
+    """
+    def __init__(self, spectra, energy, background_remove=False, 
+            baseline_method={"method": "poly", "poly_degree": 1},
+            poly_degree=_POLY_DEGREE_SENTINEL,
+            gaussian_sigma=50, smoothing=False,
+            smooth_window=11, smooth_order=3, normalize=True, preprocessing=None,
+            custom_peaks=None, remove_peaks=None, peak_order=None,
+            peak_profile: str = "lorentzian"
+            ):
         """Initialize PLfit object with data and processing parameters.
 
         Parameters:
             spectra (array-like): PL intensity values (y-axis)
             energy (array-like): Corresponding energy values in eV (x-axis)
             background_remove (bool): Enable background subtraction (default: False)
-            baseline_method (str): Background method 'poly' or 'gaussian' (default: 'poly')
-            poly_degree (int): Polynomial degree for poly background (default: 3)
+            baseline_method : str or dict, optional
+                Baseline specification. Preferred modern style is a dict, for example:
+                {"method": "poly", "poly_degree": 3}
+                or
+                {"method": "airpls", "lam": 1e6, "niter": 50, "tol": 1e-6}.
+            preprocessing (Pipeline or None): Optional preprocessing pipeline. If supplied,
+                it overrides the legacy smoothing/background_remove settings.
+            peak_profile (str): Peak model type: 'lorentzian' or 'pvoigt'.
+            normalize (bool): Controls DISPLAY/OUTPUT scaling only. Fitting is always
+                performed in peak-normalised space.
+            poly_degree : int, optional
+                Deprecated. Use baseline_method={"method": "poly", "poly_degree": degree}
+                instead. If supplied, a DeprecationWarning is issued and the value is folded
+                into baseline_method for backwards compatibility.
             gaussian_sigma (int): Sigma for Gaussian filter (default: 50)
             smoothing (bool): Enable Savitzky-Golay smoothing (default: False)
             smooth_window (int): Window size for smoothing filter (default: 11)
             smooth_order (int): Polynomial order for smoothing (default: 3)
-            normalize (bool):  controls DISPLAY/OUTPUT scaling only. Fitting is ALWAYS performed in peak-normalised space.
 
         Raises:
             ValueError: If invalid baseline method is specified
@@ -161,6 +231,10 @@ class PLfit:
         self.raw_spectra = np.array(spectra)
         self.energy = np.array(energy)
         self.processed_spectra = np.array(spectra.copy())
+
+        baseline_method = _resolve_baseline_method_with_deprecation(
+            baseline_method=baseline_method,
+            poly_degree=poly_degree,)
         
         # Added in build v0.2.7.1
         self._smoothed_spectra = None
@@ -175,7 +249,12 @@ class PLfit:
 
         self.background_remove = background_remove
         self.baseline_method = baseline_method
-        self.poly_degree = poly_degree
+        # Deprecated legacy field kept for backwards compatibility only.
+        # Canonical polynomial degree now lives inside baseline_method when relevant.
+        if isinstance(baseline_method, dict) and str(baseline_method.get("method", "")).lower() == "poly":
+            self.poly_degree = baseline_method.get("poly_degree", None)
+        else:
+            self.poly_degree = None
         self.gaussian_sigma = gaussian_sigma
 
         self.smoothing = smoothing
@@ -190,38 +269,66 @@ class PLfit:
 
         self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
 
-        ## Modified in build v0.2.7.1
-        # Apply smoothing
-        if smoothing:
-            self.processed_spectra = savgol_filter(self.processed_spectra,
-                                                smooth_window, smooth_order)
-            self._smoothed_spectra = self.processed_spectra.copy()
+        # ------------------------------------------------------------
+        # Preprocessing via Pipeline (v0.3.4): behaviour-preserving
+        # Order matches legacy: smoothing -> baseline subtraction
+        # ------------------------------------------------------------
+        ds0 = SpectralDataset(
+            x=self.energy,
+            y=np.asarray(self.processed_spectra, dtype=float).ravel(),
+            modality="PL",
+            axis_kind="energy_eV",
+            meta={
+                # Single spectra typically do not trim on load, but keep for future symmetry
+                "x_trimmed_on_load": bool(getattr(self, "_x_trimmed_on_load", False)),
+            },
+        )
 
-        # Background subtraction (smoothing happens before this; unchanged)
-        if background_remove:
-            method, bkwargs = BaselineAPI.parse_spec(
-                baseline_method,
-                poly_degree=poly_degree,
-                gaussian_sigma=gaussian_sigma
+        # Choose preprocessing pipeline:
+        # - If user supplies `preprocessing`, it overrides legacy flags.
+        # - Otherwise, reproduce legacy behaviour using the legacy builder.
+        if preprocessing is None:
+            pipe = build_legacy_single_spectrum_pipeline(
+                data_range=None,
+                smoothing=bool(smoothing),
+                smooth_window=int(smooth_window),
+                smooth_order=int(smooth_order),
+                background_remove=bool(background_remove),
+                baseline_method=baseline_method,   # already resolved to modern spec
+                poly_degree=None,                  # deprecated, no longer canonical
+                gaussian_sigma=int(gaussian_sigma),
             )
-
-            result = BaselineAPI.subtract(
-                x=self.energy,
-                y=self.processed_spectra,
-                method=method,
-                clip_nonnegative=True,  # always clip
-                **bkwargs,
-            )
-
-            # --- store intermediates for comparison plotting ---
-            self._baseline = np.asarray(result.baseline, dtype=float).ravel()
-            self._corrected_spectra = np.asarray(result.y_corrected, dtype=float).ravel()
-
-            # existing behaviour
-            self.processed_spectra = result.y_corrected
+        elif isinstance(preprocessing, Pipeline):
+            pipe = preprocessing
         else:
-            if smoothing:
-                self._corrected_spectra = self.processed_spectra.copy()
+            raise TypeError(
+                "preprocessing must be None or a ramanpl.preprocessing.Pipeline instance."
+            )
+
+        ds = pipe.apply(ds0)
+
+        # Propagate possibly modified axis/intensity back to fitter state
+        self.energy = np.asarray(ds.x, dtype=float).ravel()
+        self.processed_spectra = np.asarray(ds.y, dtype=float).ravel()
+
+        # --- store intermediates for comparison plotting ---
+        # If crop was applied, crop the stored raw trace to the same axis for safe plotting.
+        crop_mask = ds.meta.get("crop_mask", None)
+        if crop_mask is not None:
+            self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()[crop_mask]
+        else:
+            self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()
+
+        self._smoothed_spectra = ds.meta.get("_smoothed_last", None)
+        self._baseline = ds.meta.get("_baseline_last", None)
+
+        if (self._smoothed_spectra is not None) or (self._baseline is not None):
+            self._corrected_spectra = self.processed_spectra.copy()
+        else:
+            self._corrected_spectra = None
+
+        # optional: store preprocessing recipe for export/debug
+        self.preprocessing = ds.meta.get("pipeline", None)
 
         # DISPLAY flag (fit is always normalised)
         self.normalize = normalize
@@ -581,19 +688,38 @@ class PLfit:
         return out
 
 
-    ### New in v0.2.8 ###
+    ### Updated in v0.3.4 to handle both profiles and include metadata
     def fit_table(self, params=None, *, scaled: bool = True):
         """
         Return per-peak fitted parameters as a list of dicts.
 
-        scaled=True:
-            height_scaled is reported in approximate original units by multiplying
-            normalised peak height by self.peak_intensity (if available).
+        Notes
+        -----
+        - Lorentzian rows include: Peak, Position(eV), FWHM(eV), Scale, Amp,
+        PeakHeight_norm, PeakHeight
+        - pseudo-Voigt rows include: Peak, Position(eV), FWHM(eV), Eta, Amp,
+        PeakHeight_norm, PeakHeight
         """
         if params is None:
             if not hasattr(self, "params_fit") or self.params_fit is None:
                 raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
             params = self.params_fit
+
+        if self.peak_profile == "pvoigt":
+            fitted = self.get_fitted_parameters()
+            rows = []
+            for peak in self.peak_labels:
+                d = fitted[peak]
+                rows.append({
+                    "Peak": peak,
+                    "Position(eV)": d["position"],
+                    "FWHM(eV)": d["fwhm"],
+                    "Eta": d.get("eta", ""),
+                    "Amp": d["amp"],
+                    "PeakHeight_norm": d["height_norm"],
+                    "PeakHeight": d["peak_height"],
+                })
+            return rows
 
         intensity_scale = 1.0
         if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
@@ -618,7 +744,7 @@ class PLfit:
             for r in rows
         ]
 
-
+    ### Updated in v0.3.4 to handle both profiles and include metadata
     def export_fit(
         self,
         out_path: str,
@@ -632,6 +758,13 @@ class PLfit:
         """
         Export fitted parameters to CSV or TXT/TSV.
 
+        Notes
+        -----
+        - For Lorentzian fits, exports the standard columns:
+        Peak, Centre, FWHM, Scale, Amp, PeakHeight_norm, PeakHeight
+        - For pseudo-Voigt fits, exports:
+        Peak, Centre, FWHM, Eta, Amp, PeakHeight_norm, PeakHeight
+
         headers:
             If True, write a metadata header block in TXT/TSV outputs.
             Ignored for CSV.
@@ -640,18 +773,12 @@ class PLfit:
             if not hasattr(self, "params_fit") or self.params_fit is None:
                 raise ValueError("No fitted parameters found. Run fit_spectrum() first.")
             params = self.params_fit
-    
+
         intensity_scale = 1.0
         if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
             intensity_scale = float(self.peak_intensity)
 
-        rows = params_to_rows(
-            peak_labels=self.peak_labels,
-            params=params,
-            intensity_scale=intensity_scale,
-        )
-
-        # Metadata (parallel to RamanFit)
+        # Metadata
         meta = {
             "spectrum_type": getattr(self, "spectrum_type", None),
             "x_quantity": getattr(self, "x_quantity", None),
@@ -659,7 +786,7 @@ class PLfit:
 
             "background_remove": getattr(self, "background_remove", None),
             "baseline_method": getattr(self, "baseline_method", None),
-            "poly_degree": getattr(self, "poly_degree", None),
+            "poly_degree": getattr(self, "poly_degree", None),  # deprecated legacy metadata
             "gaussian_sigma": getattr(self, "gaussian_sigma", None),
 
             "smoothing": getattr(self, "smoothing", None),
@@ -672,10 +799,12 @@ class PLfit:
             "peak_labels": getattr(self, "peak_labels", None),
             "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
             "remove_peaks": getattr(self, "remove_peaks_list", None),
-
+            "peak_profile": getattr(self, "peak_profile", None),
+            "preprocessing": getattr(self, "preprocessing", None),
         }
         meta = {k: v for k, v in meta.items() if v is not None}
 
+        # ---- pseudo-Voigt path ----
         if self.peak_profile == "pvoigt":
             fitted = self.get_fitted_parameters()
             rows_dict = []
@@ -686,12 +815,15 @@ class PLfit:
                     "Centre": d["position"],
                     "FWHM": d["fwhm"],
                     "Eta": d.get("eta", ""),
+                    "Amp": d["amp"],
+                    "PeakHeight_norm": d["height_norm"],
                     "PeakHeight": d["peak_height"],
                 })
+
             return write_table(
                 rows_dict,
                 out_path,
-                fieldnames=["Peak", "Centre", "FWHM", "Eta", "PeakHeight"],
+                fieldnames=["Peak", "Centre", "FWHM", "Eta", "Amp", "PeakHeight_norm", "PeakHeight"],
                 delimiter=delimiter,
                 include_header=include_header,
                 meta=meta,
@@ -699,7 +831,7 @@ class PLfit:
                 meta_in_csv=False,
             )
 
-        # lorentzian path only:
+        # ---- Lorentzian path only ----
         rows = params_to_rows(
             peak_labels=self.peak_labels,
             params=params,
