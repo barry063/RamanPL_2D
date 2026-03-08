@@ -1,3 +1,56 @@
+## v0.3.4 – Preprocessing Pipeline Framework (2025-3-8)
+
+### Added
+
+- New `preprocessing.py` module implementing a modular preprocessing framework.
+- Introduced `Pipeline` class for building ordered preprocessing workflows.
+- Added preprocessing steps:
+  - `CropByRange`
+  - `SmoothSavGol`
+  - `BaselineSubtract` (supports `poly`, `airpls`, `arpls`, `asls`, `gaussian`).
+- `PLfit` and `RamanFit` now accept a `preprocessing` pipeline argument.
+- Exposed `ramanpl.preprocessing` as a public module via `__init__.py`.
+
+### Changed
+
+- Modernised baseline configuration using dictionary-based specification:
+
+  ```python
+  baseline_method={"method": "airpls", "lam": 1e6}
+  ```
+
+- Preprocessing comparison plots restored to legacy-style display:
+  raw / smoothed / baseline / corrected.
+
+- Updated README with pipeline usage examples and documentation.
+
+- Updated example notebooks demonstrating preprocessing and warm-start workflows.
+
+### Fixed
+
+- Fixed fitting failure when using CropByRange due to axis-length mismatch after preprocessing.
+
+- Fixed preprocessing comparison plotting when pipelines are used.
+
+- Fixed parameter export mismatch for pseudo-Voigt peak models.
+
+### Deprecated
+
+- The `poly_degree` argument in `PLfit` and `RamanFit` is now deprecated.
+  Use:
+  
+  ```python
+  baseline_method={"method": "poly", "poly_degree": 3}
+  ```
+
+### Internal
+
+- Updated `PLfit.py`, `RamanFit.py`, `__init__.py`, and `setup.py`.
+
+- Added new example notebooks and updated output files.
+
+-------------
+
 ## v0.3.3 — Unified Line-Shape Architecture & pVoigt Integration (2026-2-17)
 
 ### Added
