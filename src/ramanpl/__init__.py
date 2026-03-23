@@ -47,7 +47,7 @@ __all__ = [
 ]
 
 # Optional: version string (set manually)
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 
 # -----------------------

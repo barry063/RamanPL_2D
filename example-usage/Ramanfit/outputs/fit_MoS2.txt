@@ -1,23 +1,23 @@
 # RamanPL_2D fit export
-# spectrum_type: Raman
-# x_quantity: Raman shift
-# x_unit: cm^-1
-# materials: ['MoS2']
-# substrate: Si
-# background_remove: False
-# baseline_method: {'method': 'poly', 'poly_degree': 3}
+# spectrum_type: "Raman"
+# x_quantity: "Raman shift"
+# x_unit: "cm^-1"
+# materials: ["MoS2"]
+# substrate: "Si"
+# normalize: false
+# intensity_scale(peak_intensity): 427.8828676499448
+# peak_labels: ["E12g", "A1g", "Si"]
+# custom_peaks: "False"
+# remove_peaks: []
+# peak_profile: "lorentzian"
+# preprocessing_recipe: {"name": "legacy_single_spectrum", "steps": [{"name": "savgol", "window_length": 11, "polyorder": 8}]}
+# background_remove: false
+# baseline_method: {"method": "poly", "poly_degree": 3}
 # poly_degree: 3
 # gaussian_sigma: 50
-# smoothing: True
+# smoothing: true
 # smooth_window: 11
 # smooth_order: 8
-# normalize: False
-# intensity_scale(peak_intensity): 427.8828676499448
-# peak_labels: ['E12g', 'A1g', 'Si']
-# custom_peaks: False
-# remove_peaks: []
-# peak_profile: lorentzian
-# preprocessing: {'name': 'legacy_single_spectrum', 'steps': [{'name': 'savgol', 'window_length': 11, 'polyorder': 8}]}
 #
 Peak	Centre	FWHM	Scale	Amp	PeakHeight_norm	PeakHeight
 E12g	383.58119196108436	5.999999999999999	2.9999999999999996	2.0937792707732896	0.22215688045794207	95.05712307851023

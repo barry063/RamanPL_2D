@@ -339,6 +339,15 @@ class PLfit:
             raise ValueError("Peak intensity is non-positive after preprocessing; cannot normalise for fitting.")
         self.intensity_normal = self.processed_spectra / self.peak_intensity
 
+        # Stable serialisable preprocessing metadata for export/debug
+        if self.preprocessing is not None and hasattr(self.preprocessing, "to_dict"):
+            try:
+                self.preprocessing_recipe = self.preprocessing.to_dict()
+            except Exception:
+                self.preprocessing_recipe = None
+        else:
+            self.preprocessing_recipe = None
+
         # ---- Updated in v0.3.3 ---- #
         self.custom_peaks = custom_peaks  # may be None
 
@@ -778,31 +787,33 @@ class PLfit:
         if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
             intensity_scale = float(self.peak_intensity)
 
-        # Metadata
-        meta = {
-            "spectrum_type": getattr(self, "spectrum_type", None),
-            "x_quantity": getattr(self, "x_quantity", None),
-            "x_unit": getattr(self, "x_unit", None),
+        # # Metadata
+        # meta = {
+        #     "spectrum_type": getattr(self, "spectrum_type", None),
+        #     "x_quantity": getattr(self, "x_quantity", None),
+        #     "x_unit": getattr(self, "x_unit", None),
 
-            "background_remove": getattr(self, "background_remove", None),
-            "baseline_method": getattr(self, "baseline_method", None),
-            "poly_degree": getattr(self, "poly_degree", None),  # deprecated legacy metadata
-            "gaussian_sigma": getattr(self, "gaussian_sigma", None),
+        #     "background_remove": getattr(self, "background_remove", None),
+        #     "baseline_method": getattr(self, "baseline_method", None),
+        #     "poly_degree": getattr(self, "poly_degree", None),  # deprecated legacy metadata
+        #     "gaussian_sigma": getattr(self, "gaussian_sigma", None),
 
-            "smoothing": getattr(self, "smoothing", None),
-            "smooth_window": getattr(self, "smooth_window", None),
-            "smooth_order": getattr(self, "smooth_order", None),
+        #     "smoothing": getattr(self, "smoothing", None),
+        #     "smooth_window": getattr(self, "smooth_window", None),
+        #     "smooth_order": getattr(self, "smooth_order", None),
 
-            "normalize": getattr(self, "normalize", None),
-            "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
+        #     "normalize": getattr(self, "normalize", None),
+        #     "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
 
-            "peak_labels": getattr(self, "peak_labels", None),
-            "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
-            "remove_peaks": getattr(self, "remove_peaks_list", None),
-            "peak_profile": getattr(self, "peak_profile", None),
-            "preprocessing": getattr(self, "preprocessing", None),
-        }
-        meta = {k: v for k, v in meta.items() if v is not None}
+        #     "peak_labels": getattr(self, "peak_labels", None),
+        #     "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+        #     "remove_peaks": getattr(self, "remove_peaks_list", None),
+        #     "peak_profile": getattr(self, "peak_profile", None),
+        #     "preprocessing": getattr(self, "preprocessing", None),
+        # }
+        # meta = {k: v for k, v in meta.items() if v is not None}
+
+        meta = self._build_export_metadata(include_legacy=True)
 
         # ---- pseudo-Voigt path ----
         if self.peak_profile == "pvoigt":
@@ -846,6 +857,61 @@ class PLfit:
             meta=meta,
             headers=headers,
         )
+
+    def _build_export_metadata(self, *, include_legacy: bool = True) -> dict:
+        """
+        Build export metadata for fitted PL spectra.
+
+        Parameters
+        ----------
+        include_legacy : bool
+            If True, include legacy compatibility fields such as baseline_method,
+            poly_degree, smoothing flags, etc.
+            If False, prefer preprocessing-centred metadata only.
+
+        Returns
+        -------
+        dict
+            Cleaned metadata dictionary suitable for exporter.write_rows/write_table.
+        """
+        meta = {
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+
+            "normalize": getattr(self, "normalize", None),
+            "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
+
+            "peak_labels": getattr(self, "peak_labels", None),
+            "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+            "remove_peaks": getattr(self, "remove_peaks_list", None),
+            "peak_profile": getattr(self, "peak_profile", None),
+        }
+
+        # Preferred modern metadata
+        pp = getattr(self, "preprocessing", None)
+        if pp is not None:
+            if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):
+                try:
+                    meta["preprocessing_recipe"] = pp.to_dict()
+                except Exception:
+                    meta["preprocessing_recipe"] = str(pp)
+            else:
+                meta["preprocessing_recipe"] = pp
+
+        # Legacy compatibility metadata
+        if include_legacy:
+            meta.update({
+                "background_remove": getattr(self, "background_remove", None),
+                "baseline_method": getattr(self, "baseline_method", None),
+                "poly_degree": getattr(self, "poly_degree", None),
+                "gaussian_sigma": getattr(self, "gaussian_sigma", None),
+                "smoothing": getattr(self, "smoothing", None),
+                "smooth_window": getattr(self, "smooth_window", None),
+                "smooth_order": getattr(self, "smooth_order", None),
+            })
+
+        return {k: v for k, v in meta.items() if v is not None}
 
     ### NEW METHOD in v0.2.3 ###
     def export_p0(self):

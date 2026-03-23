@@ -28,7 +28,105 @@ def _safe_float(x: Any) -> float:
     except Exception:
         return float("nan")
 
+def _normalise_meta_value(v: Any) -> Any:
+    """
+    Convert metadata values into export-safe serialisable forms.
 
+    Rules
+    -----
+    - numpy arrays -> lists
+    - tuples -> lists
+    - objects with to_dict() -> dict
+    - dict / list -> recursively normalised
+    - everything else -> returned as-is
+
+    This keeps metadata headers readable and stable across single, batch,
+    and mapping exports.
+    """
+    try:
+        import numpy as np
+    except Exception:  # pragma: no cover
+        np = None
+
+    if np is not None and isinstance(v, np.ndarray):
+        return v.tolist()
+
+    if isinstance(v, tuple):
+        return [_normalise_meta_value(x) for x in v]
+
+    if isinstance(v, list):
+        return [_normalise_meta_value(x) for x in v]
+
+    if isinstance(v, dict):
+        return {str(k): _normalise_meta_value(val) for k, val in v.items()}
+
+    if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
+        try:
+            return _normalise_meta_value(v.to_dict())
+        except Exception:
+            return str(v)
+
+    return v
+
+
+def normalise_meta(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Return a defensively normalised metadata dict suitable for export.
+    """
+    if not meta:
+        return {}
+    return {str(k): _normalise_meta_value(v) for k, v in dict(meta).items()}
+
+
+def _meta_value_to_text(v: Any) -> str:
+    """
+    Convert a normalised metadata value into a stable text representation
+    for header blocks.
+    """
+    import json
+
+    try:
+        return json.dumps(v, ensure_ascii=False)
+    except Exception:
+        return str(v)
+
+def build_export_meta(
+    *,
+    export_kind: str,
+    user_meta: Optional[Dict[str, Any]] = None,
+    **kwargs,
+) -> Dict[str, Any]:
+    """
+    Build a consistent export metadata dict.
+
+    Parameters
+    ----------
+    export_kind
+        Example values:
+        - "single_fit"
+        - "batch_fit"
+        - "mapping_fit"
+        - "mapping_table"
+    user_meta
+        Optional user-supplied metadata to merge in last.
+    **kwargs
+        Additional metadata fields.
+
+    Returns
+    -------
+    dict
+        Normalised metadata dict.
+    """
+    meta = {"export_kind": export_kind}
+    for k, v in kwargs.items():
+        if v is not None:
+            meta[str(k)] = v
+
+    if user_meta:
+        meta.update(dict(user_meta))
+
+    return normalise_meta(meta)
+    
 def params_to_rows(
     *,
     peak_labels: Sequence[str],
@@ -83,6 +181,106 @@ def params_to_rows(
         )
     return rows
 
+def params_to_rows_profiled(
+    *,
+    peak_labels: Sequence[str],
+    params: Sequence[Number],
+    profile: str = "lorentzian",
+    intensity_scale: float = 1.0,
+    xaxis: Optional[Sequence[Number]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Convert fitted parameter vectors into export rows for either Lorentzian
+    or pseudo-Voigt models.
+
+    Returns rows as plain dicts so optional fields such as eta can be included
+    without changing the original FitExportRow dataclass.
+
+    Parameters
+    ----------
+    peak_labels
+        Ordered peak labels.
+    params
+        Concatenated fitted parameters.
+    profile
+        "lorentzian" or "pvoigt".
+    intensity_scale
+        Scale factor to convert normalised peak heights back into original units.
+    xaxis
+        Required for pVoigt peak_height_norm estimation.
+    """
+    profile = str(profile).lower().strip()
+
+    if profile == "lorentzian":
+        return [
+            {
+                "peak": r.peak,
+                "centre": r.centre,
+                "fwhm": r.fwhm,
+                "scale": r.scale,
+                "amp": r.amp,
+                "peak_height_norm": r.peak_height_norm,
+                "peak_height": r.peak_height,
+            }
+            for r in params_to_rows(
+                peak_labels=peak_labels,
+                params=params,
+                intensity_scale=intensity_scale,
+            )
+        ]
+
+    if profile != "pvoigt":
+        raise ValueError("profile must be 'lorentzian' or 'pvoigt'")
+
+    if xaxis is None:
+        raise ValueError("xaxis is required for pvoigt export.")
+
+    try:
+        import numpy as np
+        try:
+            from .peak_models import single_peak
+        except Exception:  # pragma: no cover
+            from peak_models import single_peak
+    except Exception as exc:
+        raise ImportError("Could not import peak_models.single_peak for pVoigt export.") from exc
+
+    p = np.asarray(params, dtype=float).ravel()
+    x = np.asarray(xaxis, dtype=float).ravel()
+
+    expected = 4 * len(peak_labels)
+    if len(p) != expected:
+        raise ValueError(
+            f"Parameter length mismatch: got {len(p)} values, expected {expected} "
+            f"for {len(peak_labels)} pVoigt peaks."
+        )
+
+    rows: List[Dict[str, Any]] = []
+    for k, name in enumerate(peak_labels):
+        i = 4 * k
+        centre = _safe_float(p[i + 0])
+        fwhm = _safe_float(p[i + 1])
+        amp = _safe_float(p[i + 2])
+        eta = _safe_float(p[i + 3])
+
+        block = np.asarray([centre, fwhm, amp, eta], dtype=float)
+        y_norm = single_peak(x, block, profile="pvoigt")
+        peak_height_norm = float(np.nanmax(y_norm))
+        peak_height = float(peak_height_norm * float(intensity_scale))
+
+        rows.append(
+            {
+                "peak": str(name),
+                "centre": centre,
+                "fwhm": fwhm,
+                "scale": fwhm,
+                "amp": amp,
+                "eta": eta,
+                "peak_height_norm": peak_height_norm,
+                "peak_height": peak_height,
+            }
+        )
+
+    return rows
 
 def write_rows(
     rows: Iterable[FitExportRow],
@@ -123,12 +321,14 @@ def write_rows(
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         # 1) Optional metadata header block for TXT/TSV only
-        if headers and meta and ext in (".txt", ".tsv"):
-            # comment-style lines, safe for spreadsheet import (they will appear as first rows)
+        meta_norm = normalise_meta(meta)
+
+        if headers and meta_norm and ext in (".txt", ".tsv"):
+            # comment-style lines, safe for spreadsheet import
             f.write("# RamanPL_2D fit export\n")
-            for k, v in meta.items():
-                f.write(f"# {k}: {v}\n")
-            f.write("#\n")  # blank comment separator
+            for k, v in meta_norm.items():
+                f.write(f"# {k}: {_meta_value_to_text(v)}\n")
+            f.write("#\n")
 
         # 2) Column headers + data table
         w = csv.writer(f, delimiter=delimiter)
@@ -169,7 +369,12 @@ def write_table(
     fieldnames:
         Column order (explicit to guarantee stable reload).
 
-    Metadata header behaviour matches write_rows(): TXT/TSV only when headers=True.
+    Metadata header behaviour matches write_rows():
+    - TXT/TSV when headers=True
+    - CSV as well when meta_in_csv=True
+
+    Metadata values are normalised into export-safe text forms so nested preprocessing
+    recipes and pipeline metadata remain readable.
     """
     out_path = os.fspath(out_path)
     ext = os.path.splitext(out_path)[1].lower()
@@ -180,11 +385,12 @@ def write_table(
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
-        write_meta = headers and meta and (ext in (".txt", ".tsv") or (meta_in_csv and ext == ".csv"))
+        meta_norm = normalise_meta(meta)
+        write_meta = headers and meta_norm and (ext in (".txt", ".tsv") or (meta_in_csv and ext == ".csv"))
         if write_meta:
             f.write(f"{meta_prefix}RamanPL_2D export\n")
-            for k, v in meta.items():
-                f.write(f"{meta_prefix}{k}: {v}\n")
+            for k, v in meta_norm.items():
+                f.write(f"{meta_prefix}{k}: {_meta_value_to_text(v)}\n")
             f.write(f"{meta_prefix}\n")
 
         w = csv.DictWriter(f, fieldnames=list(fieldnames), delimiter=delimiter, extrasaction="ignore")

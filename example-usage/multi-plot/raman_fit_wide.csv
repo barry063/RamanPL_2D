@@ -1,25 +1,29 @@
 # RamanPL_2D export
-# spectrum_type: Raman
-# x_quantity: Raman shift
-# x_unit: cm^-1
-# materials: ['WS2']
-# substrate: Si
-# background_remove: True
-# baseline_method: arPLS
+# spectrum_type: "Raman"
+# x_quantity: "Raman shift"
+# x_unit: "cm^-1"
+# materials: ["WS2"]
+# substrate: "Si"
+# background_remove: false
+# baseline_method: {"method": "poly", "poly_degree": 3}
 # poly_degree: 3
 # gaussian_sigma: 50
-# smoothing: False
+# smoothing: false
 # smooth_window: 11
 # smooth_order: 3
-# normalize: False
-# peak_labels: ['E12g', 'A1g', '2LA(M)', '2LA(M)-2E22g', '2LA(M)-E22g', '4LA(M)', 'B1/u', '3LA(K)', 'Si']
-# peak_intensity: [np.float64(427.54123196369505), np.float64(1216.2424678990478), np.float64(4517.579200723515)]
-# custom_peaks: False
-# remove_peaks: ['A1g(M)+LA(M)', 'A1g(M)-LA(M)', 'LA(M)']
-# fitter_class: RamanFit
+# normalize: false
+# peak_labels: ["E12g", "A1g", "2LA(M)", "2LA(M)-2E22g", "2LA(M)-E22g", "4LA(M)", "B1/u", "3LA(K)", "Si"]
+# peak_intensity: [295.4965129248701, 1106.8100537687192, 4130.394523777787]
+# peak_profile: "lorentzian"
+# params_per_peak: 3
+# preprocessing: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": "arpls", "poly_degree": 3, "gaussian_sigma": 50, "clip_nonnegative": true}]}
+# custom_peaks: "False"
+# remove_peaks: ["A1g(M)+LA(M)", "A1g(M)-LA(M)", "LA(M)"]
+# fitter_class: "RamanFit"
 # n_spectra: 3
+# fit_spectrum_kwargs: {}
 # 
 source,2LA(M)-2E22g_fwhm,2LA(M)-2E22g_peak_height,2LA(M)-2E22g_position,2LA(M)-E22g_fwhm,2LA(M)-E22g_peak_height,2LA(M)-E22g_position,2LA(M)_fwhm,2LA(M)_peak_height,2LA(M)_position,3LA(K)_fwhm,3LA(K)_peak_height,3LA(K)_position,4LA(M)_fwhm,4LA(M)_peak_height,4LA(M)_position,A1g_fwhm,A1g_peak_height,A1g_position,B1/u_fwhm,B1/u_peak_height,B1/u_position,E12g_fwhm,E12g_peak_height,E12g_position,Si_fwhm,Si_peak_height,Si_position,condition
-765C_Raman.txt,20,2.90693,305,20,4.73269,322.379,4.04247,29.8678,348.146,10,2.3772,570,20,3.38343,710,10,1.77291e-07,424,10,5.32706,413,3.18601,20.2823,356.881,5.73859,454.296,520.044,765
-805C_Raman.txt,3.35787,89.5724,297.171,20,197.942,325.185,10,632.037,348.715,10,54.7433,580,20,49.599,700.532,3.281,268.035,419.97,3.3706,189.359,416.5,6.93666,987.022,354.685,4.58331,1046.24,520.834,805
-830C_Raman.txt,20,197.758,295.326,20,767.961,325.088,10,2875.98,349.66,10,272.106,580,20,208.066,699.062,4.59889,1364.65,420.495,4.22052,603.678,416.475,7.12983,2982.22,354.886,8.17021,772.332,521.311,830
+765C_Raman.txt,3.6286,2.65162,305,18.7962,4.74972,318.553,8.94074,14.4182,348,10,2.25453,570,20,1.48713,697,9.71902,3.78984e-12,418,10,5.36581,413,7.44722,10.9504,353.805,6.22543,302.178,520.11,765
+805C_Raman.txt,8.28433,55.7923,296.014,20,201.101,325.035,10,704.617,348.974,10,54.1683,580,20,50.1103,700.396,5.4115,154.962,420.956,5.44047,166.979,416.23,8.55625,780.433,355.121,9.13928,642.042,520.959,805
+830C_Raman.txt,8.06123,162.5,296.26,20,685.441,324.451,10,2629.49,348.859,10,262.494,580,20,205.204,699.003,5.40249,774.523,421.709,5.77009,801.518,416.949,8.29481,2914.46,354.917,12.081,591.334,521.518,830

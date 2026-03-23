@@ -13,20 +13,33 @@ Classes:
     Raman_Integration: Analyzes Raman data through spectral integration
 """
 
+from typing import Optional, Tuple
+from collections import Counter
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import optimize
-from scipy.signal import savgol_filter
-from scipy.integrate import simpson
 from renishawWiRE import WDFReader
-from ramanpl import BaselineAPI
-from ramanpl import DataImporter
-from typing import Optional, Tuple
-from ramanpl.exporter import write_table
-from collections import Counter
+from scipy import optimize
+from scipy.integrate import simpson
+
 try:
+    from .baselineAPI import BaselineAPI
+    from .dataImporter import DataImporter
+    from .exporter import write_table
+    from .preprocessing import (
+        Pipeline,
+        build_legacy_mapping_pipeline,
+        apply_pipeline_to_mapping_cube,
+    )
     from .peak_models import single_peak
 except Exception:  # pragma: no cover
+    from baselineAPI import BaselineAPI
+    from dataImporter import DataImporter
+    from exporter import write_table
+    from preprocessing import (
+        Pipeline,
+        build_legacy_mapping_pipeline,
+        apply_pipeline_to_mapping_cube,
+    )
     from peak_models import single_peak
 
 def fit_summary(
@@ -404,11 +417,130 @@ class MappingImage:
         plt.show()
 
 
+class _MappingPreprocessMixin:
+    """
+    Shared preprocessing helpers for PLMapping and RamanMapping.
+
+    This mixin keeps:
+    - pipeline construction / storage
+    - cube-level preprocessing through preprocessing.py
+    - fit-space normalisation separate from preprocessing
+    """
+
+    def _build_default_preprocessing_pipeline(self) -> Pipeline:
+        return build_legacy_mapping_pipeline(
+            data_range=self.data_range,
+            smoothing=self.smoothing,
+            smooth_window=self.smooth_window,
+            smooth_order=self.smooth_poly,
+            background_remove=self.background_remove,
+            baseline_method=self.baseline_method,
+            poly_degree=self.poly_degree,
+            gaussian_sigma=self.gaussian_sigma,
+        )
+
+    def _initialise_preprocessing(self, preprocessing=None):
+        """
+        Initialise mapping preprocessing.
+
+        If preprocessing is None, build a legacy-compatible mapping pipeline
+        from the existing class flags.
+        """
+        if preprocessing is not None and not isinstance(preprocessing, Pipeline):
+            raise TypeError("preprocessing must be a preprocessing.Pipeline or None.")
+
+        self.preprocessing = preprocessing if preprocessing is not None else self._build_default_preprocessing_pipeline()
+        self._preprocessed_cube_cache = None
+        self._preprocessed_x_cache = None
+        self._preprocess_meta = {}
+
+    def _get_processed_mapping_cube(self):
+        """
+        Return the preprocessed mapping cube and spectral axis.
+
+        Uses caching so preprocessing is only performed once unless the object
+        is re-created.
+        """
+        if self._preprocessed_cube_cache is not None and self._preprocessed_x_cache is not None:
+            return self._preprocessed_x_cache, self._preprocessed_cube_cache
+
+        x_attr = "xdata" if hasattr(self, "xdata") else "wavenumber"
+        x_raw = np.asarray(getattr(self, x_attr), dtype=float).ravel()
+        cube_raw = np.asarray(self.spectra, dtype=float)
+
+        axis_kind = "energy_eV" if x_attr == "xdata" else "raman_shift_cm-1"
+        modality = "PL" if x_attr == "xdata" else "Raman"
+
+        result = apply_pipeline_to_mapping_cube(
+            x=x_raw,
+            cube=cube_raw,
+            pipeline=self.preprocessing,
+            modality=modality,
+            axis_kind=axis_kind,
+            meta={
+                "x_trimmed_on_load": bool(getattr(self, "_x_trimmed_on_load", False)),
+                "filename": getattr(self, "filename", None),
+            },
+        )
+
+        self._preprocessed_x_cache = np.asarray(result.x, dtype=float).ravel()
+        self._preprocessed_cube_cache = np.asarray(result.cube, dtype=float)
+        self._preprocess_meta = dict(result.meta)
+
+        return self._preprocessed_x_cache, self._preprocessed_cube_cache
+
+    def _prepare_fit_spectrum(self, xdata, spec, *, fit_normalize=True):
+        """
+        Final fit-space preparation after preprocessing.
+
+        Preprocessing itself is handled by preprocessing.py.
+        This method only applies the final optional fit normalisation.
+        """
+        y = np.asarray(spec, dtype=float).ravel()
+
+        scale = np.nanmax(y)
+        if (not np.isfinite(scale)) or scale <= 0:
+            return None, None
+
+        if fit_normalize:
+            return y / scale, float(scale)
+        else:
+            return y, float(scale)
+
+    def _preprocess_single_spectrum(self, xdata, spec, *, fit_normalize=True):
+        """
+        Compatibility helper used by seed / reference-spectrum paths.
+
+        This applies the same mapping pipeline to a single spectrum by wrapping
+        it as a 1x1 cube, then performs optional fit-space normalisation.
+        """
+        cube = np.asarray(spec, dtype=float).reshape(1, 1, -1)
+
+        axis_kind = "energy_eV" if hasattr(self, "xdata") else "raman_shift_cm-1"
+        modality = "PL" if hasattr(self, "xdata") else "Raman"
+
+        result = apply_pipeline_to_mapping_cube(
+            x=np.asarray(xdata, dtype=float).ravel(),
+            cube=cube,
+            pipeline=self.preprocessing,
+            modality=modality,
+            axis_kind=axis_kind,
+            meta={
+                "x_trimmed_on_load": bool(getattr(self, "_x_trimmed_on_load", False)),
+                "filename": getattr(self, "filename", None),
+            },
+        )
+
+        y_proc = np.asarray(result.cube[0, 0, :], dtype=float).ravel()
+        x_proc = np.asarray(result.x, dtype=float).ravel()
+        return self._prepare_fit_spectrum(x_proc, y_proc, fit_normalize=fit_normalize)
+
+
 #########################################################################################################################
 #################################################### PL Mapping #########################################################
 #########################################################################################################################
 
-class PLMapping:
+class PLMapping(_MappingPreprocessMixin):
     """Photoluminescence mapping analysis through Lorentzian peak fitting.
     
     Attributes:
@@ -451,6 +583,7 @@ class PLMapping:
         smooth_poly=3,
         gaussian_sigma=10,
         peak_profile: str = "lorentzian",
+        preprocessing=None,
     ):
         """Initialize PL mapping analyzer.
         
@@ -468,6 +601,7 @@ class PLMapping:
             smooth_poly: Savitzky-Golay polynomial order
             gaussian_sigma: Gaussian filter width
             peak_profile: str = "lorentzian" or "pvoigt"
+            preprocessing: Optional custom preprocessing pipeline (overrides legacy flag-based pipeline if provided)
         """
         self.filename = filename
         self.custom_peaks = custom_peaks
@@ -501,6 +635,8 @@ class PLMapping:
         if self.peak_profile not in ("lorentzian", "pvoigt"):
             raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
         self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+        # Shared preprocessing pipeline (legacy-compatible if None)
+        self._initialise_preprocessing(preprocessing=preprocessing)
 
         # ---- load mapping data (optionally trimmed) ----
         if self.data_range is not None:
@@ -529,7 +665,7 @@ class PLMapping:
         self.norm_scale_map = np.full((self.Y, self.X), np.nan, dtype=float)
 
 
-    ### NEW METHOD IN v0.2.7 ###
+    ### NEW METHOD IN v0.3.5 ###
     @classmethod
     def from_arrays(
         cls,
@@ -550,6 +686,7 @@ class PLMapping:
         smooth_poly=3,
         gaussian_sigma=10,
         peak_profile: str = "lorentzian",
+        preprocessing=None,
     ):
         """
         Create a PLMapping instance from in-memory mapping arrays (no file IO).
@@ -616,6 +753,7 @@ class PLMapping:
         if obj.peak_profile not in ("lorentzian", "pvoigt"):
             raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
         obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
+        obj._initialise_preprocessing(preprocessing=preprocessing)
 
         # Allocate output arrays (same as __init__)
         num_peaks = len(obj.custom_peaks)
@@ -652,40 +790,6 @@ class PLMapping:
             y_ref = self.spectra[y, x, :]
 
         return np.asarray(y_ref, dtype=float).ravel(), np.asarray(self.xdata, dtype=float).ravel()
-
-    ## NEW METHOD ADDED in v0.2.3 ##
-    def _preprocess_single_spectrum(self, xdata, spec):
-        """
-        Preprocessing for fitting (always normalised):
-        1) optional smoothing
-        2) optional background removal
-        3) normalisation by peak intensity
-
-        Returns
-        -------
-        y_norm : ndarray
-            Peak-normalised spectrum for fitting
-        scale : float
-            Peak intensity used for scaling back (raw units)
-        """
-        y = np.asarray(spec, dtype=float)
-
-        # 1) smoothing
-        if self.smoothing:
-            y = savgol_filter(y, self.smooth_window, self.smooth_poly)
-
-        # 2) background removal
-        if self.background_remove:
-            y = self.remove_background(xdata, y)
-
-        # 3) peak normalisation (always)
-        scale = np.max(y)
-        if scale <= 0:
-            return None, None
-
-        y_norm = y / scale
-        return y_norm, scale
-    ## END NEW METHOD ###
 
     def show_optical_image(self):
         """Display the optical image."""
@@ -786,14 +890,8 @@ class PLMapping:
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
 
-        # --- Build spectral mask from energy range (eV)
-        # If trimmed at load, no need to remask.
-        if getattr(self, "_x_trimmed_on_load", False):
-            xdata = self.xdata
-            mask = None
-        else:
-            mask = DataImporter.mask_by_xrange(self.xdata, self.data_range)
-            xdata = self.xdata[mask]
+        # --- Shared preprocessing path (crop + smoothing + baseline) ---
+        xdata, spectra_fit_cube = self._get_processed_mapping_cube()
 
         # --- Build bounds from custom_peaks (in insertion order)
         lower_bound, upper_bound = [], []
@@ -859,46 +957,22 @@ class PLMapping:
         for j in range(self.Y):
             for i in range(self.X):
 
-                # --- get spectrum for this pixel ---
-                y = self.spectra[j, i, :]
-                if mask is not None:
-                    y = y[mask]
-                x = xdata  # already masked (or full) above
+                # --- get already-preprocessed spectrum for this pixel ---
+                y = np.asarray(spectra_fit_cube[j, i, :], dtype=float)
+                x = xdata
 
-                # --- normalisation (KEEP your existing behaviour) ---
-                # If your existing code already fills norm_scale_map/residual_map, keep it consistent.
-                y = y.astype(float)
+                # --- final fit-space preparation only ---
+                y_fitspace, s = self._prepare_fit_spectrum(x, y, fit_normalize=fit_normalize)
 
-                # --- preprocessing consistent with your class flags ---
-                if fit_normalize:
-                    y_fitspace, s = self._preprocess_single_spectrum(x, y)
-                    if y_fitspace is None:
-                        self.norm_scale_map[j, i] = np.nan
-                        self.residual_map[j, i] = np.nan
-                        self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
-                        if reset_on_fail:
-                            p0_current = p0_base.copy()
-                        continue
-                    self.norm_scale_map[j, i] = float(s)
-                else:
-                    # still apply smoothing/background removal, but don't normalise
-                    y_proc = np.asarray(y, dtype=float)
-                    if self.smoothing:
-                        y_proc = savgol_filter(y_proc, self.smooth_window, self.smooth_poly)
-                    if self.background_remove:
-                        y_proc = self.remove_background(x, y_proc)
+                if y_fitspace is None:
+                    self.norm_scale_map[j, i] = np.nan
+                    self.residual_map[j, i] = np.nan
+                    self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
+                    if reset_on_fail:
+                        p0_current = p0_base.copy()
+                    continue
 
-                    s = np.nanmax(y_proc)
-                    if (not np.isfinite(s)) or s <= 0:
-                        self.norm_scale_map[j, i] = np.nan
-                        self.residual_map[j, i] = np.nan
-                        self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
-                        if reset_on_fail:
-                            p0_current = p0_base.copy()
-                        continue
-
-                    self.norm_scale_map[j, i] = float(s)
-                    y_fitspace = y_proc
+                self.norm_scale_map[j, i] = float(s)
 
                 # (If you already do baseline removal / smoothing in Mapping, do it here exactly as before.)
                 # --- multi-start setup ---
@@ -1838,7 +1912,7 @@ class PL_Integration:
 #################################################### Raman Mapping #####################################################
 ########################################################################################################################
 
-class RamanMapping:
+class RamanMapping(_MappingPreprocessMixin):
     """Raman mapping analysis through Lorentzian peak fitting.
     
     Attributes:
@@ -1883,6 +1957,7 @@ class RamanMapping:
         smooth_poly=3,
         gaussian_sigma=10,
         peak_profile: str = "lorentzian",
+        preprocessing=None,
     ):
         """Initialize Raman mapping analyzer.
         
@@ -1900,6 +1975,7 @@ class RamanMapping:
             smooth_poly: Savitzky-Golay polynomial order
             gaussian_sigma: Gaussian filter width
             peak_profile: str = "lorentzian" or "pvoigt"
+            preprocessing: Optional list of preprocessing steps to apply before fitting (e.g., ['normalize', 'smooth'])
         """
         self.filename = filename
         self.custom_peaks = custom_peaks
@@ -1933,6 +2009,8 @@ class RamanMapping:
         if self.peak_profile not in ("lorentzian", "pvoigt"):
             raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
         self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+        # Shared preprocessing pipeline (legacy-compatible if None)
+        self._initialise_preprocessing(preprocessing=preprocessing)
 
         # ---- load mapping data (Raman always wavenumber axis) ----
         loader = MappingFileLoader(filename, x_range=self.data_range, axis="wavenumber")
@@ -1957,7 +2035,7 @@ class RamanMapping:
         self.ratio_A1g_E2g = np.full((self.Y, self.X), np.nan, dtype=float)
         self.ratio_E2g_A1g = np.full((self.Y, self.X), np.nan, dtype=float)
 
-    ### New in v0.2.7 ###
+    ### Updated in v0.3.5 ###
     @classmethod
     def from_arrays(
         cls,
@@ -1978,6 +2056,7 @@ class RamanMapping:
         smooth_poly=3,
         gaussian_sigma=10,
         peak_profile: str = "lorentzian",
+        preprocessing=None,
     ):
         """
         Create a RamanMapping instance from in-memory mapping arrays (no file IO).
@@ -2026,6 +2105,7 @@ class RamanMapping:
         if obj.peak_profile not in ("lorentzian", "pvoigt"):
             raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
         obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
+        obj._initialise_preprocessing(preprocessing=preprocessing)
 
         # Validate shapes
         if obj.spectra.ndim != 3:
@@ -2075,41 +2155,7 @@ class RamanMapping:
             y_ref = self.spectra[y, x, :]
 
         return np.asarray(y_ref, dtype=float).ravel(), np.asarray(self.wavenumber, dtype=float).ravel()
-
-    ### UPDATED IN v0.3.0 ###
-    def _preprocess_single_spectrum(self, xdata, spec, *, fit_normalize: bool = True):
-        """
-        Preprocessing for fitting:
-        1) optional smoothing
-        2) optional background removal
-        3) optional peak normalisation (fit space)
-
-        Returns
-        -------
-        y_out : ndarray or None
-            Preprocessed spectrum. Normalised if fit_normalize=True.
-        scale : float or None
-            Peak intensity used for scaling back (raw units). If fit_normalize=False,
-            scale is still returned for display/export convenience.
-        """
-        y = np.asarray(spec, dtype=float)
-
-        if self.smoothing:
-            y = savgol_filter(y, self.smooth_window, self.smooth_poly)
-
-        if self.background_remove:
-            y = self.remove_background(xdata, y)
-
-        scale = np.nanmax(y)
-        if (not np.isfinite(scale)) or scale <= 0:
-            return None, None
-
-        if fit_normalize:
-            return y / scale, float(scale)
-        else:
-            return y, float(scale)
-
-    
+   
     @staticmethod
     def custom_peaks_from_ramanfit(raman_fit):
         """
@@ -2212,7 +2258,7 @@ class RamanMapping:
         return sum_peaks(np.asarray(x), params, profile="pvoigt", stride=4)
 
 
-    ### UPDATED METHOD IN v0.3.3 ###
+    ### UPDATED METHOD IN v0.3.5 ###
     def fit_spectra(
         self,
         initial_p0=None,
@@ -2292,13 +2338,8 @@ class RamanMapping:
 
             return True
 
-        # ---------- mask + x-axis ----------
-        if getattr(self, "_x_trimmed_on_load", False):
-            xdata = self.wavenumber
-            mask = None
-        else:
-            mask = DataImporter.mask_by_xrange(self.wavenumber, self.data_range)
-            xdata = self.wavenumber[mask]
+        # ---------- shared preprocessing path ----------
+        xdata, spectra_fit_cube = self._get_processed_mapping_cube()
 
 
         # ---------- bounds ----------
@@ -2376,9 +2417,15 @@ class RamanMapping:
                 p0_current = p0_base.copy()
 
             for i in range(self.X):
-                raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
+                # raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
-                spec_fit, scale = self._preprocess_single_spectrum(xdata, raw_spec, fit_normalize=fit_normalize)
+                # spec_fit, scale = self._preprocess_single_spectrum(xdata, raw_spec, fit_normalize=fit_normalize)
+
+                y = np.asarray(spectra_fit_cube[j, i, :], dtype=float)
+                x = xdata
+
+                spec_fit, scale = self._prepare_fit_spectrum(x, y, fit_normalize=fit_normalize)
+
                 if spec_fit is None:
                     self.norm_scale_map[j, i] = np.nan
                     self.residual_map[j, i] = np.nan

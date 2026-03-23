@@ -1,14 +1,15 @@
 """
 preprocessing.py
 
-Minimal preprocessing framework for RamanPL_2D (v0.3.4 target).
-
 Design goals:
-- Single-spectrum first (1D arrays), mapping support later (v0.3.5).
+- Single-spectrum first (1D arrays), with mapping/cube execution added in v0.3.5.
 - Modality-aware presets can be built on top without forcing PL to over-process.
 - Keep operations explicit, composable, and reproducible (serialisable step specs).
+- Keep preprocessing steps scientifically 1D, while allowing mapping execution
+  through a shared cube runner.
 
-This module does NOT change existing behaviour until PLfit/RamanFit start using it.
+This module is designed to preserve existing single-spectrum behaviour while
+providing a shared preprocessing path for mapping/batch integration.
 """
 
 from __future__ import annotations
@@ -69,6 +70,31 @@ class SpectralDataset:
         if "meta" in kwargs:
             d["meta"] = dict(kwargs["meta"])
         return SpectralDataset(**d)
+
+
+@dataclass(frozen=True)
+class MappingPreprocessResult:
+    """
+    Result container for mapping/cube preprocessing.
+
+    Parameters
+    ----------
+    x
+        Processed spectral axis (1D).
+    cube
+        Processed spectral cube with shape [Y, X, N].
+    modality
+        "Raman" or "PL".
+    axis_kind
+        "raman_shift_cm-1" | "energy_eV" | "wavelength_nm".
+    meta
+        Shared preprocessing metadata/provenance for the cube.
+    """
+    x: np.ndarray
+    cube: np.ndarray
+    modality: str
+    axis_kind: str
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 class PreprocessStep:
@@ -259,6 +285,198 @@ class Pipeline:
         return {"name": self.name, "steps": [s.to_dict() for s in self.steps]}
 
 
+def _apply_pipeline_steps(ds: SpectralDataset, steps: List[PreprocessStep]) -> SpectralDataset:
+    """
+    Apply an explicit list of preprocessing steps to a SpectralDataset.
+
+    This is mainly used internally so mapping execution can:
+    - apply CropByRange once at cube level, then
+    - apply the remaining pointwise steps spectrum-by-spectrum.
+    """
+    out = ds
+    for step in steps:
+        out = step.apply(out)
+
+    meta = dict(out.meta)
+    meta["pipeline_steps_applied"] = [s.to_dict() for s in steps]
+    return out.copy_with(meta=meta)
+
+
+def _split_pipeline_for_mapping(pipeline: Optional[Pipeline]) -> Tuple[List[CropByRange], List[PreprocessStep]]:
+    """
+    Split a Pipeline into:
+    1) axis-level crop steps (applied once to the shared x-axis / cube)
+    2) pointwise steps (applied spectrum-by-spectrum)
+
+    This keeps preprocessing steps scientifically 1D while avoiding repeated
+    crop-mask construction for every pixel.
+    """
+    if pipeline is None:
+        return [], []
+
+    crop_steps: List[CropByRange] = []
+    pointwise_steps: List[PreprocessStep] = []
+
+    for step in pipeline.steps:
+        if isinstance(step, CropByRange):
+            crop_steps.append(step)
+        else:
+            pointwise_steps.append(step)
+
+    return crop_steps, pointwise_steps
+
+
+def apply_pipeline_to_mapping_cube(
+    *,
+    x: ArrayLike1D,
+    cube: np.ndarray,
+    pipeline: Optional[Pipeline],
+    modality: str,
+    axis_kind: str,
+    meta: Optional[Dict[str, Any]] = None,
+) -> MappingPreprocessResult:
+    """
+    Apply a preprocessing pipeline to a spectral mapping cube.
+
+    Behaviour
+    ---------
+    - CropByRange steps are applied once at the shared axis/cube level.
+    - All remaining steps are applied pointwise to each spectrum in the cube.
+    - This preserves the current scientific meaning of smoothing/baseline steps
+      while enabling mapping support in v0.3.5.
+
+    Parameters
+    ----------
+    x
+        Shared spectral axis, shape [N].
+    cube
+        Spectral cube, shape [Y, X, N].
+    pipeline
+        Preprocessing Pipeline. May be None.
+    modality
+        "Raman" or "PL".
+    axis_kind
+        "raman_shift_cm-1" | "energy_eV" | "wavelength_nm".
+    meta
+        Optional shared metadata/provenance.
+
+    Returns
+    -------
+    MappingPreprocessResult
+        Processed axis, processed cube, and shared metadata.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    cube = np.asarray(cube, dtype=float)
+
+    if cube.ndim != 3:
+        raise ValueError("cube must be a 3D ndarray with shape [Y, X, N].")
+    if cube.shape[2] != x.size:
+        raise ValueError(
+            f"cube.shape[2] ({cube.shape[2]}) must match len(x) ({x.size})."
+        )
+
+    meta_out: Dict[str, Any] = {} if meta is None else dict(meta)
+
+    if pipeline is None:
+        return MappingPreprocessResult(
+            x=x.copy(),
+            cube=cube.copy(),
+            modality=modality,
+            axis_kind=axis_kind,
+            meta=meta_out,
+        )
+
+    crop_steps, pointwise_steps = _split_pipeline_for_mapping(pipeline)
+
+    # ------------------------------------------------------------
+    # 1) Apply crop steps once at cube level
+    # ------------------------------------------------------------
+    x_work = x.copy()
+    cube_work = cube.copy()
+    crop_history = []
+    crop_mask_total = np.ones(x_work.shape, dtype=bool)
+
+    for step in crop_steps:
+        if step.data_range is None:
+            continue
+
+        if bool(meta_out.get("x_trimmed_on_load", False)):
+            crop_history.append(
+                {
+                    "data_range": step.data_range,
+                    "applied": False,
+                    "reason": "x_trimmed_on_load",
+                }
+            )
+            continue
+
+        mask = DataImporter.mask_by_xrange(x_work, step.data_range)
+        if mask is None or np.sum(mask) < 3:
+            raise ValueError(
+                f"CropByRange produced too few points for mapping cube. data_range={step.data_range}"
+            )
+
+        x_work = x_work[mask]
+        cube_work = cube_work[:, :, mask]
+        crop_mask_total = crop_mask_total[mask]
+
+        crop_history.append(
+            {
+                "data_range": step.data_range,
+                "applied": True,
+            }
+        )
+
+    if crop_history:
+        meta_out["crop"] = crop_history[0] if len(crop_history) == 1 else crop_history
+        meta_out["crop_mask"] = crop_mask_total
+
+    # ------------------------------------------------------------
+    # 2) Apply remaining steps pointwise
+    # ------------------------------------------------------------
+    cube_processed = np.empty_like(cube_work, dtype=float)
+    sample_meta = None
+
+    for iy in range(cube_work.shape[0]):
+        for ix in range(cube_work.shape[1]):
+            ds0 = SpectralDataset(
+                x=x_work,
+                y=np.asarray(cube_work[iy, ix, :], dtype=float).ravel(),
+                modality=modality,
+                axis_kind=axis_kind,
+                meta=dict(meta_out),
+            )
+
+            ds1 = _apply_pipeline_steps(ds0, pointwise_steps)
+            cube_processed[iy, ix, :] = np.asarray(ds1.y, dtype=float).ravel()
+
+            # Store one representative metadata record for shared provenance.
+            if sample_meta is None:
+                sample_meta = dict(ds1.meta)
+
+    # Shared provenance
+    meta_final = dict(meta_out)
+    meta_final["pipeline"] = pipeline.to_dict()
+
+    if sample_meta is not None:
+        for key in (
+            "smoothing",
+            "baseline",
+            "_smoothed_last",
+            "_baseline_last",
+            "pipeline_steps_applied",
+        ):
+            if key in sample_meta:
+                meta_final[key] = sample_meta[key]
+
+    return MappingPreprocessResult(
+        x=x_work,
+        cube=cube_processed,
+        modality=modality,
+        axis_kind=axis_kind,
+        meta=meta_final,
+    )
+
 def build_legacy_single_spectrum_pipeline(
     *,
     data_range,
@@ -296,3 +514,48 @@ def build_legacy_single_spectrum_pipeline(
         )
 
     return Pipeline(steps=steps, name="legacy_single_spectrum")
+
+def build_legacy_mapping_pipeline(
+    *,
+    data_range,
+    smoothing,
+    smooth_window,
+    smooth_order,
+    background_remove,
+    baseline_method,
+    poly_degree=None,
+    gaussian_sigma=50,
+) -> Pipeline:
+    """
+    Build a pipeline that reproduces the existing mapping preprocessing order:
+
+      1) crop by data_range (if provided and not already trimmed on load)
+      2) smoothing (if enabled)
+      3) baseline subtraction (if enabled)
+
+    Notes
+    -----
+    - Unlike the single-spectrum builder, mapping includes CropByRange because
+      mapping datasets are commonly loaded as full cubes and then trimmed.
+    - This function is intended to preserve legacy mapping behaviour while
+      moving execution into the shared preprocessing framework.
+    """
+    steps: List[PreprocessStep] = []
+
+    if data_range is not None:
+        steps.append(CropByRange(data_range=data_range))
+
+    if smoothing:
+        steps.append(SmoothSavGol(window_length=smooth_window, polyorder=smooth_order))
+
+    if background_remove:
+        steps.append(
+            BaselineSubtract(
+                baseline_spec=baseline_method,
+                poly_degree=3 if poly_degree is None else poly_degree,
+                gaussian_sigma=gaussian_sigma,
+                clip_nonnegative=True,
+            )
+        )
+
+    return Pipeline(steps=steps, name="legacy_mapping")

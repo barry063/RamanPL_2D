@@ -372,13 +372,30 @@ def fit_spectra_batch(
     """
     Fit multiple spectra using PLfit or RamanFit.
 
-    fitter_cls can be either:
-      - the class itself (e.g. RamanFit.RamanFit), OR
-      - the module imported as `from ramanpl import RamanFit` (we then use RamanFit.RamanFit)
+    Parameters
+    ----------
+    spectra : Sequence[Spectrum]
+        Batch of raw spectra to fit.
+    fitter_cls
+        Either the fitter class itself, or the imported module containing it.
+    fitter_kwargs : dict, optional
+        Keyword arguments passed directly to the fitter constructor.
+        This includes preprocessing-related kwargs such as:
+            - preprocessing
+            - baseline_method
+            - smoothing
+            - peak_profile
+            - custom_peaks
+    fit_spectrum_kwargs : dict, optional
+        Keyword arguments passed directly to fitter.fit_spectrum(...).
+    return_fitters : bool, optional
+        If True, also return the fitted fitter objects.
 
-    Returns:
-      - if return_fitters=False: list[(raw_spectrum, fitted_spectrum)]
-      - if return_fitters=True : list[(raw_spectrum, fitted_spectrum, fitter_object)]
+    Returns
+    -------
+    list
+        - if return_fitters=False: list[(raw_spectrum, fitted_spectrum)]
+        - if return_fitters=True : list[(raw_spectrum, fitted_spectrum, fitter_object)]
     """
     fitter_kwargs = fitter_kwargs or {}
     fit_spectrum_kwargs = fit_spectrum_kwargs or {}
@@ -554,7 +571,6 @@ def _infer_metadata_from_fitters(
     if not fitters:
         return {}
 
-
     # Keys mirror RamanFit/PLfit export metadata where possible.
     key_map: Dict[str, str] = {
         "spectrum_type": "spectrum_type",
@@ -562,6 +578,8 @@ def _infer_metadata_from_fitters(
         "x_unit": "x_unit",
         "materials": "materials",
         "substrate": "substrate",
+
+        # legacy / behaviour-preserving fitter flags
         "background_remove": "background_remove",
         "baseline_method": "baseline_method",
         "poly_degree": "poly_degree",
@@ -570,14 +588,33 @@ def _infer_metadata_from_fitters(
         "smooth_window": "smooth_window",
         "smooth_order": "smooth_order",
         "normalize": "normalize",
+
+        # peak-model metadata
         "peak_labels": "peak_labels",
         "peak_intensity": "peak_intensity",
+        "peak_profile": "peak_profile",
+        "params_per_peak": "params_per_peak",
 
+        # preprocessing metadata (v0.3.4+)
+        "preprocessing": "preprocessing",
+        "preprocessing_recipe": "preprocessing_recipe",
     }
 
     def _norm_value(v: Any) -> Any:
         if isinstance(v, np.ndarray):
             return v.tolist()
+
+        # Serialise preprocessing pipelines / similar objects cleanly into metadata
+        if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
+            try:
+                return v.to_dict()
+            except Exception:
+                return str(v)
+
+        # Safeguard common containers
+        if isinstance(v, tuple):
+            return list(v)
+
         return v
 
     def _eq(a: Any, b: Any) -> bool:
@@ -893,6 +930,10 @@ class _BaseBatch:
     _df_cache: Any = None                         # pandas DataFrame cache (optional)
     _wide_cache: Any = None                       # pandas DataFrame cache (optional)
 
+    # reproducibility / future interop helpers
+    _last_fit_spectrum_kwargs: Optional[dict] = None
+    _last_fitter_kwargs: Optional[dict] = None
+
     def load(self):
         """Load spectra from files into self.specs."""
         self.specs = load_spectra(list(self.files), axis=self.axis)
@@ -914,6 +955,9 @@ class _BaseBatch:
             fit_spectrum_kwargs=fit_spectrum_kwargs,
             return_fitters=return_fitters,
         )
+        
+        self._last_fit_spectrum_kwargs = dict(fit_spectrum_kwargs or {})
+        self._last_fitter_kwargs = dict(self.fitter_kwargs or {})
 
         # Collect fitted parameter rows if we have fitters
         if return_fitters:
@@ -1149,11 +1193,26 @@ class _BaseBatch:
         if self.fits is None:
             raise RuntimeError("No fits cached. Run .fit(return_fitters=True) first.")
 
+        meta_user = dict(metadata or {})
+
+        if self._last_fitter_kwargs is not None and "preprocessing" in self._last_fitter_kwargs:
+            pp = self._last_fitter_kwargs["preprocessing"]
+            if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):
+                try:
+                    meta_user.setdefault("preprocessing", pp.to_dict())
+                except Exception:
+                    meta_user.setdefault("preprocessing", str(pp))
+            else:
+                meta_user.setdefault("preprocessing", pp)
+
+        if self._last_fit_spectrum_kwargs is not None:
+            meta_user.setdefault("fit_spectrum_kwargs", dict(self._last_fit_spectrum_kwargs))
+
         return export_table(
             table,
             out_path=out_path,
             fits_with_fitters=self.fits,
-            metadata=(metadata or {}),
+            metadata=meta_user,
             meta_in_csv=meta_in_csv,
             float_format=float_format,
         )
@@ -1538,7 +1597,12 @@ class RamanBatch(_BaseBatch):
         Optional deterministic ordering for peaks when applicable.
         If custom_peaks is provided and peak_order is None, insertion order is used.
 
-    Other kwargs are passed directly to RamanFit.RamanFit (baseline, smoothing, etc.).
+    Other kwargs are passed directly to RamanFit.RamanFit, including:
+    - baseline_method
+    - smoothing / smooth_window / smooth_order
+    - peak_profile
+    - preprocessing
+    - custom_peaks / remove_peaks / peak_order
 
     Examples
     --------
@@ -1612,7 +1676,12 @@ class PLBatch(_BaseBatch):
     peak_order : list[str] | None
         Optional deterministic ordering for peaks when applicable.
 
-    Other kwargs are passed directly to PLfit.PLfit (normalise, background removal, etc.).
+    Other kwargs are passed directly to PLFit.PLfit, including:
+    - baseline_method
+    - smoothing / smooth_window / smooth_order
+    - peak_profile
+    - preprocessing
+    - custom_peaks / remove_peaks / peak_order
 
     Examples
     --------

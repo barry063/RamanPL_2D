@@ -414,6 +414,18 @@ class RamanFit:
 
         ds = pipe.apply(ds0)
 
+        # Store the actual preprocessing pipeline used
+        self.preprocessing = pipe
+
+        # Stable serialisable preprocessing metadata for export/debug
+        if hasattr(self.preprocessing, "to_dict"):
+            try:
+                self.preprocessing_recipe = self.preprocessing.to_dict()
+            except Exception:
+                self.preprocessing_recipe = None
+        else:
+            self.preprocessing_recipe = None
+
         # Propagate possibly modified axis/intensity back to fitter state
         self.wavenumber = np.asarray(ds.x, dtype=float).ravel()
         self.processed_spectra = np.asarray(ds.y, dtype=float).ravel()
@@ -433,9 +445,6 @@ class RamanFit:
             self._corrected_spectra = self.processed_spectra.copy()
         else:
             self._corrected_spectra = None
-
-        # optional: store preprocessing recipe for export/debug
-        self.preprocessing = ds.meta.get("pipeline", None)
         
         ### Updated in v.0.2.4 ###
         # Fit is ALWAYS performed in peak-normalised space.
@@ -546,6 +555,65 @@ class RamanFit:
         self.peak_labels = new_labels
         self.lower_bound = new_lb
         self.upper_bound = new_ub
+
+    def _build_export_metadata(self, *, include_legacy: bool = True) -> dict:
+        """
+        Build export metadata for fitted Raman spectra.
+
+        Parameters
+        ----------
+        include_legacy : bool
+            If True, include legacy compatibility fields such as baseline_method,
+            poly_degree, smoothing flags, etc.
+            If False, prefer the new preprocessing-centred metadata only.
+
+        Returns
+        -------
+        dict
+            Cleaned metadata dictionary suitable for exporter.write_rows/write_table.
+        """
+        meta = {
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+
+            "materials": getattr(self, "materials", None),
+            "substrate": getattr(self, "substrate", None),
+
+            "normalize": getattr(self, "normalize", None),
+            "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
+
+            "peak_labels": getattr(self, "peak_labels", None),
+            "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+            "remove_peaks": getattr(self, "remove_peaks_list", None),
+            "peak_profile": getattr(self, "peak_profile", None),
+        }
+
+        # Preferred modern metadata
+        pp = getattr(self, "preprocessing", None)
+        if pp is not None:
+            if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):
+                try:
+                    meta["preprocessing_recipe"] = pp.to_dict()
+                except Exception:
+                    meta["preprocessing_recipe"] = str(pp)
+            else:
+                meta["preprocessing_recipe"] = pp
+
+        # Legacy compatibility metadata
+        if include_legacy:
+            meta.update({
+                "background_remove": getattr(self, "background_remove", None),
+                "baseline_method": getattr(self, "baseline_method", None),
+                "poly_degree": getattr(self, "poly_degree", None),
+                "gaussian_sigma": getattr(self, "gaussian_sigma", None),
+                "smoothing": getattr(self, "smoothing", None),
+                "smooth_window": getattr(self, "smooth_window", None),
+                "smooth_order": getattr(self, "smooth_order", None),
+            })
+
+        # Drop empty values
+        return {k: v for k, v in meta.items() if v is not None}
     
     def export_p0(self):
         """
@@ -763,33 +831,36 @@ class RamanFit:
         if scaled and hasattr(self, "peak_intensity") and self.peak_intensity is not None:
             intensity_scale = float(self.peak_intensity)
 
-        meta = {
-            "spectrum_type": getattr(self, "spectrum_type", None),
-            "x_quantity": getattr(self, "x_quantity", None),
-            "x_unit": getattr(self, "x_unit", None),
+        # DEPRECATED legacy metadata fields are still included for backwards compatibility, but the preferred export metadata is now built from the actual preprocessing pipeline and key attributes. The legacy fields are still populated on the RamanFit instance for user access, but they are no longer canonical or guaranteed to be consistent with the actual preprocessing steps when a Pipeline is used.
+        # meta = {
+        #     "spectrum_type": getattr(self, "spectrum_type", None),
+        #     "x_quantity": getattr(self, "x_quantity", None),
+        #     "x_unit": getattr(self, "x_unit", None),
 
-            "materials": getattr(self, "materials", None),
-            "substrate": getattr(self, "substrate", None),
+        #     "materials": getattr(self, "materials", None),
+        #     "substrate": getattr(self, "substrate", None),
 
-            "background_remove": getattr(self, "background_remove", None),
-            "baseline_method": getattr(self, "baseline_method", None),
-            "poly_degree": getattr(self, "poly_degree", None),  # deprecated legacy metadata
-            "gaussian_sigma": getattr(self, "gaussian_sigma", None),
+        #     "background_remove": getattr(self, "background_remove", None),
+        #     "baseline_method": getattr(self, "baseline_method", None),
+        #     "poly_degree": getattr(self, "poly_degree", None),  # deprecated legacy metadata
+        #     "gaussian_sigma": getattr(self, "gaussian_sigma", None),
 
-            "smoothing": getattr(self, "smoothing", None),
-            "smooth_window": getattr(self, "smooth_window", None),
-            "smooth_order": getattr(self, "smooth_order", None),
+        #     "smoothing": getattr(self, "smoothing", None),
+        #     "smooth_window": getattr(self, "smooth_window", None),
+        #     "smooth_order": getattr(self, "smooth_order", None),
 
-            "normalize": getattr(self, "normalize", None),
-            "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
+        #     "normalize": getattr(self, "normalize", None),
+        #     "intensity_scale(peak_intensity)": getattr(self, "peak_intensity", None),
 
-            "peak_labels": getattr(self, "peak_labels", None),
-            "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
-            "remove_peaks": getattr(self, "remove_peaks_list", None),
-            "peak_profile": getattr(self, "peak_profile", None),
-            "preprocessing": getattr(self, "preprocessing", None),
-        }
-        meta = {k: v for k, v in meta.items() if v is not None}
+        #     "peak_labels": getattr(self, "peak_labels", None),
+        #     "custom_peaks": "True" if getattr(self, "custom_peaks", None) is not None else "False",
+        #     "remove_peaks": getattr(self, "remove_peaks_list", None),
+        #     "peak_profile": getattr(self, "peak_profile", None),
+        #     "preprocessing": getattr(self, "preprocessing", None),
+        # }
+        # meta = {k: v for k, v in meta.items() if v is not None}
+
+        meta = self._build_export_metadata(include_legacy=True)
 
         if self.peak_profile == "pvoigt":
             fitted = self.get_fitted_parameters()

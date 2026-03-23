@@ -251,6 +251,11 @@ background_remove=True
 baseline_method="poly"
 baseline_kwargs={"poly_order": 3}
 ```
+
+In v0.3.5, pipeline-based preprocessing is supported across single, batch, and mapping workflows.
+For backwards compatibility, some legacy preprocessing metadata fields may still appear in exports.
+A later cleanup release will simplify metadata headers when `preprocessing=Pipeline(...)` is used explicitly.
+
 However, **pipeline-based preprocessing is recommended for new workflows.** The legacy arguments will be deprecated in a future release (By version v0.4.0).
 
 ## Baseline specification
@@ -328,8 +333,10 @@ rep = bound_hit_report(raman_map)
 
 | Version | Planned feature                                   |
 | ------- | ------------------------------------------------- |
-| v0.3.5  | propagate pipeline framework to Mapping workflows |
+| v0.3.6  | Optimise code structures and export format        |
+| v0.3.8  | Optimise mapping and fitting efficiency           |
 | v0.4.0  | integrate standardised analysis with RamanSPy     |
+| v0.4.2+ | integrate with machine learning abilities         |
 
 
 ## License
