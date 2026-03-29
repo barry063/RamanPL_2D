@@ -2,14 +2,14 @@
 # spectrum_type: "Raman"
 # x_quantity: "Raman shift"
 # x_unit: "cm^-1"
-# materials: ["MoS2"]
-# substrate: "Si"
 # normalize: false
 # intensity_scale(peak_intensity): 427.8828676499448
 # peak_labels: ["E12g", "A1g", "Si"]
 # custom_peaks: "False"
 # remove_peaks: []
 # peak_profile: "lorentzian"
+# materials: ["MoS2"]
+# substrate: "Si"
 # preprocessing_recipe: {"name": "legacy_single_spectrum", "steps": [{"name": "savgol", "window_length": 11, "polyorder": 8}]}
 # background_remove: false
 # baseline_method: {"method": "poly", "poly_degree": 3}

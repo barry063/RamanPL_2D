@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.3.6] - 2026-03-29
+
+### Refactored
+- Reorganised single-spectrum fitting code into a dedicated `ramanpl/single_fit/` subpackage.
+- Moved the main Raman and PL single-fit implementations into:
+  - `ramanpl/single_fit/RamanFit.py`
+  - `ramanpl/single_fit/PLfit.py`
+- Added a shared internal single-fit core:
+  - `ramanpl/single_fit/_single_fit_core.py`
+- Centralised duplicated single-fit utilities shared by Raman and PL fitting, including:
+  - compatibility importer construction
+  - baseline deprecation handling
+  - multi-start initialisation
+  - RMSE / bound-hit helpers
+  - shared export metadata helpers
+  - `export_p0()` helper logic
+
+### Compatibility
+- Preserved old user-facing import patterns for backwards compatibility:
+  - `from ramanpl import RamanFit`
+  - `from ramanpl import PLfit`
+  - legacy module-style usage such as `RamanFit.DataImporter.data_import(...)`
+- Kept thin top-level wrapper modules so older notebooks and scripts continue to run without requiring API changes.
+
+### Fixed
+- Updated internal import paths after moving single-fit files into `single_fit/`.
+- Restored access to the Raman material library after the refactor by loading `raman_materials.json` from the package-level `ramanpl` directory rather than assuming it sits beside `RamanFit.py`.
+- Added package-data inclusion for `raman_materials.json` so the material library is available after installation.
+- Improved stability of the single-fit refactor by resolving compatibility issues introduced during the folder reorganisation.
+
+### Documentation
+- Updated README repository structure to reflect the new `single_fit/` layout.
+- Kept the public usage examples centred on the existing top-level imports to avoid breaking established workflows.
+
+### Notes
+- This release is a structure-and-maintainability update focused on single-spectrum fitting internals.
+- No intentional change was made to the scientific fitting workflow or user-facing fitting API.
+- Mapping modularisation is planned next in `v0.3.7`.
+- Schema cleanup and polish are planned for `v0.3.8`.
+
+--------
+
 ## [v0.3.5] - 2026-03-23
 
 ### Added
@@ -26,6 +68,8 @@
 - Pipeline-based preprocessing is now supported across single, batch, and mapping workflows.
 - For backwards compatibility, some legacy metadata fields such as `baseline_method` and `poly_degree` may still appear in exports.
 - A future cleanup release (`v0.3.6`) is planned to reduce redundant legacy metadata and deprecated preprocessing fields when `preprocessing=Pipeline(...)` is used explicitly.
+
+--------
 
 ## [v0.3.4] – Preprocessing Pipeline Framework (2025-3-8)
 

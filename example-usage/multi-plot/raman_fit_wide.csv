@@ -17,6 +17,7 @@
 # peak_profile: "lorentzian"
 # params_per_peak: 3
 # preprocessing: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": "arpls", "poly_degree": 3, "gaussian_sigma": 50, "clip_nonnegative": true}]}
+# preprocessing_recipe: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": "arpls", "poly_degree": 3, "gaussian_sigma": 50, "clip_nonnegative": true}]}
 # custom_peaks: "False"
 # remove_peaks: ["A1g(M)+LA(M)", "A1g(M)-LA(M)", "LA(M)"]
 # fitter_class: "RamanFit"

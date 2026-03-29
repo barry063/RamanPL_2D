@@ -80,6 +80,11 @@ RamanPL_2D/
     │ │ ├── __init__.py
     │ │ ├── RamanFit.py
     │ │ ├── PLfit.py
+    │ │ ├── single_fit/
+    │ │ │ ├── __init__.py
+    │ │ │ ├── RamanFit.py
+    │ │ │ ├── PLfit.py
+    │ │ │ └── _single_fit_core.py
     │ │ ├── preprocessing.py
     │ │ ├── raman_materials.json
     │ │ ├── baselineAPI.py
@@ -206,7 +211,7 @@ from ramanpl import RamanFit
 
 # Demostration
 
-## Preprocessing Pipelines (v0.3.4)
+## Preprocessing Pipelines (after v0.3.4)
 
 Version **0.3.4** introduces a modular **spectral preprocessing pipeline framework**.
 
@@ -333,8 +338,9 @@ rep = bound_hit_report(raman_map)
 
 | Version | Planned feature                                   |
 | ------- | ------------------------------------------------- |
-| v0.3.6  | Optimise code structures and export format        |
-| v0.3.8  | Optimise mapping and fitting efficiency           |
+| v0.3.7  | Optimise mapping modularisation                   |
+| v0.3.8  | Optimise schema and polish                        |
+| v0.3.9  | Optimise mapping and fitting efficiency           |
 | v0.4.0  | integrate standardised analysis with RamanSPy     |
 | v0.4.2+ | integrate with machine learning abilities         |
 

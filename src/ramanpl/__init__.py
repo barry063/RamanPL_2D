@@ -15,9 +15,12 @@ from importlib import import_module
 from typing import Any
 
 __all__ = [
-    # Single-spectrum fitters
+    # Single-spectrum fitters (module-style, backwards compatible)
     "PLfit",
     "RamanFit",
+
+    # Single-spectrum subpackage
+    "single_fit",
 
     # Mapping
     "PLMapping",
@@ -43,22 +46,13 @@ __all__ = [
     "batch",
     "peak_models",
     "preprocessing",
-
 ]
 
-# Optional: version string (set manually)
-__version__ = "0.3.5"
+__version__ = "0.3.6"
 
-
-# -----------------------
-# Lazy attribute loading
-# -----------------------
-_LAZY_MAP = {
-    # Single-spectrum fitters
-    "PLfit": ("ramanpl.PLfit", "PLfit"),
-    "RamanFit": ("ramanpl.RamanFit", "RamanFit"),
-
-    # Mapping
+# Attributes that should resolve to a class/object directly
+_LAZY_ATTR_MAP = {
+    # Mapping classes
     "PLMapping": ("ramanpl.Mapping", "PLMapping"),
     "RamanMapping": ("ramanpl.Mapping", "RamanMapping"),
     "PL_Integration": ("ramanpl.Mapping", "PL_Integration"),
@@ -68,34 +62,36 @@ _LAZY_MAP = {
     "Spectrum": ("ramanpl.operation", "Spectrum"),
     "ArithmeticSpectrum": ("ramanpl.operation", "ArithmeticSpectrum"),
 
-    # Utilities
+    # Shared utilities
     "DataImporter": ("ramanpl.dataImporter", "DataImporter"),
     "BaselineAPI": ("ramanpl.baselineAPI", "BaselineAPI"),
-
-    # Optional: allow `import ramanpl; ramanpl.Mapping.PLMapping`
-    "Mapping": ("ramanpl", "Mapping"),
-    "operation": ("ramanpl", "operation"),
-    "dataImporter": ("ramanpl", "dataImporter"),
-    "baselineAPI": ("ramanpl", "baselineAPI"),
-    "exporter": ("ramanpl", "exporter"),
-    "preprocessing": ("ramanpl", "preprocessing"),
-
-    # Batch (optional convenience)
-    "Batch": ("ramanpl", "batch"),
-    "batch": ("ramanpl", "batch"),
-
-    # Peak models (public API)
-    "peak_models":("ramanpl", "peak_models")
 }
 
+# Names that should resolve to modules for backwards compatibility
+_MODULE_EXPORTS = {
+    "RamanFit": "ramanpl.RamanFit",       # wrapper module
+    "PLfit": "ramanpl.PLfit",             # wrapper module
+    "single_fit": "ramanpl.single_fit",
+    "Mapping": "ramanpl.Mapping",
+    "operation": "ramanpl.operation",
+    "dataImporter": "ramanpl.dataImporter",
+    "baselineAPI": "ramanpl.baselineAPI",
+    "exporter": "ramanpl.exporter",
+    "batch": "ramanpl.batch",
+    "Batch": "ramanpl.batch",
+    "peak_models": "ramanpl.peak_models",
+    "preprocessing": "ramanpl.preprocessing",
+}
 
 def __getattr__(name: str) -> Any:
-    if name in ("Mapping", "operation", "dataImporter", "baselineAPI", "batch", "preprocessing"):
-        return import_module(f"ramanpl.{name}")
+    # Backwards-compatible module-style exports
+    if name in _MODULE_EXPORTS:
+        return import_module(_MODULE_EXPORTS[name])
 
-    if name not in _LAZY_MAP:
-        raise AttributeError(f"module 'ramanpl' has no attribute '{name}'")
+    # Direct class/object exports
+    if name in _LAZY_ATTR_MAP:
+        mod_name, attr_name = _LAZY_ATTR_MAP[name]
+        mod = import_module(mod_name)
+        return getattr(mod, attr_name)
 
-    mod_name, attr_name = _LAZY_MAP[name]
-    mod = import_module(mod_name)
-    return getattr(mod, attr_name)
+    raise AttributeError(f"module 'ramanpl' has no attribute '{name}'")
