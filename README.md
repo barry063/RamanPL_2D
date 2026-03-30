@@ -341,8 +341,8 @@ rep = bound_hit_report(raman_map)
 | v0.3.7  | Optimise mapping modularisation                   |
 | v0.3.8  | Optimise schema and polish                        |
 | v0.3.9  | Optimise mapping and fitting efficiency           |
-| v0.4.0  | integrate standardised analysis with RamanSPy     |
-| v0.4.2+ | integrate with machine learning abilities         |
+| v0.4.0+ | integrate standardised analysis with RamanSPy     |
+| v0.5.0+ | integrate with machine learning abilities         |
 
 
 ## License
