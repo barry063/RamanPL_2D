@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.3.7 — mapping modularisation
+## [0.3.7] — 2026-03-30
 
 ### Refactored
 - Split the previous monolithic `Mapping.py` implementation into internal mapping modules under `src/ramanpl/mapping/`.
