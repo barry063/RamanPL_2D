@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.3.7 — mapping modularisation
+
+### Refactored
+- Split the previous monolithic `Mapping.py` implementation into internal mapping modules under `src/ramanpl/mapping/`.
+- Moved mapping diagnostics, IO/image helpers, preprocessing mixin, and modality-specific mapping logic into separate files for easier maintenance and future optimisation.
+- Kept `src/ramanpl/Mapping.py` as a compatibility façade so existing imports from `ramanpl.Mapping` continue to work. :contentReference[oaicite:0]{index=0}
+
+### Fixed
+- Corrected `peak_models` imports after the mapping module split.
+- Restored backward-compatible `fit_summary()` instance usage for both `PLMapping` and `RamanMapping`.
+- Improved constructor parity for `PLMapping` so file-based and `from_arrays()` initialisation produce the same fit-related output state before fitting.
+
+### Compatibility
+- Preserved mapping-facing API behaviour while modularising internals.
+- Maintained existing mapping workflows, including fitting, heatmap plotting, export, and diagnostics.
+- Continued alignment with the planned v0.3.7 goal of mapping modularisation before later runtime clean-up. :contentReference[oaicite:1]{index=1}
+
+--------
+
 ## [0.3.6] - 2026-03-29
 
 ### Refactored
