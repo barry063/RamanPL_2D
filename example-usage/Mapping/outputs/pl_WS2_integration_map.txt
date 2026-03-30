@@ -1,13 +1,13 @@
 # RamanPL_2D export
-# map_kind: integration
-# spectrum_type: Photoluminescence
-# x_unit: eV
-# coord_mode: real
+# map_kind: "integration"
+# spectrum_type: "Photoluminescence"
+# x_unit: "eV"
+# coord_mode: "real"
 # step_size: 1.7
-# step_unit: um
-# integration_range: (1.92, 2.02)
-# background_remove: False
-# baseline_method: poly
+# step_unit: "um"
+# integration_range: [1.92, 2.02]
+# background_remove: false
+# baseline_method: "poly"
 # 
 x	y	integration_area
 0.0	0.0	0.39077610185097417

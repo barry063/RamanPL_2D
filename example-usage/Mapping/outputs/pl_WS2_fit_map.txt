@@ -1,16 +1,16 @@
 # RamanPL_2D export
-# map_kind: fit_params
-# spectrum_type: Photoluminescence
-# x_quantity: Photon energy
-# x_unit: eV
-# coord_mode: real
+# map_kind: "fit_params"
+# spectrum_type: "Photoluminescence"
+# x_quantity: "Photon energy"
+# x_unit: "eV"
+# coord_mode: "real"
 # step_size: 1.7
-# step_unit: um
-# scaled: True
-# peak_labels: ['Exciton', 'Trion']
-# background_remove: False
-# baseline_method: poly
-# smoothing: False
+# step_unit: "um"
+# scaled: true
+# peak_labels: ["Exciton", "Trion"]
+# background_remove: false
+# baseline_method: "poly"
+# smoothing: false
 # smooth_window: 11
 # smooth_poly: 3
 # 
