@@ -1,0 +1,1407 @@
+from typing import Optional, Tuple
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import optimize
+from scipy.integrate import simpson
+from scipy.signal import savgol_filter
+
+try:
+    from ..baselineAPI import BaselineAPI
+    from ..dataImporter import DataImporter
+    from ..exporter import write_table
+    from ..peak_models import single_peak, sum_peaks
+
+    from ._diagnostics import fit_summary as _fit_summary
+    from ._fit_utils import (
+        _mapping_generate_p0_trials,
+        _params_at_bounds,
+        _width_param_to_fwhm,
+        seed_p0_from_coord,
+    )
+    from ._io import MappingFileLoader
+    from ._image import MappingImage
+    from ._preprocess import _MappingPreprocessMixin
+except Exception:  # pragma: no cover
+    from ramanpl.baselineAPI import BaselineAPI
+    from ramanpl.dataImporter import DataImporter
+    from ramanpl.exporter import write_table
+    from ramanpl.peak_models import single_peak, sum_peaks
+
+    from ramanpl.mapping._diagnostics import fit_summary as _fit_summary
+    from ramanpl.mapping._fit_utils import (
+        _mapping_generate_p0_trials,
+        _params_at_bounds,
+        _width_param_to_fwhm,
+        seed_p0_from_coord,
+    )
+    from ramanpl.mapping._io import MappingFileLoader
+    from ramanpl.mapping._image import MappingImage
+    from ramanpl.mapping._preprocess import _MappingPreprocessMixin
+
+
+#########################################################################################################################
+#################################################### PL Mapping #########################################################
+#########################################################################################################################
+
+class PLMapping(_MappingPreprocessMixin):
+    """Photoluminescence mapping analysis through Lorentzian peak fitting.
+    
+    Attributes:
+        filename (str): Path to .wdf file
+        custom_peaks (dict): Peak parameters for fitting
+        data_range (tuple): Spectral analysis range (min, max) in eV
+        step_size (float): Physical step size in micrometers
+        poly_degree (int): Polynomial degree for background removal
+        normalize (bool): Enable spectrum normalization
+        background_remove (bool): Enable background subtraction
+        baseline_method (str): Background method ('poly' or 'gaussian')
+        smoothing (bool): Enable spectral smoothing
+        smooth_window (int): Savitzky-Golay window size
+        smooth_poly (int): Savitzky-Golay polynomial order
+        gaussian_sigma (int): Gaussian filter width
+        peak_params (list): Peak names from custom_peaks
+        X (int): Map width in pixels
+        Y (int): Map height in pixels
+        xdata (ndarray): Spectral axis in eV
+        spectra (ndarray): Raw spectral data [Y, X, points]
+        image_viewer (MappingImage): Optical image handler
+        peak_positions (ndarray): Fitted peak centers [Y, X, peaks]
+        peak_intensities (ndarray): Fitted peak amplitudes [Y, X, peaks]
+        fitted_params (ndarray): Full fitting parameters [Y, X, 3*peaks]
+        residual_map (ndarray): Fitting residuals [Y, X]
+    """
+
+    def __init__(
+        self,
+        filename,
+        custom_peaks,
+        data_range=None,
+        step_size=0.3,
+        poly_degree=3,
+        normalize=True,
+        background_remove=True,
+        baseline_method="poly",
+        smoothing=True,
+        smooth_window=11,
+        smooth_poly=3,
+        gaussian_sigma=10,
+        peak_profile: str = "lorentzian",
+        preprocessing=None,
+    ):
+        """Initialize PL mapping analyzer.
+        
+        Args:
+            filename: Path to .wdf PL mapping file
+            custom_peaks: Peak definitions with bounds {name: (min_params, max_params)}
+            data_range: Spectral range (min, max) in eV (default: full spectrum)
+            step_size: Physical step size in micrometers
+            poly_degree: Background polynomial degree
+            normalize (bool): Controls display/output scaling only. Fitting is always performed on peak-normalised spectra.
+            background_remove: Enable background subtraction
+            baseline_method: 'poly' or 'gaussian' background
+            smoothing: Enable spectral smoothing
+            smooth_window: Savitzky-Golay window size
+            smooth_poly: Savitzky-Golay polynomial order
+            gaussian_sigma: Gaussian filter width
+            peak_profile: str = "lorentzian" or "pvoigt"
+            preprocessing: Optional custom preprocessing pipeline (overrides legacy flag-based pipeline if provided)
+        """
+        self.filename = filename
+        self.custom_peaks = custom_peaks
+        self.data_range = data_range
+        self.step_size = step_size
+        self.poly_degree = poly_degree
+        self.normalize = normalize          # DISPLAY flag only (fit-space is always normalised)
+        self.background_remove = background_remove
+        self.baseline_method = baseline_method
+        self.smoothing = smoothing
+        self.smooth_window = smooth_window
+        self.smooth_poly = smooth_poly
+        self.gaussian_sigma = gaussian_sigma
+        self.peak_params = list(custom_peaks.keys())
+
+        # --- identity metadata for exports ---
+        self.spectrum_type = "Photoluminescence"
+        self.x_quantity = "Photon energy"
+        self.x_unit = "eV"
+        self.step_unit = "um"
+
+        # Baseline config (single source of truth)
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma,
+        )
+
+        # ---- model choice ----
+        self.peak_profile = str(peak_profile).lower().strip()
+        if self.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+        # Shared preprocessing pipeline (legacy-compatible if None)
+        self._initialise_preprocessing(preprocessing=preprocessing)
+
+        # ---- load mapping data (optionally trimmed) ----
+        if self.data_range is not None:
+            loader = MappingFileLoader(filename, x_range=self.data_range, axis="energy")
+            self._x_trimmed_on_load = True
+        else:
+            loader = MappingFileLoader(filename, axis="energy")
+            self._x_trimmed_on_load = False
+
+        self.X = loader.X
+        self.Y = loader.Y
+        self.xdata = loader.xdata
+        self.spectra = loader.spectra
+        self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
+
+        if self.data_range is None:
+            self.data_range = (float(np.min(self.xdata)), float(np.max(self.xdata)))
+
+        # ---- allocate output arrays ----
+        self._allocate_fit_outputs()
+
+    ### NEW METHOD IN v0.3.5 ###
+    @classmethod
+    def from_arrays(
+        cls,
+        spectra,
+        xdata,
+        X,
+        Y,
+        *,
+        custom_peaks,
+        data_range=None,
+        step_size=0.3,
+        poly_degree=3,
+        normalize=True,
+        background_remove=True,
+        baseline_method='poly',
+        smoothing=True,
+        smooth_window=11,
+        smooth_poly=3,
+        gaussian_sigma=10,
+        peak_profile: str = "lorentzian",
+        preprocessing=None,
+    ):
+        """
+        Create a PLMapping instance from in-memory mapping arrays (no file IO).
+
+        Parameters
+        ----------
+        spectra : ndarray
+            Mapping cube with shape [Y, X, N]
+        xdata : ndarray
+            Spectral axis with shape [N] (energy in eV)
+        X, Y : int
+            Map dimensions
+        """
+
+        obj = cls.__new__(cls)
+
+        # ---- mirror __init__ fields ----
+        obj.filename = None
+        obj.custom_peaks = custom_peaks
+        obj.data_range = data_range
+        obj.step_size = step_size
+        obj.poly_degree = poly_degree
+        obj.normalize = normalize
+        obj.background_remove = background_remove
+        obj.baseline_method = baseline_method
+        obj.smoothing = smoothing
+        obj.smooth_window = smooth_window
+        obj.smooth_poly = smooth_poly
+        obj.gaussian_sigma = gaussian_sigma
+        obj.peak_params = list(custom_peaks.keys())
+
+        # Baseline config (same as __init__)
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma
+        )
+
+        # ---- assign data ----
+        obj.X = int(X)
+        obj.Y = int(Y)
+        obj.xdata = np.asarray(xdata, dtype=float).ravel()
+        obj.spectra = np.asarray(spectra, dtype=float)
+
+        # Validate shapes
+        if obj.spectra.ndim != 3:
+            raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
+        if obj.spectra.shape[0] != obj.Y or obj.spectra.shape[1] != obj.X:
+            raise ValueError(f"spectra shape {obj.spectra.shape[:2]} inconsistent with (Y,X)=({obj.Y},{obj.X}).")
+        if obj.spectra.shape[2] != obj.xdata.size:
+            raise ValueError("spectra third dimension (N) must match len(xdata).")
+
+        # No optical image when constructed from arrays
+        obj.image_viewer = None
+
+        # Load-time trimming flag: False, because we did not trim during import here
+        obj._x_trimmed_on_load = False
+
+        # Default range: full axis if not supplied
+        if obj.data_range is None:
+            obj.data_range = (float(np.min(obj.xdata)), float(np.max(obj.xdata)))
+
+        obj.peak_profile = str(peak_profile).lower().strip()
+        if obj.peak_profile not in ("lorentzian", "pvoigt"):
+            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
+        obj._initialise_preprocessing(preprocessing=preprocessing)
+
+        # Allocate output arrays (same as __init__)
+        obj._allocate_fit_outputs()
+
+        return obj
+
+    ### New in v0.2.7 ###
+    def get_reference_spectrum(self, *, x: int, y: int, roi: Optional[Tuple[int, int, int, int]] = None):
+        """
+        Return a reference spectrum from this already-loaded mapping object.
+
+        Parameters
+        ----------
+        x, y : int
+            Pixel coordinate (0-indexed)
+        roi : (x0, x1, y0, y1) inclusive, optional
+            If provided, returns the mean spectrum over the ROI.
+
+        Returns
+        -------
+        (y_ref, xdata)
+        """
+        if roi is not None:
+            x0, x1, y0, y1 = roi
+            if not (0 <= x0 <= x1 < self.X and 0 <= y0 <= y1 < self.Y):
+                raise ValueError("ROI out of bounds.")
+            y_ref = np.nanmean(self.spectra[y0:y1+1, x0:x1+1, :], axis=(0, 1))
+        else:
+            if not (0 <= x < self.X and 0 <= y < self.Y):
+                raise ValueError("Pixel out of bounds.")
+            y_ref = self.spectra[y, x, :]
+
+        return np.asarray(y_ref, dtype=float).ravel(), np.asarray(self.xdata, dtype=float).ravel()
+
+    def show_optical_image(self):
+        """Display the optical image."""
+        if self.image_viewer:
+            self.image_viewer.show_optical_image()
+
+    def fit_summary(self, **kwargs):
+        """Backward-compatible instance wrapper for mapping fit diagnostics."""
+        return _fit_summary(self, **kwargs)
+    
+    def _allocate_fit_outputs(self):
+        """
+        Allocate fit-related output arrays so file-based and array-based
+        constructors produce the same object state before fitting.
+        """
+        num_peaks = len(self.custom_peaks)
+
+        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
+        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
+        self.fitted_params = np.full(
+            (self.Y, self.X, num_peaks * self.params_per_peak),
+            np.nan,
+            dtype=float,
+        )
+
+        self.residual_map = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.norm_scale_map = np.full((self.Y, self.X), np.nan, dtype=float)
+    
+    def lorentzian(self, x, *params):
+        """Multi-Lorentzian function for curve fitting."""
+        return sum_peaks(np.asarray(x), params, profile="lorentzian", stride=3)
+
+
+    ### UPDATED METHOD in v0.2.5 ##
+    def remove_background(self, xdata, intensity):
+        """Remove spectral background via BaselineAPI (always clips to non-negative)."""
+        result = BaselineAPI.subtract(
+            x=xdata,
+            y=intensity,
+            method=self._baseline_method,
+            clip_nonnegative=True,
+            **self._baseline_kwargs
+        )
+        return result.y_corrected
+
+    # New in v0.3.3
+    def _model_dispatch(self):
+        if self.peak_profile == "lorentzian":
+            return self.lorentzian
+        return self.pvoigt  # you must implement pvoigt analogous to lorentzian using peak_models.sum_peaks
+
+    def pvoigt(self, x, *params):
+        return sum_peaks(np.asarray(x), params, profile="pvoigt", stride=4)
+
+    ## UPDATED METHOD in v0.3.3 ##
+    def fit_spectra(
+        self,
+        initial_p0=None,
+        warm_start=False,
+        seed_coord=None,
+        seed_roi=None,
+        reset_on_fail=True,
+        row_reset=True,
+        warm_start_rmse_gate=0.06,
+        maxfev = 6400,
+        fit_spectrum_kwargs=None,
+        fit_normalize=True,
+        compute_peak_maps=True
+    ):
+        """
+        Fit all map spectra using self.custom_peaks as bounds.
+
+        Parameters
+        ----------
+        initial_p0 : array-like or dict or None
+            Optional initial guess vector (e.g., from a single-point PLfit result),
+            or dict package {"p0": <vector>, "peak_order": <list>}.
+            Must match parameter ordering implied by self.custom_peaks.
+        warm_start : bool
+            If True, use previous successful fit parameters as p0 for next pixel.
+        reset_on_fail : bool
+            If True, on fit failure reset p0 to baseline (midpoint/initial_p0).
+        maxfev : int
+            curve_fit maximum function evaluations.
+        warm_start_rmse_gate : float
+            RMSE threshold (normalised space) for accepting warm-start propagation.
+        fit_normalize : bool
+            If True, internal scaling for optimisation is normalised
+        compute_peak_maps : bool
+            If True, compute the peak maps and store them internally
+        Returns
+        -------
+        params_map : ndarray
+            Fitted parameter cube with shape [Y, X, n_params].
+            In notebooks, assign the return value or use `_ = fit_spectra(...)`
+            to avoid auto-display.
+
+        """
+        if fit_spectrum_kwargs is None:
+            fit_spectrum_kwargs = {}
+
+        if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
+            raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
+
+        # --- Shared preprocessing path (crop + smoothing + baseline) ---
+        xdata, spectra_fit_cube = self._get_processed_mapping_cube()
+
+        # --- Build bounds from custom_peaks (in insertion order)
+        lower_bound, upper_bound = [], []
+        for params_range in self.custom_peaks.values():
+            lower_bound.extend(params_range[0])
+            upper_bound.extend(params_range[1])
+
+        lower_bound = np.asarray(lower_bound, dtype=float)
+        upper_bound = np.asarray(upper_bound, dtype=float)
+        n_params = lower_bound.size
+
+        # Default p0: midpoint of bounds
+        p0_base = (lower_bound + upper_bound) / 2.0
+
+        # --- optional: seed from a coordinate inside this mapping object ---
+        if seed_coord is not None:
+            if initial_p0 is not None:
+                raise ValueError("Provide either initial_p0 or seed_coord, not both.")
+
+            initial_p0 = seed_p0_from_coord(self, seed_coord, seed_roi, maxfev=maxfev)
+            warm_start = True
+
+        # Optional: seed from single-point PLfit
+        if initial_p0 is not None:
+
+            if isinstance(initial_p0, dict):
+                peak_order_pkg = initial_p0.get("peak_order", None)
+                p0_vec = initial_p0.get("p0", None)
+
+                if p0_vec is None:
+                    raise ValueError("initial_p0 dict must contain key 'p0' with a numeric vector.")
+
+                if peak_order_pkg is not None:
+                    if [p.lower() for p in peak_order_pkg] != [p.lower() for p in self.peak_params]:
+                        raise ValueError(
+                            "peak_order mismatch between PLfit and PLMapping.\n"
+                            f"PLfit: {list(peak_order_pkg)}\n"
+                            f"PLMapping: {list(self.peak_params)}\n"
+                            "Ensure both use the same custom_peaks ordering (or pass peak_order explicitly)."
+                        )
+
+                initial_p0 = p0_vec
+
+            initial_p0 = np.asarray(initial_p0, dtype=float)
+            if initial_p0.shape != p0_base.shape:
+                raise ValueError(f"initial_p0 shape {initial_p0.shape} does not match expected {p0_base.shape}")
+
+            p0_base = np.clip(initial_p0, lower_bound, upper_bound)
+
+        p0_current = p0_base.copy()
+
+        # Output arrays (added in v0.3.0)
+        fitted_params = np.full((self.Y, self.X, n_params), np.nan)
+        self.fit_diagnostics_map = np.empty((self.Y, self.X), dtype=object)
+        self.fit_diagnostics_map[:, :] = None
+
+        # Defensive fallback only; normally these are allocated by constructor/from_arrays
+        if not hasattr(self, "norm_scale_map"):
+            self.norm_scale_map = np.full((self.Y, self.X), np.nan)
+        if not hasattr(self, "residual_map"):
+            self.residual_map = np.full((self.Y, self.X), np.nan)
+        
+        model_fn = self._model_dispatch()
+        stride = int(self.params_per_peak)
+        for j in range(self.Y):
+            for i in range(self.X):
+
+                # --- get already-preprocessed spectrum for this pixel ---
+                y = np.asarray(spectra_fit_cube[j, i, :], dtype=float)
+                x = xdata
+
+                # --- final fit-space preparation only ---
+                y_fitspace, s = self._prepare_fit_spectrum(x, y, fit_normalize=fit_normalize)
+
+                if y_fitspace is None:
+                    self.norm_scale_map[j, i] = np.nan
+                    self.residual_map[j, i] = np.nan
+                    self.fit_diagnostics_map[j, i] = {"ok": False, "reason": "no_positive_signal"}
+                    if reset_on_fail:
+                        p0_current = p0_base.copy()
+                    continue
+
+                self.norm_scale_map[j, i] = float(s)
+
+                # (If you already do baseline removal / smoothing in Mapping, do it here exactly as before.)
+                # --- multi-start setup ---
+                n_starts = int(fit_spectrum_kwargs.get("n_starts", 1))
+                p0_strategy = fit_spectrum_kwargs.get("p0_strategy", "midpoint")
+                random_state = fit_spectrum_kwargs.get("random_state", None)
+
+                p0_trials = _mapping_generate_p0_trials(
+                    lower_bound, upper_bound, p0_current,
+                    n_starts=n_starts,
+                    strategy=p0_strategy,
+                    random_state=random_state,
+                )
+
+                best_params = None
+                best_cov = None
+                best_rmse = np.inf
+                best_p0 = None
+                n_fail = 0
+
+                # --- new: consistent selection controls ---
+                best_score = np.inf
+                best_hits = np.inf
+
+                width_penalty = float(fit_spectrum_kwargs.get("width_penalty", 0.0))  # 0.0 => old behaviour (RMSE-only)
+                prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
+                score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))  # tolerance in score space
+
+                for p0_try in p0_trials:
+                    try:
+                        params, cov = optimize.curve_fit(
+                            model_fn,
+                            x,
+                            y_fitspace,
+                            p0=p0_try,
+                            bounds=(lower_bound, upper_bound),
+                            maxfev=maxfev,
+                        )
+                    except Exception:
+                        n_fail += 1
+                        continue
+
+                    y_hat = model_fn(x, *params)
+                    rmse = float(np.sqrt(np.mean((y_fitspace - y_hat) ** 2)))
+                    
+                    hits = int(np.count_nonzero(_params_at_bounds(params, lower_bound, upper_bound, which="both", rtol=1e-6)))
+
+                    # Width penalty: stride-aware
+                    if width_penalty > 0:
+                        # stride = int(self.params_per_peak)
+                        widths = np.asarray(params[1::stride], dtype=float)
+                        width_ub = np.asarray(upper_bound[1::stride], dtype=float)
+                        # avoid divide-by-zero
+                        width_ub = np.where(width_ub > 0, width_ub, 1.0)
+                        pen = float(np.mean((widths / width_ub) ** 2))
+                        score = rmse + width_penalty * pen
+                    else:
+                        score = rmse
+
+                    # primary: minimise score
+                    better = score < best_score
+
+                    # tie-break: prefer fewer bound hits when scores are nearly equal (optional)
+                    near_tie = (abs(score - best_score) <= score_tie_tol)
+
+                    if best_params is None or better or (prefer_nonbound and near_tie and hits < best_hits):
+                        best_score = score
+                        best_rmse = rmse
+                        best_params = params
+                        best_cov = cov
+                        best_p0 = p0_try
+                        best_hits = hits
+
+
+                # --- handle fail / success ---
+                if best_params is None:
+                    fitted_params[j, i, :] = np.nan
+                    self.residual_map[j, i] = np.nan
+                    self.fit_diagnostics_map[j, i] = {
+                        "ok": False,
+                        "n_starts": n_starts,
+                        "n_fail": n_fail,
+                        "p0_strategy": p0_strategy,
+                    }
+
+                    if reset_on_fail:
+                        p0_current = p0_base.copy()
+                    continue
+
+                # success
+                fitted_params[j, i, :] = best_params
+                self.residual_map[j, i] = float(best_rmse)
+                self.fit_diagnostics_map[j, i] = {
+                    "ok": True,
+                    "rmse": float(best_rmse),
+                    "n_starts": n_starts,
+                    "n_fail": n_fail,
+                    "p0_strategy": p0_strategy,
+                    "best_p0": np.asarray(best_p0, dtype=float),
+                }
+                at_lo = _params_at_bounds(best_params, lower_bound, upper_bound, which="lower", rtol=1e-6)
+                at_hi = _params_at_bounds(best_params, lower_bound, upper_bound, which="upper", rtol=1e-6)
+                self.fit_diagnostics_map[j, i]["n_params_at_lower_bounds"] = int(np.count_nonzero(at_lo))
+                self.fit_diagnostics_map[j, i]["n_params_at_upper_bounds"] = int(np.count_nonzero(at_hi))
+                self.fit_diagnostics_map[j, i]["params_at_lower_bounds_mask"] = at_lo
+                self.fit_diagnostics_map[j, i]["params_at_upper_bounds_mask"] = at_hi
+
+                # --- derive peak centre + peak height per component ---
+                # best_params ordering: [centre, width(scale), amp] repeated
+                n_peaks = len(self.peak_params)
+                # stride = int(self.params_per_peak)
+
+                for k in range(n_peaks):
+                    block = np.asarray(best_params[stride*k:stride*(k+1)], dtype=float)
+                    centre = float(block[0])
+                    self.peak_positions[j, i, k] = centre
+
+                    # peak height in FIT SPACE
+                    if self.peak_profile == "lorentzian":
+                        hwhm = float(block[1])
+                        amp_area = float(block[2])
+                        if (not np.isfinite(hwhm)) or hwhm <= 0:
+                            height_fitspace = np.nan
+                        else:
+                            height_fitspace = amp_area / (np.pi * hwhm)
+                    else:
+                        # pVoigt: height is not your "amp" parameter; compute from the profile
+                        # single_peak returns the (normalised-space) y(x) for that one peak
+                        y_one = single_peak(x, block, profile="pvoigt")
+                        height_fitspace = float(np.nanmax(y_one))
+
+                    # Convert to display convention:
+                    # normalize=True  -> store fit-space height
+                    # normalize=False -> store raw height using per-pixel scale when fit_normalize=True
+                    if self.normalize:
+                        self.peak_intensities[j, i, k] = height_fitspace
+                    else:
+                        if fit_normalize:
+                            self.peak_intensities[j, i, k] = height_fitspace * float(self.norm_scale_map[j, i])
+                        else:
+                            self.peak_intensities[j, i, k] = height_fitspace
+
+
+                # warm-start update (respect your RMSE gate)
+                if warm_start and best_rmse <= warm_start_rmse_gate:
+                    p0_current = np.asarray(best_params, dtype=float)
+                else:
+                    if reset_on_fail:
+                        p0_current = p0_base.copy()
+
+
+            # Row reset    
+            if row_reset:
+                p0_current = p0_base.copy()
+
+        n_fit = np.sum(~np.isnan(self.residual_map))
+        print(f"Successful fits: {n_fit} / {self.X * self.Y}")
+
+        self.fitted_params = fitted_params
+        return fitted_params
+               
+    def plot_spectrum_fit(self, x, y):
+        """Plot raw data and fitting results for a single map point.
+
+        Args:
+            x (int): X coordinate (0-indexed)
+            y (int): Y coordinate (0-indexed)
+
+        Display logic:
+            - Fitting is always done in normalised space.
+            - normalize=True  -> show normalised, background-removed spectrum + fit
+            - normalize=False -> show raw spectrum + fit (+ background overlay if enabled)
+        """
+        if x < 0 or x >= self.X or y < 0 or y >= self.Y:
+            raise ValueError("Invalid coordinates. Please ensure x and y are within the mapping range.")
+
+        # --- Extract spectrum
+        x_full = np.asarray(self.xdata, dtype=float)
+        y_full = np.asarray(self.spectra[y, x, :], dtype=float)
+
+        # --- Mask by energy range (eV)
+        mask = DataImporter.mask_by_xrange(self.xdata, self.data_range)
+        xdata = x_full[mask]
+        raw_intensity = y_full[mask]
+
+        # --- Preprocessing consistent with fitting (except final normalisation)
+        proc = raw_intensity.copy()
+
+        if self.smoothing:
+            proc = savgol_filter(proc, self.smooth_window, self.smooth_poly)
+
+        if self.background_remove:
+            bg_removed = self.remove_background(xdata, proc)
+            background = proc - bg_removed
+        else:
+            bg_removed = proc
+            background = None
+
+        # --- Scale used for fitting normalisation
+        scale = np.max(bg_removed)
+        if scale <= 0:
+            raise ValueError(f"No positive signal at (X={x}, Y={y}); cannot scale fitted curve.")
+
+        # --- Load fitted parameters (normalised space)
+        params = np.asarray(self.fitted_params[y, x, :], dtype=float)
+        if np.any(np.isnan(params)):
+            raise ValueError(f"Fit parameters are NaN at (X={x}, Y={y}). Fit may have failed.")
+
+        model_fn = self._model_dispatch()
+        fitted_norm = model_fn(xdata, *params)
+        fitted_raw = fitted_norm * scale
+
+        # --- Plot
+        plt.figure(figsize=(10, 6))
+
+        if self.normalize:
+            # Normalised display (background-removed)
+            spectrum_norm = bg_removed / scale
+            plt.plot(xdata, spectrum_norm, "k-", label="Background-removed (normalised)")
+            plt.plot(xdata, fitted_norm, "g--", linewidth=2, label="Fitted Curve")
+            plt.ylabel("Normalised Intensity (a.u.)")
+
+        else:
+            # Raw display
+            plt.plot(xdata, raw_intensity, "k-", label="Raw Spectrum")
+
+            if self.background_remove:
+                # Show background components
+                plt.plot(xdata, background, "r--", label="Estimated Background")
+                plt.plot(xdata, bg_removed, "b-", alpha=0.8, label="Background Removed (smoothed)")
+
+                # Peak-only fit
+                plt.plot(xdata, fitted_raw, "g--", linewidth=2, label="Fitted Curve (peak only)")
+
+                # Best overlay vs raw spectrum
+                fitted_plus_bg = fitted_raw + background
+                plt.plot(xdata, fitted_plus_bg, "-", linewidth=2, label="Fit + Estimated Background")
+
+            else:
+                # No background removal → show fit only once
+                plt.plot(xdata, fitted_raw, "g--", linewidth=2, label="Fitted Curve")
+
+            plt.ylabel("Intensity (a.u.)")
+
+        plt.xlabel("Energy (eV)")
+        plt.title(f"Spectrum Fit at (X={x}, Y={y})")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    def plot_residual_distribution(
+        self,
+        filter_threshold=None,
+        robust=True,
+        p_low=5,
+        p_high=95,
+        hist_bins=50,
+        cmap="inferno"
+    ):
+        """
+        Visualise spatial distribution of fitting residuals and their histogram.
+
+        Behaviour:
+        - If filter_threshold is None:
+            show full residual heatmap (optionally robust-scaled) + histogram.
+        - If filter_threshold is set:
+            ONLY show pixels with residual >= filter_threshold (others masked out) + histogram.
+        """
+        # import numpy as np
+        # import matplotlib.pyplot as plt
+        residuals = np.asarray(self.residual_map, dtype=float)
+        valid = ~np.isnan(residuals)
+        residuals_flat = residuals[valid]
+
+        if residuals_flat.size == 0:
+            raise ValueError("Residual map contains no valid values to plot.")
+
+        # Determine colour scaling
+        if robust:
+            vmin = np.percentile(residuals_flat, p_low)
+            vmax = np.percentile(residuals_flat, p_high)
+            if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+                vmin, vmax = None, None
+        else:
+            vmin, vmax = None, None
+
+        # If thresholding, focus colour scale on the thresholded region for contrast
+        if filter_threshold is not None:
+            above = residuals_flat[residuals_flat >= filter_threshold]
+            if above.size == 0:
+                raise ValueError(
+                    f"No pixels found with residual >= {filter_threshold:g}. "
+                    "Try lowering filter_threshold."
+                )
+            # Make the colour scale meaningful for the highlighted pixels
+            vmin = filter_threshold
+            vmax_thr = np.percentile(above, 99) if above.size > 5 else np.max(above)
+            vmax = vmax_thr if (np.isfinite(vmax_thr) and vmax_thr > vmin) else np.max(above)
+
+        # Layout
+        fig, (ax_map, ax_hist) = plt.subplots(
+            1, 2, figsize=(12, 5),
+            gridspec_kw={"width_ratios": [3, 1]}
+        )
+
+        # ---- Map panel ----
+        if filter_threshold is None:
+            # Normal view (like your 2nd image)
+            data_masked = np.ma.masked_invalid(residuals)
+            title = "Residual Distribution (higher = worse fit)"
+        else:
+            # Threshold view: only show pixels >= threshold
+            keep = (residuals >= filter_threshold) & valid
+            data_masked = np.ma.masked_where(~keep, residuals)
+            title = f"Residual Distribution (≥ {filter_threshold:g})"
+
+        im = ax_map.imshow(
+            data_masked,
+            cmap=cmap,
+            origin="upper",
+            vmin=vmin,
+            vmax=vmax
+        )
+        cbar = fig.colorbar(im, ax=ax_map)
+        cbar.set_label("Residual Error (RMSE)")
+
+        ax_map.set_title(title)
+        ax_map.set_xlabel("X Position")
+        ax_map.set_ylabel("Y Position")
+
+        # ---- Histogram panel ----
+        ax_hist.hist(
+            residuals_flat,
+            bins=hist_bins,
+            orientation="horizontal",
+            color="darkred",
+            edgecolor="black"
+        )
+        ax_hist.set_xlabel("Count")
+        ax_hist.set_ylabel("Residual RMSE")
+        ax_hist.set_title("Residual Histogram")
+
+        # Add a threshold line to the histogram for clarity
+        if filter_threshold is not None:
+            ax_hist.axhline(filter_threshold, linestyle="--", linewidth=1)
+            # If thresholding, it can help to zoom histogram y-range to the upper tail
+            upper = residuals_flat[residuals_flat >= filter_threshold]
+            y_lo = max(filter_threshold * 0.98, np.min(upper))
+            y_hi = np.max(upper)
+            if np.isfinite(y_lo) and np.isfinite(y_hi) and y_hi > y_lo:
+                ax_hist.set_ylim(y_lo, y_hi)
+        else:
+            # Match histogram y-range to map scaling if robust scaling is enabled
+            if vmin is not None and vmax is not None:
+                ax_hist.set_ylim(vmin, vmax)
+
+        plt.tight_layout()
+        plt.show()   
+
+    def plot_heatmap(self, data_type='exciton_position', cmap='viridis',
+                    filter_range=None, specific_xdata=None,
+                    x_range=None, y_range=None):
+        """Visualize 2D map of spectral features."""
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        if data_type == 'specific_intensity':
+            if specific_xdata is None:
+                raise ValueError("For 'specific_intensity' data type, 'specific_xdata' must be provided (in eV).")
+
+            data = np.full((self.Y, self.X), np.nan, dtype=float)
+
+            model_fn = self._model_dispatch()
+            for j in range(self.Y):
+                for i in range(self.X):
+                    params = self.fitted_params[j, i, :]
+                    if np.any(np.isnan(params)):
+                        continue  # fit failed
+
+                    y_norm = model_fn(np.asarray([specific_xdata], dtype=float), *params)[0]
+
+                    if self.normalize:
+                        # display normalised model intensity (dimensionless)
+                        data[j, i] = y_norm
+                    else:
+                        # display raw model intensity using stored per-pixel scale
+                        if (not hasattr(self, "norm_scale_map")) or np.isnan(self.norm_scale_map[j, i]):
+                            continue
+                        data[j, i] = y_norm * self.norm_scale_map[j, i]
+
+            label = (f'Normalised intensity at {specific_xdata} eV (a.u.)'
+                    if self.normalize else
+                    f'Intensity at {specific_xdata} eV (a.u.)')
+
+        elif data_type == 'exciton_position':
+            data = self.peak_positions[:, :, 0]
+            label = 'Exciton Position (eV)'
+
+        elif data_type == 'trion_position':
+            if self.peak_positions.shape[2] > 1:
+                data = self.peak_positions[:, :, 1]
+                label = 'Trion Position (eV)'
+            else:
+                raise ValueError("Trion data not available.")
+
+        elif data_type == 'exciton_intensity':
+            data = self.peak_intensities[:, :, 0]
+            label = 'Exciton Intensity (a.u.)'  # already scaled in fit_spectra when normalize=False
+
+        elif data_type == 'trion_intensity':
+            if self.peak_intensities.shape[2] > 1:
+                data = self.peak_intensities[:, :, 1]
+                label = 'Trion Intensity (a.u.)'
+            else:
+                raise ValueError("Trion data not available.")
+
+        else:
+            raise ValueError("Invalid data_type. Choose from "
+                            "'exciton_position', 'trion_position', "
+                            "'exciton_intensity', 'trion_intensity', 'specific_intensity'.")
+
+        # Apply optional range filter (your current behaviour: clip outliers to lower bound)
+        if filter_range is not None:
+            data = np.where((data >= filter_range[0]) & (data <= filter_range[1]), data, filter_range[0])
+
+        # Apply optional cropping
+        if x_range is not None and y_range is not None:
+            x_start, x_end = x_range
+            y_start, y_end = y_range
+            data = data[y_start:y_end + 1, x_start:x_end + 1]
+            Xp = (x_end - x_start + 1)
+            Yp = (y_end - y_start + 1)
+        else:
+            Xp, Yp = self.X, self.Y
+
+        x_length = Xp * self.step_size
+        y_length = Yp * self.step_size
+
+        cm = plt.get_cmap(cmap).copy()
+        cm.set_bad('gray')
+
+        plt.figure(figsize=(8, 6))
+        im = plt.imshow(
+            data,
+            cmap=cm,
+            vmin=filter_range[0] if filter_range else None,
+            vmax=filter_range[1] if filter_range else None,
+            extent=[0, x_length, y_length, 0]
+        )
+        plt.colorbar(im, label=label)
+        plt.xlabel("X Position (μm)")
+        plt.ylabel("Y Position (μm)")
+        plt.title(f"Heatmap of {label}")
+        plt.tight_layout()
+        plt.show()
+
+    ### Added in v0.2.8
+    def _iter_coords(self, coord_mode: str = "pixel"):
+        """
+        Yield (x, y, j, i) for every pixel.
+
+        coord_mode:
+        - "pixel": x,y are integer pixel indices
+        - "real":  x,y are physical coordinates using step_size
+        """
+        step = float(self.step_size)
+        for j in range(self.Y):
+            for i in range(self.X):
+                if coord_mode == "real":
+                    yield (i * step, j * step, j, i)
+                else:
+                    yield (i, j, j, i)
+
+    def _params_to_export_dict(self, xaxis, peak_labels, params, intensity_scale=1.0):
+        """
+        Convert a parameter vector into per-peak export dict entries.
+
+        Conventions
+        -----------
+        - Lorentzian: width is HWHM; FWHM = 2*HWHM; peak_height_norm = amp_area/(pi*HWHM)
+        - pVoigt: width parameter is treated as FWHM (consistent with your PLfit/RamanFit pVoigt step);
+                peak_height_norm is computed numerically as max(single_peak(xaxis)).
+        """
+        profile = self.peak_profile
+        stride = int(self.params_per_peak)
+        p = np.asarray(params, dtype=float).ravel()
+        xaxis = np.asarray(xaxis, dtype=float).ravel()
+
+        out = {}
+        for i, name in enumerate(peak_labels):
+            block = p[stride*i:stride*(i+1)]
+            centre = float(block[0])
+
+            if profile == "lorentzian":
+                hwhm = float(block[1])
+                amp_area = float(block[2])
+                fwhm = 2.0 * hwhm
+                peak_height_norm = (amp_area / (np.pi * hwhm)) if hwhm != 0 else np.nan
+                peak_height = float(peak_height_norm * intensity_scale)
+                out[name] = dict(
+                    centre=centre, fwhm=fwhm,
+                    peak_height=peak_height,
+                    peak_height_norm=float(peak_height_norm),
+                    amp=amp_area, scale=hwhm,
+                )
+            else:
+                fwhm = float(block[1])       # pVoigt width treated as FWHM
+                amp_area = float(block[2])
+                eta = float(block[3])
+
+                y_norm = single_peak(xaxis, block, profile="pvoigt")
+                peak_height_norm = float(np.nanmax(y_norm))
+                peak_height = float(peak_height_norm * intensity_scale)
+
+                out[name] = dict(
+                    centre=centre, fwhm=fwhm,
+                    peak_height=peak_height,
+                    peak_height_norm=peak_height_norm,
+                    amp=amp_area, scale=fwhm, eta=eta,
+                )
+
+        return out
+
+
+    ### Added in v0.2.8
+    def export_fit_map(
+        self,
+        out_path: str,
+        *,
+        coord_mode: str = "pixel",
+        scaled: bool = True,
+        headers: bool = True,
+        include_header: bool = True,
+        delimiter: str | None = None,
+    ) -> str:
+        """
+        Export fit results for every pixel in wide format:
+        x, y, then per-peak parameters on the same row.
+
+        Per-peak columns:
+        <peak>_centre, <peak>_fwhm, <peak>_height_scaled, <peak>_height_norm, <peak>_amp, <peak>_scale
+        """
+        if not hasattr(self, "fitted_params") or self.fitted_params is None:
+            raise ValueError("No fitted_params found. Run fit_spectra() first.")
+
+        peak_labels = list(self.peak_params)  # authoritative ordering in your mapping class :contentReference[oaicite:14]{index=14}
+        fields = ["x", "y"]
+
+        per_peak_fields = ["centre", "fwhm", "peak_height", "peak_height_norm", "amp", "scale"]
+        if self.peak_profile == "pvoigt":
+            per_peak_fields.append("eta")
+        for p in peak_labels:
+            for f in per_peak_fields:
+                fields.append(f"{p}_{f}")
+
+        rows = []
+        for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
+            params = np.asarray(self.fitted_params[j, i, :], dtype=float)
+            if np.any(np.isnan(params)):
+                # keep row but leave values empty to preserve grid
+                rows.append({"x": x, "y": y})
+                continue
+
+            intensity_scale = 1.0
+            if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
+                intensity_scale = float(self.norm_scale_map[j, i])
+
+            per_peak = self._params_to_export_dict(self.xdata, peak_labels, params, intensity_scale=intensity_scale)
+
+            r = {"x": x, "y": y}
+            for name in peak_labels:
+                d = per_peak[name]
+                r[f"{name}_centre"] = d["centre"]
+                r[f"{name}_fwhm"] = d["fwhm"]
+                r[f"{name}_peak_height"] = d["peak_height"]
+                r[f"{name}_peak_height_norm"] = d["peak_height_norm"]
+                r[f"{name}_amp"] = d["amp"]
+                r[f"{name}_scale"] = d["scale"]
+                if self.peak_profile == "pvoigt":
+                    r[f"{name}_eta"] = d["eta"]
+
+            rows.append(r)
+
+        meta = {
+            "map_kind": "fit_params",
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_quantity": getattr(self, "x_quantity", None),
+            "x_unit": getattr(self, "x_unit", None),
+            "coord_mode": coord_mode,
+            "step_size": getattr(self, "step_size", None),
+            "step_unit": getattr(self, "step_unit", "um"),
+            "scaled": scaled,
+            "peak_labels": peak_labels,
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+            "smoothing": getattr(self, "smoothing", None),
+            "smooth_window": getattr(self, "smooth_window", None),
+            "smooth_poly": getattr(self, "smooth_poly", None),
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_table(
+            rows,
+            out_path,
+            fieldnames=fields,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+
+
+#########################################################################################################################
+############################################## PL Integration Mapping ###################################################
+#########################################################################################################################
+
+class PL_Integration:
+    """Photoluminescence mapping analysis through spectral integration.
+    
+    Attributes:
+        filename (str): Path to input file
+        integration_range (tuple): Spectral integration range (min, max) in eV
+        step_size (float): Physical step size in micrometers
+        poly_degree (int): Background polynomial degree
+        background_remove (bool): Enable background subtraction
+        X (int): Map width in pixels
+        Y (int): Map height in pixels
+        energy (ndarray): Spectral axis in eV
+        spectra (ndarray): Raw spectral data [Y, X, points]
+        image_viewer (MappingImage): Optical image handler
+        integration_area (ndarray): Integrated intensities [Y, X]
+    """
+    def __init__(self, filename, integration_range, step_size=0.3, poly_degree=3,
+             background_remove=True, baseline_method="poly"):
+        """Initialize PL integration analyzer.
+        
+        Args:
+            filename: Path to .wdf file
+            integration_range: Spectral range (min, max) in eV
+            step_size: Physical step size in micrometers
+            poly_degree: Background polynomial degree
+            background_remove: Enable background subtraction
+            baseline_method: 'poly' or 'gaussian' background
+        """
+        self.filename = filename
+        self.integration_range = integration_range
+        self.step_size = step_size
+        self.poly_degree = poly_degree
+        self.background_remove = background_remove
+
+        # --- identity metadata for exports (added in v0.2.8) ---
+        self.spectrum_type = "Photoluminescence"
+        self.x_quantity = "Photon energy"
+        self.x_unit = "eV"
+        self.step_unit = "um"  # keep consistent with your plotting labels "μm"
+
+
+        # New in v0.2.5 Baseline configuration (single source of truth; backward compatible)
+        self.baseline_method = baseline_method
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree
+        )
+
+        # integration_range is known here; trim at load-time.
+        loader = MappingFileLoader(filename, x_range=self.integration_range, axis="energy")
+        self._x_trimmed_on_load = True
+
+        self.X = loader.X
+        self.Y = loader.Y
+        self.energy = loader.xdata
+        self.spectra = loader.spectra
+        self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
+        self.integration_area = np.zeros((self.Y, self.X))
+
+    ### NEW METHOD in v0.2.7 ###
+    @classmethod
+    def from_arrays(
+        cls,
+        spectra,
+        xdata,
+        X,
+        Y,
+        *,
+        integration_range,
+        step_size=0.3,
+        poly_degree=3,
+        background_remove=True,
+        baseline_method="poly",
+        clip_nonnegative=False,
+    ):
+        """
+        Construct PL_Integration from in-memory arrays (no file IO).
+
+        Parameters
+        ----------
+        spectra : ndarray
+            Mapping cube with shape [Y, X, N]
+        xdata : ndarray
+            Energy axis (eV) with shape [N]
+        X, Y : int
+            Map dimensions
+        integration_range : tuple(float, float)
+            (min, max) eV; applied immediately (trim at construction, consistent with __init__)
+        """
+        obj = cls.__new__(cls)
+
+        # Mirror __init__ fields
+        obj.filename = None
+        obj.integration_range = integration_range
+        obj.step_size = step_size
+        obj.poly_degree = poly_degree
+        obj.background_remove = background_remove
+
+        # Baseline configuration (same pattern as __init__)
+        obj.baseline_method = baseline_method
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            baseline_method,
+            poly_degree=poly_degree
+        )
+
+        obj.X = int(X)
+        obj.Y = int(Y)
+
+        energy = np.asarray(xdata, dtype=float).ravel()
+        cube = np.asarray(spectra, dtype=float)
+
+        # Validate shapes
+        if cube.ndim != 3:
+            raise ValueError("spectra must be a 3D array with shape [Y, X, N].")
+        if cube.shape[0] != obj.Y or cube.shape[1] != obj.X:
+            raise ValueError(f"spectra shape {cube.shape[:2]} inconsistent with (Y,X)=({obj.Y},{obj.X}).")
+        if cube.shape[2] != energy.size:
+            raise ValueError("spectra third dimension (N) must match len(xdata).")
+
+        # Trim at load-time (same semantics as filename-based __init__)
+        emin, emax = integration_range
+        mask = (energy >= emin) & (energy <= emax)
+        if not np.any(mask):
+            raise ValueError(
+                f"integration_range {integration_range} does not overlap provided energy axis "
+                f"[{float(np.min(energy)):.3g}, {float(np.max(energy)):.3g}]."
+            )
+
+        obj.energy = energy[mask]
+        obj.spectra = cube[:, :, mask]
+        obj._x_trimmed_on_load = True
+
+        if clip_nonnegative:
+            obj.spectra = np.clip(obj.spectra, a_min=0.0, a_max=None)
+
+        # No optical image when constructed from arrays
+        obj.image_viewer = None
+
+        # Output
+        obj.integration_area = np.zeros((obj.Y, obj.X), dtype=float)
+
+        return obj
+
+    def show_optical_image(self):
+        """Display the optical image."""
+        if self.image_viewer:
+            self.image_viewer.show_optical_image()
+
+    ### Updated in v0.2.5 ##
+    def remove_background(self, energy, intensity):
+        """Background removal via BaselineAPI (always clips to non-negative)."""
+        result = BaselineAPI.subtract(
+            x=energy,
+            y=intensity,
+            method=self._baseline_method,
+            clip_nonnegative=True,
+            **self._baseline_kwargs
+        )
+        return result.y_corrected
+
+
+    def calculate_integration(self):
+        """Calculate integrated area under spectra across all map points.
+
+        Uses Simpson's rule for integration.
+        Stores results in integration_area array.
+        """
+        energy = np.asarray(self.energy, dtype=float).ravel()
+
+        mask = DataImporter.mask_by_xrange(energy, self.integration_range)
+        energy_subset = energy[mask]
+
+        for j in range(self.Y):
+            for i in range(self.X):
+                spectra = np.asarray(self.spectra[j, i, :], dtype=float).ravel()
+                spectra_subset = spectra[mask]
+
+                if self.background_remove:
+                    spectra_subset = self.remove_background(energy_subset, spectra_subset)
+
+                self.integration_area[j, i] = np.abs(simpson(spectra_subset, energy_subset))
+
+
+    def plot_integration_heatmap(self, cmap='viridis', filter_range=None, x_range=None, y_range=None):
+        """Visualize 2D map of integrated intensities.
+        
+        Args:
+            cmap: Matplotlib colormap name
+            filter_range: Data display range [min, max]
+            x_range: X display range [start, end]
+            y_range: Y display range [start, end]
+        """
+        # Filter data range
+        data = self.integration_area
+        if filter_range is not None:
+            # Replace outliers with filter_range[0] instead of NaN
+            data = np.where((data >= filter_range[0]) & (data <= filter_range[1]), data, filter_range[0])
+
+        # If x_range and y_range are specified, only plot data within the specified region
+        if x_range is not None and y_range is not None:
+            x_start, x_end = x_range
+            y_start, y_end = y_range
+            data = data[y_start:y_end+1, x_start:x_end+1]
+            # Calculate actual length range
+            x_length = (x_end - x_start + 1) * self.step_size
+            y_length = (y_end - y_start + 1) * self.step_size
+        else:
+            # Calculate actual length range
+            x_length = self.X * self.step_size
+            y_length = self.Y * self.step_size
+
+        plt.figure(figsize=(8, 6))
+        im = plt.imshow(
+            data,
+            cmap=cmap,
+            vmin=filter_range[0] if filter_range else None,  # Anchor color scale
+            vmax=filter_range[1] if filter_range else None,  # to filter range
+            extent=[0, x_length, y_length, 0])
+        cbar = plt.colorbar(im, label='Integration Area (a.u.)')
+        plt.xlabel("X Position (μm)")
+        plt.ylabel("Y Position (μm)")
+        plt.title(f"Integration Area Heatmap ({self.integration_range[0]} - {self.integration_range[1]} eV)")
+        plt.show()
+
+    def plot_spectrum(self, x, y):
+        """Plot raw and processed spectra for single map point.
+        
+        Args:
+            x (int): X coordinate (0-indexed)
+            y (int): Y coordinate (0-indexed)
+            
+        Shows:
+            - Raw spectrum (blue)
+            - Background-removed spectrum (red, if enabled)
+        """
+        if x < 0 or x >= self.X or y < 0 or y >= self.Y:
+            raise ValueError("Invalid coordinates. Please ensure x and y are within the mapping range.")
+
+        # Get the original spectrum data
+        energy = self.energy[:]
+        spectra = self.spectra[y][x][:]
+
+        # Get data within the integration range
+        mask = DataImporter.mask_by_xrange(energy, self.integration_range)
+        energy_subset = energy[mask]
+        spectra_subset = spectra[mask]
+
+
+        # If background removal is enabled, remove the background signal
+        spectra_raw = spectra_subset.copy()
+
+        if self.background_remove:
+            spectra_bg_removed = self.remove_background(energy_subset, spectra_subset)
+        else:
+            spectra_bg_removed = spectra_subset
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(energy_subset, spectra_raw, 'b-', label='Original Spectrum')
+        if self.background_remove:
+            plt.plot(energy_subset, spectra_bg_removed, 'r--', label='Background Removed')
+        plt.xlabel("Energy (eV)")
+        plt.ylabel("Intensity (a.u.)")
+        plt.title(f"Spectrum at (X={x}, Y={y})")
+        plt.legend()
+        plt.show()
+
+    ### Added in v0.2.8
+    def export_integration_map(
+        self,
+        out_path: str,
+        *,
+        coord_mode: str = "pixel",
+        headers: bool = True,
+        include_header: bool = True,
+        delimiter: str | None = None,
+        column_name: str = "integration_area",
+    ) -> str:
+        """
+        Export integration_area in wide format:
+        x, y, integration_area
+        """
+        if not hasattr(self, "integration_area") or self.integration_area is None:
+            raise ValueError("No integration_area found. Run calculate_integration() first.")
+
+        # coordinate iterator local to this class
+        step = float(self.step_size)
+        rows = []
+        for j in range(self.Y):
+            for i in range(self.X):
+                x, y = (i * step, j * step) if coord_mode == "real" else (i, j)
+                rows.append({"x": x, "y": y, column_name: float(self.integration_area[j, i])})
+
+        fields = ["x", "y", column_name]
+
+        meta = {
+            "map_kind": "integration",
+            "spectrum_type": getattr(self, "spectrum_type", None),
+            "x_unit": getattr(self, "x_unit", None),
+            "coord_mode": coord_mode,
+            "step_size": getattr(self, "step_size", None),
+            "step_unit": getattr(self, "step_unit", "um"),
+            "integration_range": getattr(self, "integration_range", None),
+            "background_remove": getattr(self, "background_remove", None),
+            "baseline_method": getattr(self, "baseline_method", None),
+        }
+        meta = {k: v for k, v in meta.items() if v is not None}
+
+        return write_table(
+            rows,
+            out_path,
+            fieldnames=fields,
+            delimiter=delimiter,
+            include_header=include_header,
+            meta=meta,
+            headers=headers,
+        )
+    
