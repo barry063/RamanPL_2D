@@ -32,7 +32,7 @@ The package is designed to support reproducible analysis workflows for 2D materi
 Batch workflows allow automated analysis of many spectra:
 
 - automated fitting across multiple spectra
-- extraction of peak parameters (position, FWHM, intensity)
+- extraction of peak parameters (position, FWHM, peak height)
 - summary statistics **per peak**
 - export to `.csv` / `.txt`
 
@@ -59,7 +59,7 @@ Batch workflows allow automated analysis of many spectra:
 - residual distribution inspection
 - dynamic spectrum fitting view
 
-For features like `pipeline` and `multistart`, please check [code examples](#demostration).
+For features like `pipeline` and `multistart`, please check the [code examples](#demonstration).
 
 For more details on the features and example of spefici use, please refer to the [example usage notebooks](example-usage/).
 
@@ -68,38 +68,52 @@ For more details on the features and example of spefici use, please refer to the
 ## Repository Structure
 
 ```bash
+
 RamanPL_2D/
-    ├── example-usage/
-    │ ├── Mapping/
-    │ ├── multi-plot/
-    │ ├── PLfit/
-    │ └── Ramanfit/
-    │
-    ├── src/
-    │ ├── ramanpl/
-    │ │ ├── __init__.py
-    │ │ ├── RamanFit.py
-    │ │ ├── PLfit.py
-    │ │ ├── single_fit/
-    │ │ │ ├── __init__.py
-    │ │ │ ├── RamanFit.py
-    │ │ │ ├── PLfit.py
-    │ │ │ └── _single_fit_core.py
-    │ │ ├── preprocessing.py
-    │ │ ├── raman_materials.json
-    │ │ ├── baselineAPI.py
-    │ │ ├── dataImporter.py
-    │ │ ├── peak_models.py
-    │ │ ├── operation.py
-    │ │ ├── batch.py
-    │ │ ├── exporter.py
-    │ │ └── Mapping.py
-    │
-    │ ├── install.ipynb
-    │ └── setup.py
-    │
-    ├── requirements.txt
-    └── README.md
+├── example-usage/
+│   ├── Mapping/
+│   ├── multi-plot/
+│   ├── PLfit/
+│   └── Ramanfit/
+│
+├── src/
+│   ├── install.ipynb
+│   ├── setup.py
+│   └── ramanpl/
+│       ├── __init__.py
+│       ├── RamanFit.py                 # compatibility wrapper
+│       ├── PLfit.py                    # compatibility wrapper
+│       ├── Mapping.py                  # compatibility wrapper
+│       ├── batch.py
+│       ├── baselineAPI.py
+│       ├── dataImporter.py
+│       ├── exporter.py
+│       ├── operation.py
+│       ├── peak_models.py
+│       ├── preprocessing.py
+│       ├── schema.py
+│       ├── raman_materials.json
+│       │
+│       ├── single_fit/
+│       │   ├── __init__.py
+│       │   ├── RamanFit.py
+│       │   ├── PLfit.py
+│       │   └── _single_fit_core.py
+│       │
+│       └── mapping/
+│           ├── __init__.py
+│           ├── _diagnostics.py
+│           ├── _fit_utils.py
+│           ├── _image.py
+│           ├── _io.py
+│           ├── _pl_mapping.py
+│           ├── _preprocess.py
+│           └── _raman_mapping.py
+│
+├── requirements.txt
+├── CHANGELOG
+└── README.md
+
 ```
 
 ## Change log
@@ -209,7 +223,7 @@ from ramanpl import RamanFit
 
 ---
 
-# Demostration
+# Demonstration
 
 ## Preprocessing Pipelines (after v0.3.4)
 
@@ -246,22 +260,26 @@ Example steps currently included:
 | `SmoothSavGol`     | Savitzky–Golay smoothing                                         |
 | `BaselineSubtract` | Background subtraction (poly / airPLS / arPLS / AsLS / Gaussian) |
 
+---
+
 ### Legacy preprocessing arguments
 
 For backward compatibility, the following arguments still work:
 
 ```python
+
 smoothing=True
 background_remove=True
 baseline_method="poly"
 baseline_kwargs={"poly_order": 3}
+
 ```
 
 In v0.3.5, pipeline-based preprocessing is supported across single, batch, and mapping workflows.
 For backwards compatibility, some legacy preprocessing metadata fields may still appear in exports.
 A later cleanup release will simplify metadata headers when `preprocessing=Pipeline(...)` is used explicitly.
 
-However, **pipeline-based preprocessing is recommended for new workflows.** The legacy arguments will be deprecated in a future release (By version v0.4.0).
+However, **pipeline-based preprocessing is recommended for new workflows.** The legacy argument `poly_degree` is deprecated. The canonical baseline specification in v0.3.8 is the dictionary form, for example `{"method": "poly", "poly_order": 3}`.
 
 ## Baseline specification
 
@@ -283,7 +301,7 @@ baseline_spec = {   "method": "poly",
                     "poly_order": 3,
                 }
 ```
-The legacy argument poly_degree is deprecated and will be removed in a future release (By release v0.4.0).
+The legacy argument `poly_degree` is deprecated. The canonical baseline specification in v0.3.8 is the dictionary form, for example `{"method": "poly", "poly_order": 3}`.
 
 ## Multi-start fitting (v0.3.0)
 
@@ -338,7 +356,6 @@ rep = bound_hit_report(raman_map)
 
 | Version | Planned feature                                   |
 | ------- | ------------------------------------------------- |
-| v0.3.8  | Optimise schema and polish                        |
 | v0.3.9  | Optimise mapping and fitting efficiency           |
 | v0.4.0+ | integrate standardised analysis with RamanSPy     |
 | v0.5.0+ | integrate with machine learning abilities         |

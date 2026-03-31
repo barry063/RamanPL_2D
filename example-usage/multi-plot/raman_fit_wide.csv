@@ -1,27 +1,30 @@
 # RamanPL_2D export
+# schema_version: "0.3.8"
 # spectrum_type: "Raman"
 # x_quantity: "Raman shift"
 # x_unit: "cm^-1"
+# normalize: false
+# intensity_scale: [295.4965129248701, 1106.8100537687192, 4130.394523777787]
+# peak_labels: ["E12g", "A1g", "2LA(M)", "2LA(M)-2E22g", "2LA(M)-E22g", "4LA(M)", "B1/u", "3LA(K)", "Si"]
+# peak_profile: "lorentzian"
+# params_per_peak: 3
+# baseline_spec: {"method": "poly", "poly_order": 3}
+# preprocessing_recipe: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": {"method": "arpls"}, "clip_nonnegative": true}]}
 # materials: ["WS2"]
 # substrate: "Si"
 # background_remove: false
-# baseline_method: {"method": "poly", "poly_degree": 3}
+# baseline_method: {"method": "poly", "poly_order": 3}
 # poly_degree: 3
 # gaussian_sigma: 50
 # smoothing: false
 # smooth_window: 11
 # smooth_order: 3
-# normalize: false
-# peak_labels: ["E12g", "A1g", "2LA(M)", "2LA(M)-2E22g", "2LA(M)-E22g", "4LA(M)", "B1/u", "3LA(K)", "Si"]
-# peak_intensity: [295.4965129248701, 1106.8100537687192, 4130.394523777787]
-# peak_profile: "lorentzian"
-# params_per_peak: 3
-# preprocessing: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": "arpls", "poly_degree": 3, "gaussian_sigma": 50, "clip_nonnegative": true}]}
-# preprocessing_recipe: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": "arpls", "poly_degree": 3, "gaussian_sigma": 50, "clip_nonnegative": true}]}
-# custom_peaks: "False"
+# intensity_scale(peak_intensity): [295.4965129248701, 1106.8100537687192, 4130.394523777787]
+# custom_peaks: false
 # remove_peaks: ["A1g(M)+LA(M)", "A1g(M)-LA(M)", "LA(M)"]
 # fitter_class: "RamanFit"
 # n_spectra: 3
+# preprocessing: {"name": "crop_smooth_arpls", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": {"method": "arpls"}, "clip_nonnegative": true}]}
 # fit_spectrum_kwargs: {}
 # 
 source,2LA(M)-2E22g_fwhm,2LA(M)-2E22g_peak_height,2LA(M)-2E22g_position,2LA(M)-E22g_fwhm,2LA(M)-E22g_peak_height,2LA(M)-E22g_position,2LA(M)_fwhm,2LA(M)_peak_height,2LA(M)_position,3LA(K)_fwhm,3LA(K)_peak_height,3LA(K)_position,4LA(M)_fwhm,4LA(M)_peak_height,4LA(M)_position,A1g_fwhm,A1g_peak_height,A1g_position,B1/u_fwhm,B1/u_peak_height,B1/u_position,E12g_fwhm,E12g_peak_height,E12g_position,Si_fwhm,Si_peak_height,Si_position,condition

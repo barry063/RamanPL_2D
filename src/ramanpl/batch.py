@@ -553,7 +553,6 @@ def collect_fit_parameters_from_fitters(
 
     return rows
 
-
 def _infer_metadata_from_fitters(
     fits_with_fitters: Sequence[tuple[Spectrum, Spectrum, object]],
 ) -> Dict[str, Any]:
@@ -571,15 +570,24 @@ def _infer_metadata_from_fitters(
     if not fitters:
         return {}
 
-    # Keys mirror RamanFit/PLfit export metadata where possible.
     key_map: Dict[str, str] = {
+        # canonical schema
         "spectrum_type": "spectrum_type",
         "x_quantity": "x_quantity",
         "x_unit": "x_unit",
+        "normalize": "normalize",
+        "intensity_scale": "peak_intensity",
+        "peak_labels": "peak_labels",
+        "peak_profile": "peak_profile",
+        "params_per_peak": "params_per_peak",
+        "baseline_spec": "baseline_method",
+        "preprocessing_recipe": "preprocessing_recipe",
+
+        # optional fitter identity fields
         "materials": "materials",
         "substrate": "substrate",
 
-        # legacy / behaviour-preserving fitter flags
+        # legacy compatibility fields
         "background_remove": "background_remove",
         "baseline_method": "baseline_method",
         "poly_degree": "poly_degree",
@@ -587,17 +595,7 @@ def _infer_metadata_from_fitters(
         "smoothing": "smoothing",
         "smooth_window": "smooth_window",
         "smooth_order": "smooth_order",
-        "normalize": "normalize",
-
-        # peak-model metadata
-        "peak_labels": "peak_labels",
-        "peak_intensity": "peak_intensity",
-        "peak_profile": "peak_profile",
-        "params_per_peak": "params_per_peak",
-
-        # preprocessing metadata (v0.3.4+)
-        "preprocessing": "preprocessing",
-        "preprocessing_recipe": "preprocessing_recipe",
+        "intensity_scale(peak_intensity)": "peak_intensity",
     }
 
     def _norm_value(v: Any) -> Any:
@@ -1195,15 +1193,25 @@ class _BaseBatch:
 
         meta_user = dict(metadata or {})
 
-        if self._last_fitter_kwargs is not None and "preprocessing" in self._last_fitter_kwargs:
-            pp = self._last_fitter_kwargs["preprocessing"]
-            if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):
-                try:
-                    meta_user.setdefault("preprocessing", pp.to_dict())
-                except Exception:
-                    meta_user.setdefault("preprocessing", str(pp))
-            else:
-                meta_user.setdefault("preprocessing", pp)
+        meta_user.setdefault("schema_version", "0.3.8")
+
+        if self._last_fitter_kwargs is not None:
+            if "preprocessing" in self._last_fitter_kwargs:
+                pp = self._last_fitter_kwargs["preprocessing"]
+                if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):
+                    try:
+                        pp_value = pp.to_dict()
+                    except Exception:
+                        pp_value = str(pp)
+                else:
+                    pp_value = pp
+
+                meta_user.setdefault("preprocessing_recipe", pp_value)
+                meta_user.setdefault("preprocessing", pp_value)  # legacy compatibility
+
+            if "baseline_method" in self._last_fitter_kwargs:
+                meta_user.setdefault("baseline_spec", self._last_fitter_kwargs["baseline_method"])
+                meta_user.setdefault("baseline_method", self._last_fitter_kwargs["baseline_method"])
 
         if self._last_fit_spectrum_kwargs is not None:
             meta_user.setdefault("fit_spectrum_kwargs", dict(self._last_fit_spectrum_kwargs))

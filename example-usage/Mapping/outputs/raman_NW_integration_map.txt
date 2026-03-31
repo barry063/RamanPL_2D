@@ -1,13 +1,16 @@
 # RamanPL_2D export
-# map_kind: integration
-# spectrum_type: Raman
-# x_unit: cm^-1
-# coord_mode: real
+# schema_version: "0.3.8"
+# export_kind: "mapping_table"
+# map_kind: "integration"
+# spectrum_type: "Raman"
+# x_quantity: "Raman shift"
+# x_unit: "cm^-1"
+# coord_mode: "real"
 # step_size: 0.5
-# step_unit: um
-# integration_range: (340, 430)
-# background_remove: True
-# baseline_method: poly
+# step_unit: "um"
+# integration_range: [340, 430]
+# baseline_spec: {"method": "poly", "poly_order": 2}
+# background_remove: true
 # 
 x	y	integration_area
 0.0	0.0	129.29189695680833

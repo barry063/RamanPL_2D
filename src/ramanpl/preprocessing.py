@@ -20,6 +20,15 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 from scipy.signal import savgol_filter
 
+from .schema import (
+    AxisKind,
+    Modality,
+    baseline_spec_to_runtime,
+    normalise_axis_kind,
+    normalise_baseline_spec,
+    normalise_modality,
+)
+
 # Local imports (package-safe)
 try:
     from .baselineAPI import BaselineAPI
@@ -31,31 +40,26 @@ except Exception:  # pragma: no cover (fallback for running as a script)
 
 ArrayLike1D = Union[np.ndarray, Sequence[float]]
 Range2 = Optional[Tuple[float, float]]
-BaselineSpec = Union[str, Dict[str, Any]]
+BaselineSpec = Dict[str, Any]
+
 
 @dataclass(frozen=True)
 class SpectralDataset:
     """
     Canonical in-memory container for preprocessing.
-
-    Parameters
-    ----------
-    x
-        Spectral axis (1D). Raman: wavenumber (cm^-1). PL: energy (eV) or wavelength (nm).
-    y
-        Intensity array. For v0.3.4 single-spectrum pipeline this is 1D.
-    modality
-        "Raman" or "PL" (free string for now; later we can make Literal).
-    axis_kind
-        "raman_shift_cm-1" | "energy_eV" | "wavelength_nm" (free string for now).
-    meta
-        Metadata/provenance dict (e.g. filename, acquisition settings, flags).
     """
     x: np.ndarray
     y: np.ndarray
-    modality: str
-    axis_kind: str
+    modality: Modality
+    axis_kind: AxisKind
     meta: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "x", np.asarray(self.x, dtype=float).ravel())
+        object.__setattr__(self, "y", np.asarray(self.y, dtype=float).ravel())
+        object.__setattr__(self, "modality", normalise_modality(self.modality))
+        object.__setattr__(self, "axis_kind", normalise_axis_kind(self.axis_kind))
+        object.__setattr__(self, "meta", dict(self.meta))
 
     def copy_with(self, **kwargs) -> "SpectralDataset":
         d = {
@@ -66,7 +70,6 @@ class SpectralDataset:
             "meta": self.meta,
         }
         d.update(kwargs)
-        # Copy meta defensively if being replaced/edited
         if "meta" in kwargs:
             d["meta"] = dict(kwargs["meta"])
         return SpectralDataset(**d)
@@ -76,25 +79,19 @@ class SpectralDataset:
 class MappingPreprocessResult:
     """
     Result container for mapping/cube preprocessing.
-
-    Parameters
-    ----------
-    x
-        Processed spectral axis (1D).
-    cube
-        Processed spectral cube with shape [Y, X, N].
-    modality
-        "Raman" or "PL".
-    axis_kind
-        "raman_shift_cm-1" | "energy_eV" | "wavelength_nm".
-    meta
-        Shared preprocessing metadata/provenance for the cube.
     """
     x: np.ndarray
     cube: np.ndarray
-    modality: str
-    axis_kind: str
+    modality: Modality
+    axis_kind: AxisKind
     meta: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "x", np.asarray(self.x, dtype=float).ravel())
+        object.__setattr__(self, "cube", np.asarray(self.cube, dtype=float))
+        object.__setattr__(self, "modality", normalise_modality(self.modality))
+        object.__setattr__(self, "axis_kind", normalise_axis_kind(self.axis_kind))
+        object.__setattr__(self, "meta", dict(self.meta))
 
 
 class PreprocessStep:
@@ -200,12 +197,12 @@ class BaselineSubtract(PreprocessStep):
     """
     Baseline subtraction using BaselineAPI.
 
-    Supports:
-    - baseline_spec as a string method name: "poly", "asls", "arpls", "airpls", ...
-    - baseline_spec as a dict, e.g. {"method": "airpls", "lam": 1e6, "niter": 50, "tol": 1e-6}
-      In this case, dict values override defaults.
+    Canonical v0.3.8 spec:
+        {"method": "poly", "poly_order": 3}
+        {"method": "gaussian", "gaussian_sigma": 10}
+        {"method": "airpls", "lam": 1e6, "niter": 50, "tol": 1e-6}
     """
-    baseline_spec: BaselineSpec = "poly"
+    baseline_spec: Any = "poly"
     poly_degree: int = 3
     gaussian_sigma: int = 50
     clip_nonnegative: bool = True
@@ -215,24 +212,12 @@ class BaselineSubtract(PreprocessStep):
         x = np.asarray(ds.x, dtype=float).ravel()
         y = np.asarray(ds.y, dtype=float).ravel()
 
-        # Preserve dict specs (do NOT str(...) them)
-        spec = self.baseline_spec
-
-        # Allow dict to override defaults cleanly
-        if isinstance(spec, dict):
-            spec = dict(spec)  # defensive copy
-            # If user provided explicit parameters, prefer them over defaults
-            poly_degree = int(spec.get("poly_degree", self.poly_degree))
-            gaussian_sigma = int(spec.get("gaussian_sigma", self.gaussian_sigma))
-        else:
-            poly_degree = int(self.poly_degree)
-            gaussian_sigma = int(self.gaussian_sigma)
-
-        method, bkwargs = BaselineAPI.parse_spec(
-            spec,
-            poly_degree=poly_degree,
-            gaussian_sigma=gaussian_sigma,
+        spec = normalise_baseline_spec(
+            self.baseline_spec,
+            poly_degree=self.poly_degree,
+            gaussian_sigma=self.gaussian_sigma,
         )
+        method, bkwargs = baseline_spec_to_runtime(spec)
 
         result = BaselineAPI.subtract(
             x=x,
@@ -244,23 +229,26 @@ class BaselineSubtract(PreprocessStep):
 
         meta = dict(ds.meta)
         meta["baseline"] = {
-            "spec": spec,  # may be str or dict
+            "spec": spec,
             "resolved_method": method,
-            "poly_degree": poly_degree,
-            "gaussian_sigma": gaussian_sigma,
             "clip_nonnegative": bool(self.clip_nonnegative),
             "kwargs": dict(bkwargs),
         }
         meta["_baseline_last"] = np.asarray(result.baseline, dtype=float).ravel()
 
-        return ds.copy_with(y=np.asarray(result.y_corrected, dtype=float).ravel(), meta=meta)
+        return ds.copy_with(
+            y=np.asarray(result.y_corrected, dtype=float).ravel(),
+            meta=meta,
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "baseline_spec": self.baseline_spec,
-            "poly_degree": int(self.poly_degree),
-            "gaussian_sigma": int(self.gaussian_sigma),
+            "baseline_spec": normalise_baseline_spec(
+                self.baseline_spec,
+                poly_degree=self.poly_degree,
+                gaussian_sigma=self.gaussian_sigma,
+            ),
             "clip_nonnegative": bool(self.clip_nonnegative),
         }
 

@@ -8,6 +8,7 @@ from numpy.polynomial import Polynomial
 from scipy.ndimage import gaussian_filter1d
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
+from .schema import baseline_spec_to_runtime, normalise_baseline_spec
 
 
 @dataclass(frozen=True)
@@ -30,120 +31,36 @@ class BaselineAPI:
     @staticmethod
     def parse_spec(baseline_method, poly_degree=None, gaussian_sigma=None):
         """
-        Backwards-compatible baseline specification parser with deprecation warnings.
+        Normalise baseline specifications to the runtime contract used by subtract().
 
-        Supported forms:
-        - 'poly', 'gaussian'                     (legacy)
-        - ('poly', 1), ('gaussian', 10)          (shorthand)
-        - ('poly', {'poly_degree': 1})           (explicit)
-        - {'method': 'poly', 'poly_degree': 1}  (future-proof)
-
-        Returns
-        -------
-        method : str
-        kwargs : dict
+        Canonical v0.3.8 user-facing form:
+            {"method": "poly", "poly_order": 3}
+            {"method": "gaussian", "gaussian_sigma": 10}
+            {"method": "airpls", "lam": 1e6, "niter": 50, "tol": 1e-6}
         """
-
-        legacy_params_used = (
-            poly_degree is not None or gaussian_sigma is not None
-        )
-
-        # --------------------------------------------------
-        # Case 1: legacy string method
-        # --------------------------------------------------
-        if isinstance(baseline_method, str):
-            method = baseline_method.lower().strip()
-            kwargs = {}
-
-            if poly_degree is not None:
-                kwargs["poly_degree"] = poly_degree
-            if gaussian_sigma is not None:
-                kwargs["gaussian_sigma"] = gaussian_sigma
-
-            if legacy_params_used:
-                warnings.warn(
-                    "\nUsing 'baseline_method=\"{0}\"' together with legacy parameters "
-                    "(poly_degree / gaussian_sigma) is deprecated and will be removed "
-                    "in a future version.\n"
-                    "Please use:\n"
-                    "  baseline_method=(\"{0}\", value)\n"
-                    "or:\n"
-                    "  baseline_method={{'method': '{0}', 'param': value}}".format(method),
-                    category=FutureWarning,
-                    stacklevel=2,
-                )
-
-            return method, kwargs
-
-        # --------------------------------------------------
-        # Case 2: tuple / list spec
-        # --------------------------------------------------
         if isinstance(baseline_method, (tuple, list)):
-            if len(baseline_method) == 0:
-                raise ValueError("baseline_method tuple/list cannot be empty.")
+            warnings.warn(
+                "Tuple/list baseline_method is deprecated. "
+                "Use a dict specification instead, e.g. "
+                "{'method': 'poly', 'poly_order': 3}.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
 
-            method = str(baseline_method[0]).lower().strip()
+        if poly_degree is not None:
+            warnings.warn(
+                "poly_degree is deprecated. "
+                "Use baseline_method={'method': 'poly', 'poly_order': degree} instead.",
+                category=FutureWarning,
+                stacklevel=2,
+            )
 
-            if legacy_params_used:
-                warnings.warn(
-                    "\nLegacy parameters (poly_degree / gaussian_sigma) are ignored when "
-                    "baseline_method is provided as a tuple/list.\n"
-                    "Please remove legacy parameters.",
-                    category=FutureWarning,
-                    stacklevel=2,
-                )
-
-            if len(baseline_method) == 1:
-                return method, {}
-
-            if len(baseline_method) == 2:
-                spec = baseline_method[1]
-
-                if isinstance(spec, dict):
-                    return method, dict(spec)
-
-                if method == "poly":
-                    return method, {"poly_degree": int(spec)}
-                if method == "gaussian":
-                    return method, {"gaussian_sigma": float(spec)}
-
-                raise ValueError(
-                    f"Shorthand baseline_method not supported for method='{method}'. "
-                    "Use a dict instead."
-                )
-
-            raise ValueError("baseline_method tuple/list must be length 1 or 2.")
-
-        # --------------------------------------------------
-        # Case 3: dict spec (preferred future API)
-        # --------------------------------------------------
-        if isinstance(baseline_method, dict):
-            if "method" not in baseline_method:
-                raise ValueError(
-                    "baseline_method dict must include key 'method'. "
-                    "Example: {'method': 'poly', 'poly_degree': 1}"
-                )
-
-            if legacy_params_used:
-                warnings.warn(
-                    "\nLegacy parameters (poly_degree / gaussian_sigma) are ignored when "
-                    "baseline_method is provided as a dict.\n"
-                    "Please remove legacy parameters.",
-                    category=FutureWarning,
-                    stacklevel=2,
-                )
-
-            d = dict(baseline_method)
-            method = str(d.pop("method")).lower().strip()
-            return method, d
-
-        raise TypeError(
-            "baseline_method must be str, tuple/list, or dict.\n"
-            "Examples:\n"
-            "  'poly'\n"
-            "  ('poly', 1)\n"
-            "  {'method': 'poly', 'poly_degree': 1}"
+        spec = normalise_baseline_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma,
         )
+        return baseline_spec_to_runtime(spec)
 
 
 

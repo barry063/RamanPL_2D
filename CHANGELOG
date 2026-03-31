@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.3.8 — schema cleanup and workflow polish
+
+### Changed
+- introduced a shared internal schema layer for modality, axis type, peak profile, coordinate mode, and baseline specifications
+- standardised canonical baseline dictionary usage, with `poly_order` preferred over legacy `poly_degree`
+- aligned preprocessing metadata and export metadata more consistently across single-spectrum, batch, and mapping workflows
+- updated single-spectrum Raman and PL fitting classes to use the shared schema-driven preprocessing contract
+- updated mapping preprocess helpers and mapping exports to use the same schema conventions
+- improved export metadata by adding clearer schema-aware fields such as `schema_version`, `baseline_spec`, and `preprocessing_recipe`
+
+### Improved
+- synchronised batch metadata collection with the new fitter/export schema
+- improved mapping export consistency for both fitted maps and integration maps
+- improved PL mapping plot scaling so displayed fitted curves use the stored normalisation scale when available
+- made coordinate export handling stricter and more consistent through canonical `pixel` / `real` modes
+- extended mapping compatibility helpers so custom peaks exported from single-spectrum fitting respect the active parameter stride
+
+### Compatibility
+- preserved backwards-compatible wrappers for `RamanFit.py`, `PLfit.py`, and `Mapping.py`
+- preserved legacy preprocessing and metadata fields where needed for older notebooks and exports
+- kept legacy baseline shorthand accepted for now, while making dictionary-style specifications the preferred interface
+
+### Internal
+- modular mapping split from the previous build is now followed by schema-level cleanup across preprocessing, batch, export, and mapping internals
+- prepared the codebase for a later v0.3.9 pass focused on mapping and fitting efficiency
+
+--------
+
 ## [0.3.7] — 2026-03-30
 
 ### Refactored

@@ -1,21 +1,25 @@
 # RamanPL_2D export
+# schema_version: "0.3.8"
 # spectrum_type: "Photoluminescence"
 # x_quantity: "Photon energy"
 # x_unit: "eV"
 # normalize: true
-# intensity_scale(peak_intensity): 1152.0439453125
+# intensity_scale: 1152.0439453125
 # peak_labels: ["trion", "exciton"]
-# custom_peaks: "False"
+# custom_peaks: false
 # remove_peaks: []
 # peak_profile: "pvoigt"
+# params_per_peak: 4
+# baseline_spec: {"method": "poly", "poly_order": 1}
 # preprocessing_recipe: {"name": "legacy_single_spectrum", "steps": []}
 # background_remove: false
-# baseline_method: {"method": "poly", "poly_degree": 1}
+# baseline_method: {"method": "poly", "poly_order": 1}
 # poly_degree: 1
 # gaussian_sigma: 50
 # smoothing: false
 # smooth_window: 11
 # smooth_order: 3
+# intensity_scale(peak_intensity): 1152.0439453125
 # 
 Peak	Centre	FWHM	Eta	Amp	PeakHeight_norm	PeakHeight
 trion	1.8100626610370572	0.08251071963373843	0.9611472319921782	0.0686337128107192	0.5393359508442228	621.338716659447

@@ -8,9 +8,9 @@ from scipy.signal import savgol_filter
 try:
     from ..baselineAPI import BaselineAPI
     from ..dataImporter import DataImporter
-    from ..exporter import write_table
+    from ..exporter import build_export_meta, write_table
     from ..peak_models import single_peak, sum_peaks
-
+    from ..schema import normalise_baseline_spec, normalise_coord_mode, normalise_peak_profile
     from ._diagnostics import fit_summary as _fit_summary
     from ._fit_utils import (
         _mapping_generate_p0_trials,
@@ -24,9 +24,9 @@ try:
 except Exception:  # pragma: no cover
     from ramanpl.baselineAPI import BaselineAPI
     from ramanpl.dataImporter import DataImporter
-    from ramanpl.exporter import write_table
+    from ramanpl.exporter import build_export_meta, write_table
     from ramanpl.peak_models import single_peak, sum_peaks
-
+    from ramanpl.schema import normalise_baseline_spec, normalise_coord_mode, normalise_peak_profile
     from ramanpl.mapping._diagnostics import fit_summary as _fit_summary
     from ramanpl.mapping._fit_utils import (
         _mapping_generate_p0_trials,
@@ -113,7 +113,11 @@ class PLMapping(_MappingPreprocessMixin):
         self.poly_degree = poly_degree
         self.normalize = normalize          # DISPLAY flag only (fit-space is always normalised)
         self.background_remove = background_remove
-        self.baseline_method = baseline_method
+        self.baseline_method = normalise_baseline_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma,
+        )
         self.smoothing = smoothing
         self.smooth_window = smooth_window
         self.smooth_poly = smooth_poly
@@ -126,18 +130,20 @@ class PLMapping(_MappingPreprocessMixin):
         self.x_unit = "eV"
         self.step_unit = "um"
 
+        if str(self.baseline_method.get("method", "")).lower() == "poly":
+            self.poly_order = int(self.baseline_method.get("poly_order", poly_degree))
+        else:
+            self.poly_order = None
+
         # Baseline config (single source of truth)
         self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
-            baseline_method,
-            poly_degree=poly_degree,
-            gaussian_sigma=gaussian_sigma,
+            self.baseline_method
         )
 
         # ---- model choice ----
-        self.peak_profile = str(peak_profile).lower().strip()
-        if self.peak_profile not in ("lorentzian", "pvoigt"):
-            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        self.peak_profile = normalise_peak_profile(peak_profile)
         self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
+
         # Shared preprocessing pipeline (legacy-compatible if None)
         self._initialise_preprocessing(preprocessing=preprocessing)
 
@@ -207,18 +213,30 @@ class PLMapping(_MappingPreprocessMixin):
         obj.poly_degree = poly_degree
         obj.normalize = normalize
         obj.background_remove = background_remove
-        obj.baseline_method = baseline_method
+        obj.baseline_method = normalise_baseline_spec(
+            baseline_method,
+            poly_degree=poly_degree,
+            gaussian_sigma=gaussian_sigma,
+        )
         obj.smoothing = smoothing
         obj.smooth_window = smooth_window
         obj.smooth_poly = smooth_poly
         obj.gaussian_sigma = gaussian_sigma
         obj.peak_params = list(custom_peaks.keys())
 
+        obj.spectrum_type = "Photoluminescence"
+        obj.x_quantity = "Photon energy"
+        obj.x_unit = "eV"
+        obj.step_unit = "um"
+
+        if str(obj.baseline_method.get("method", "")).lower() == "poly":
+            obj.poly_order = int(obj.baseline_method.get("poly_order", poly_degree))
+        else:
+            obj.poly_order = None
+
         # Baseline config (same as __init__)
         obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
-            baseline_method,
-            poly_degree=poly_degree,
-            gaussian_sigma=gaussian_sigma
+            obj.baseline_method
         )
 
         # ---- assign data ----
@@ -245,9 +263,7 @@ class PLMapping(_MappingPreprocessMixin):
         if obj.data_range is None:
             obj.data_range = (float(np.min(obj.xdata)), float(np.max(obj.xdata)))
 
-        obj.peak_profile = str(peak_profile).lower().strip()
-        if obj.peak_profile not in ("lorentzian", "pvoigt"):
-            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        obj.peak_profile = normalise_peak_profile(peak_profile)
         obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
         obj._initialise_preprocessing(preprocessing=preprocessing)
 
@@ -671,7 +687,13 @@ class PLMapping(_MappingPreprocessMixin):
             background = None
 
         # --- Scale used for fitting normalisation
-        scale = np.max(bg_removed)
+        scale = None
+        if hasattr(self, "norm_scale_map"):
+            scale = self.norm_scale_map[y, x]
+
+        if scale is None or not np.isfinite(scale) or scale <= 0:
+            scale = np.max(bg_removed)
+
         if scale <= 0:
             raise ValueError(f"No positive signal at (X={x}, Y={y}); cannot scale fitted curve.")
 
@@ -928,16 +950,14 @@ class PLMapping(_MappingPreprocessMixin):
         plt.tight_layout()
         plt.show()
 
-    ### Added in v0.2.8
+    ### Updated in v0.3.8
     def _iter_coords(self, coord_mode: str = "pixel"):
         """
         Yield (x, y, j, i) for every pixel.
-
-        coord_mode:
-        - "pixel": x,y are integer pixel indices
-        - "real":  x,y are physical coordinates using step_size
         """
+        coord_mode = normalise_coord_mode(coord_mode)
         step = float(self.step_size)
+
         for j in range(self.Y):
             for i in range(self.X):
                 if coord_mode == "real":
@@ -996,7 +1016,7 @@ class PLMapping(_MappingPreprocessMixin):
         return out
 
 
-    ### Added in v0.2.8
+    ### Updated in v0.3.8
     def export_fit_map(
         self,
         out_path: str,
@@ -1010,19 +1030,19 @@ class PLMapping(_MappingPreprocessMixin):
         """
         Export fit results for every pixel in wide format:
         x, y, then per-peak parameters on the same row.
-
-        Per-peak columns:
-        <peak>_centre, <peak>_fwhm, <peak>_height_scaled, <peak>_height_norm, <peak>_amp, <peak>_scale
         """
         if not hasattr(self, "fitted_params") or self.fitted_params is None:
             raise ValueError("No fitted_params found. Run fit_spectra() first.")
 
-        peak_labels = list(self.peak_params)  # authoritative ordering in your mapping class :contentReference[oaicite:14]{index=14}
+        coord_mode = normalise_coord_mode(coord_mode)
+
+        peak_labels = list(self.peak_params)
         fields = ["x", "y"]
 
         per_peak_fields = ["centre", "fwhm", "peak_height", "peak_height_norm", "amp", "scale"]
         if self.peak_profile == "pvoigt":
             per_peak_fields.append("eta")
+
         for p in peak_labels:
             for f in per_peak_fields:
                 fields.append(f"{p}_{f}")
@@ -1031,7 +1051,6 @@ class PLMapping(_MappingPreprocessMixin):
         for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
             params = np.asarray(self.fitted_params[j, i, :], dtype=float)
             if np.any(np.isnan(params)):
-                # keep row but leave values empty to preserve grid
                 rows.append({"x": x, "y": y})
                 continue
 
@@ -1039,7 +1058,12 @@ class PLMapping(_MappingPreprocessMixin):
             if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
                 intensity_scale = float(self.norm_scale_map[j, i])
 
-            per_peak = self._params_to_export_dict(self.xdata, peak_labels, params, intensity_scale=intensity_scale)
+            per_peak = self._params_to_export_dict(
+                self.xdata,
+                peak_labels,
+                params,
+                intensity_scale=intensity_scale,
+            )
 
             r = {"x": x, "y": y}
             for name in peak_labels:
@@ -1055,23 +1079,26 @@ class PLMapping(_MappingPreprocessMixin):
 
             rows.append(r)
 
-        meta = {
-            "map_kind": "fit_params",
-            "spectrum_type": getattr(self, "spectrum_type", None),
-            "x_quantity": getattr(self, "x_quantity", None),
-            "x_unit": getattr(self, "x_unit", None),
-            "coord_mode": coord_mode,
-            "step_size": getattr(self, "step_size", None),
-            "step_unit": getattr(self, "step_unit", "um"),
-            "scaled": scaled,
-            "peak_labels": peak_labels,
-            "background_remove": getattr(self, "background_remove", None),
-            "baseline_method": getattr(self, "baseline_method", None),
-            "smoothing": getattr(self, "smoothing", None),
-            "smooth_window": getattr(self, "smooth_window", None),
-            "smooth_poly": getattr(self, "smooth_poly", None),
-        }
-        meta = {k: v for k, v in meta.items() if v is not None}
+        meta = build_export_meta(
+            export_kind="mapping_fit",
+            map_kind="fit_params",
+            spectrum_type=getattr(self, "spectrum_type", None),
+            x_quantity=getattr(self, "x_quantity", None),
+            x_unit=getattr(self, "x_unit", None),
+            coord_mode=coord_mode,
+            step_size=getattr(self, "step_size", None),
+            step_unit=getattr(self, "step_unit", "um"),
+            scaled=scaled,
+            peak_labels=peak_labels,
+            peak_profile=getattr(self, "peak_profile", None),
+            params_per_peak=getattr(self, "params_per_peak", None),
+            baseline_spec=getattr(self, "baseline_method", None),
+            preprocessing_recipe=getattr(self, "preprocessing_recipe", None),
+            background_remove=getattr(self, "background_remove", None),
+            smoothing=getattr(self, "smoothing", None),
+            smooth_window=getattr(self, "smooth_window", None),
+            smooth_poly=getattr(self, "smooth_poly", None),
+        )
 
         return write_table(
             rows,
@@ -1129,11 +1156,13 @@ class PL_Integration:
         self.step_unit = "um"  # keep consistent with your plotting labels "μm"
 
 
-        # New in v0.2.5 Baseline configuration (single source of truth; backward compatible)
-        self.baseline_method = baseline_method
-        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+        # --- Updated in v0.3.8: baseline_method parsing with BaselineAPI ---
+        self.baseline_method = normalise_baseline_spec(
             baseline_method,
-            poly_degree=poly_degree
+            poly_degree=poly_degree,
+        )
+        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+            self.baseline_method
         )
 
         # integration_range is known here; trim at load-time.
@@ -1185,12 +1214,18 @@ class PL_Integration:
         obj.step_size = step_size
         obj.poly_degree = poly_degree
         obj.background_remove = background_remove
+        obj.spectrum_type = "Photoluminescence"
+        obj.x_quantity = "Photon energy"
+        obj.x_unit = "eV"
+        obj.step_unit = "um"
 
         # Baseline configuration (same pattern as __init__)
-        obj.baseline_method = baseline_method
-        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+        obj.baseline_method = normalise_baseline_spec(
             baseline_method,
-            poly_degree=poly_degree
+            poly_degree=poly_degree,
+        )
+        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+            obj.baseline_method
         )
 
         obj.X = int(X)
@@ -1354,7 +1389,7 @@ class PL_Integration:
         plt.legend()
         plt.show()
 
-    ### Added in v0.2.8
+    ### Updated v0.3.8: export_integration_map with metadata and flexible formatting ###
     def export_integration_map(
         self,
         out_path: str,
@@ -1372,7 +1407,8 @@ class PL_Integration:
         if not hasattr(self, "integration_area") or self.integration_area is None:
             raise ValueError("No integration_area found. Run calculate_integration() first.")
 
-        # coordinate iterator local to this class
+        coord_mode = normalise_coord_mode(coord_mode)
+
         step = float(self.step_size)
         rows = []
         for j in range(self.Y):
@@ -1382,18 +1418,19 @@ class PL_Integration:
 
         fields = ["x", "y", column_name]
 
-        meta = {
-            "map_kind": "integration",
-            "spectrum_type": getattr(self, "spectrum_type", None),
-            "x_unit": getattr(self, "x_unit", None),
-            "coord_mode": coord_mode,
-            "step_size": getattr(self, "step_size", None),
-            "step_unit": getattr(self, "step_unit", "um"),
-            "integration_range": getattr(self, "integration_range", None),
-            "background_remove": getattr(self, "background_remove", None),
-            "baseline_method": getattr(self, "baseline_method", None),
-        }
-        meta = {k: v for k, v in meta.items() if v is not None}
+        meta = build_export_meta(
+            export_kind="mapping_table",
+            map_kind="integration",
+            spectrum_type=getattr(self, "spectrum_type", None),
+            x_quantity=getattr(self, "x_quantity", None),
+            x_unit=getattr(self, "x_unit", None),
+            coord_mode=coord_mode,
+            step_size=getattr(self, "step_size", None),
+            step_unit=getattr(self, "step_unit", "um"),
+            integration_range=getattr(self, "integration_range", None),
+            baseline_spec=getattr(self, "baseline_method", None),
+            background_remove=getattr(self, "background_remove", None),
+        )
 
         return write_table(
             rows,

@@ -15,6 +15,7 @@ from importlib import resources
 
 from ramanpl.exporter import params_to_rows, write_rows, write_table
 from ramanpl.preprocessing import SpectralDataset, Pipeline, build_legacy_single_spectrum_pipeline
+from ramanpl.schema import normalise_baseline_spec, normalise_peak_profile
 from ..peak_models import sum_peaks, single_peak
 from ._single_fit_core import (
     POLY_DEGREE_SENTINEL,
@@ -51,7 +52,7 @@ class RamanFit:
         materials=None,
         substrate=None,
         background_remove=False,
-        baseline_method={"method": "poly", "poly_degree": 3},
+        baseline_method={"method": "poly", "poly_order": 3},
         poly_degree= POLY_DEGREE_SENTINEL,
         gaussian_sigma=50,
         smoothing=False,
@@ -91,7 +92,7 @@ class RamanFit:
             Peak line-shape model used for fitting.
             Background removal method (default: 'poly')
         poly_degree : int, optional
-            Deprecated. Use baseline_method={"method": "poly", "poly_degree": degree}
+            Deprecated. Use baseline_method={"method": "poly", "poly_order": 3},
             instead. If supplied, a DeprecationWarning is issued and the value is folded
             into baseline_method for backwards compatibility.
         gaussian_sigma : int, optional
@@ -120,9 +121,7 @@ class RamanFit:
         # ------------------------------
         # Peak profile (Lorentzian vs pseudo-Voigt)
         # ------------------------------
-        self.peak_profile = str(peak_profile).lower().strip()
-        if self.peak_profile not in ("lorentzian", "pvoigt"):
-            raise ValueError("peak_profile must be 'lorentzian' or 'pvoigt'")
+        self.peak_profile = normalise_peak_profile(peak_profile)
         self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
 
         # Store user intent for reproducibility/metadata
@@ -181,30 +180,22 @@ class RamanFit:
         # Apply removals last (always wins)
         if self.remove_peaks_list:
             self.remove_peaks(*self.remove_peaks_list)
-
-        # ------------------------------
-        ### End of v.0.2.9.5 update ###
-
-        # Set initial parameters
-        self.p0 = [(low + high) / 2 
-                 for low, high in zip(self.lower_bound, self.upper_bound)]
             
         # Initialise data loaded                                                                                                                               
         self.raw_spectra = np.array(spectra)
         self.wavenumber = np.array(wavenumber)
         self.processed_spectra = np.array(spectra.copy())
         
+        ## --------------------------poslished after v0.3.8---------------------------
         baseline_method = resolve_baseline_method_with_deprecation(
             baseline_method=baseline_method,
             poly_degree=poly_degree,
         )
-        # Added in build v0.2.7.1
+
         self._smoothed_spectra = None
         self._baseline = None
         self._corrected_spectra = None
 
-        # Added in v0.2.8
-        # --- store preprocessing settings for reproducibility / export metadata ---
         self.spectrum_type = "Raman"
         self.x_quantity = "Raman shift"
         self.x_unit = "cm^-1"
@@ -213,23 +204,23 @@ class RamanFit:
         self.substrate = substrate
 
         self.background_remove = background_remove
-        self.baseline_method = baseline_method
-        # Deprecated legacy field kept for backwards compatibility only.
-        # Canonical polynomial degree now lives inside baseline_method when relevant.
-        if isinstance(baseline_method, dict) and str(baseline_method.get("method", "")).lower() == "poly":
-            self.poly_degree = baseline_method.get("poly_degree", None)
-        else:
-            self.poly_degree = None
-        self.gaussian_sigma = gaussian_sigma
+        self.baseline_method = normalise_baseline_spec(
+            baseline_method,
+            gaussian_sigma=gaussian_sigma,
+        )
 
+        if str(self.baseline_method.get("method", "")).lower() == "poly":
+            self.poly_order = int(self.baseline_method.get("poly_order", 3))
+            self.poly_degree = self.poly_order  # legacy compatibility field
+        else:
+            self.poly_order = None
+            self.poly_degree = None
+
+        self.gaussian_sigma = gaussian_sigma
         self.smoothing = smoothing
         self.smooth_window = smooth_window
         self.smooth_order = smooth_order
 
-        # ------------------------------------------------------------
-        # Preprocessing via Pipeline (v0.3.4): behaviour-preserving
-        # Order matches legacy: smoothing -> baseline subtraction
-        # ------------------------------------------------------------
         ds0 = SpectralDataset(
             x=self.wavenumber,
             y=np.asarray(self.processed_spectra, dtype=float).ravel(),
@@ -240,9 +231,6 @@ class RamanFit:
             },
         )
 
-        # Choose preprocessing pipeline:
-        # - If user supplies `preprocessing`, it overrides legacy flags.
-        # - Otherwise, reproduce legacy behaviour using the legacy builder.
         if preprocessing is None:
             pipe = build_legacy_single_spectrum_pipeline(
                 data_range=None,
@@ -250,8 +238,8 @@ class RamanFit:
                 smooth_window=int(smooth_window),
                 smooth_order=int(smooth_order),
                 background_remove=bool(background_remove),
-                baseline_method=baseline_method,   # already resolved to modern spec
-                poly_degree=None,                  # deprecated, no longer canonical
+                baseline_method=self.baseline_method,
+                poly_degree=None,
                 gaussian_sigma=int(gaussian_sigma),
             )
         elif isinstance(preprocessing, Pipeline):
@@ -261,32 +249,23 @@ class RamanFit:
                 "preprocessing must be None or a ramanpl.preprocessing.Pipeline instance."
             )
 
-        ds = pipe.apply(ds0)
-
-        # Store the actual preprocessing pipeline used
         self.preprocessing = pipe
-
-        # Stable serialisable preprocessing metadata for export/debug
-        if hasattr(self.preprocessing, "to_dict"):
-            try:
-                self.preprocessing_recipe = self.preprocessing.to_dict()
-            except Exception:
-                self.preprocessing_recipe = None
-        else:
+        try:
+            self.preprocessing_recipe = pipe.to_dict()
+        except Exception:
             self.preprocessing_recipe = None
 
-        # Propagate possibly modified axis/intensity back to fitter state
+        ds = pipe.apply(ds0)
+
         self.wavenumber = np.asarray(ds.x, dtype=float).ravel()
         self.processed_spectra = np.asarray(ds.y, dtype=float).ravel()
 
-        # If crop was applied, crop the stored raw trace to the same axis for safe plotting.
         crop_mask = ds.meta.get("crop_mask", None)
         if crop_mask is not None:
             self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()[crop_mask]
         else:
             self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()
 
-        # --- store intermediates for comparison plotting ---
         self._smoothed_spectra = ds.meta.get("_smoothed_last", None)
         self._baseline = ds.meta.get("_baseline_last", None)
 
@@ -294,17 +273,16 @@ class RamanFit:
             self._corrected_spectra = self.processed_spectra.copy()
         else:
             self._corrected_spectra = None
-        
-        ### Updated in v.0.2.4 ###
-        # Fit is ALWAYS performed in peak-normalised space.
-        # normalize controls DISPLAY/OUTPUT scaling only.
+
         self.normalize = normalize
 
         self.peak_intensity = np.max(self.processed_spectra)
         if self.peak_intensity <= 0:
-            raise ValueError("Peak intensity is non-positive after preprocessing; cannot normalise for fitting.")
+            raise ValueError(
+                "Peak intensity is non-positive after preprocessing; cannot normalise for fitting."
+            )
         self.intensity_normal = self.processed_spectra / self.peak_intensity
-        ### End of v.0.2.4 update ###
+
 
     def _get_material_lib_path(self):
         """

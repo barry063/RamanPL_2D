@@ -98,26 +98,12 @@ def build_export_meta(
 ) -> Dict[str, Any]:
     """
     Build a consistent export metadata dict.
-
-    Parameters
-    ----------
-    export_kind
-        Example values:
-        - "single_fit"
-        - "batch_fit"
-        - "mapping_fit"
-        - "mapping_table"
-    user_meta
-        Optional user-supplied metadata to merge in last.
-    **kwargs
-        Additional metadata fields.
-
-    Returns
-    -------
-    dict
-        Normalised metadata dict.
     """
-    meta = {"export_kind": export_kind}
+    meta = {
+        "schema_version": "0.3.8",
+        "export_kind": export_kind,
+    }
+
     for k, v in kwargs.items():
         if v is not None:
             meta[str(k)] = v

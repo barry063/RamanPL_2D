@@ -31,11 +31,29 @@ class _MappingPreprocessMixin:
             gaussian_sigma=self.gaussian_sigma,
         )
 
+    def _schema_x_attr(self) -> str:
+        return "xdata" if hasattr(self, "xdata") else "wavenumber"
+
+    def _schema_axis_kind(self) -> str:
+        return "energy_eV" if self._schema_x_attr() == "xdata" else "raman_shift_cm-1"
+
+    def _schema_modality(self) -> str:
+        return "PL" if self._schema_x_attr() == "xdata" else "Raman"
+
     def _initialise_preprocessing(self, preprocessing=None):
         if preprocessing is not None and not isinstance(preprocessing, Pipeline):
             raise TypeError("preprocessing must be a preprocessing.Pipeline or None.")
 
-        self.preprocessing = preprocessing if preprocessing is not None else self._build_default_preprocessing_pipeline()
+        self.preprocessing = (
+            preprocessing if preprocessing is not None
+            else self._build_default_preprocessing_pipeline()
+        )
+
+        try:
+            self.preprocessing_recipe = self.preprocessing.to_dict()
+        except Exception:
+            self.preprocessing_recipe = None
+
         self._preprocessed_cube_cache = None
         self._preprocessed_x_cache = None
         self._preprocess_meta = {}
@@ -44,19 +62,16 @@ class _MappingPreprocessMixin:
         if self._preprocessed_cube_cache is not None and self._preprocessed_x_cache is not None:
             return self._preprocessed_x_cache, self._preprocessed_cube_cache
 
-        x_attr = "xdata" if hasattr(self, "xdata") else "wavenumber"
+        x_attr = self._schema_x_attr()
         x_raw = np.asarray(getattr(self, x_attr), dtype=float).ravel()
         cube_raw = np.asarray(self.spectra, dtype=float)
-
-        axis_kind = "energy_eV" if x_attr == "xdata" else "raman_shift_cm-1"
-        modality = "PL" if x_attr == "xdata" else "Raman"
 
         result = apply_pipeline_to_mapping_cube(
             x=x_raw,
             cube=cube_raw,
             pipeline=self.preprocessing,
-            modality=modality,
-            axis_kind=axis_kind,
+            modality=self._schema_modality(),
+            axis_kind=self._schema_axis_kind(),
             meta={
                 "x_trimmed_on_load": bool(getattr(self, "_x_trimmed_on_load", False)),
                 "filename": getattr(self, "filename", None),
@@ -78,21 +93,17 @@ class _MappingPreprocessMixin:
 
         if fit_normalize:
             return y / scale, float(scale)
-        else:
-            return y, float(scale)
+        return y, float(scale)
 
     def _preprocess_single_spectrum(self, xdata, spec, *, fit_normalize=True):
         cube = np.asarray(spec, dtype=float).reshape(1, 1, -1)
-
-        axis_kind = "energy_eV" if hasattr(self, "xdata") else "raman_shift_cm-1"
-        modality = "PL" if hasattr(self, "xdata") else "Raman"
 
         result = apply_pipeline_to_mapping_cube(
             x=np.asarray(xdata, dtype=float).ravel(),
             cube=cube,
             pipeline=self.preprocessing,
-            modality=modality,
-            axis_kind=axis_kind,
+            modality=self._schema_modality(),
+            axis_kind=self._schema_axis_kind(),
             meta={
                 "x_trimmed_on_load": bool(getattr(self, "_x_trimmed_on_load", False)),
                 "filename": getattr(self, "filename", None),

@@ -5,22 +5,32 @@ import warnings
 
 import numpy as np
 from scipy import optimize
-
+from ..schema import normalise_baseline_spec
 
 POLY_DEGREE_SENTINEL = object()
 
 
 def make_compat_data_importer(axis: str, default_readlines=(300, 780)):
     """
-    Small compatibility shim so old calls such as:
+    Compatibility shim so old calls such as:
         RamanFit.DataImporter.data_import(...)
         PLfit.DataImporter.data_import(...)
     still work while delegating to the shared importer.
     """
     class _CompatDataImporter:
         @staticmethod
-        def data_import(filename, readlines=default_readlines, x_range=None):
+        def data_import(filename, readlines=None, x_range=None):
             from ramanpl.dataImporter import DataImporter as _Shared
+
+            if x_range is None and readlines is None and default_readlines is not None:
+                warnings.warn(
+                    "Implicit default readlines is deprecated. "
+                    "Please pass x_range=(xmin, xmax) explicitly.",
+                    FutureWarning,
+                    stacklevel=2,
+                )
+                readlines = default_readlines
+
             return _Shared.data_import(
                 filename=filename,
                 readlines=readlines,
@@ -104,41 +114,31 @@ def resolve_baseline_method_with_deprecation(
     poly_degree=POLY_DEGREE_SENTINEL,
 ):
     """
-    Resolve legacy baseline specification styles into the modern single-spec form.
+    Resolve legacy baseline styles into the canonical v0.3.8 dict spec.
     """
-    # Legacy tuple style: ("poly", 3)
-    if isinstance(baseline_method, tuple) and len(baseline_method) == 2:
-        method, deg = baseline_method
-        if str(method).lower() == "poly":
-            warnings.warn(
-                "baseline_method=('poly', degree) is deprecated and will be removed in a future version. "
-                "Use baseline_method={'method': 'poly', 'poly_degree': degree} instead.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            return {"method": "poly", "poly_degree": int(deg)}
-        return baseline_method
-
-    # Legacy split style: baseline_method='poly', poly_degree=...
-    if poly_degree is not POLY_DEGREE_SENTINEL:
+    if isinstance(baseline_method, tuple):
         warnings.warn(
-            "poly_degree is deprecated and will be removed in a future version. "
-            "Use baseline_method={'method': 'poly', 'poly_degree': degree} instead.",
+            "Tuple baseline_method is deprecated. "
+            "Use a dict, e.g. {'method': 'poly', 'poly_order': 3}.",
             DeprecationWarning,
             stacklevel=3,
         )
 
-        if isinstance(baseline_method, dict):
-            spec = dict(baseline_method)
-            spec.setdefault("poly_degree", int(poly_degree))
-            return spec
+    if poly_degree is not POLY_DEGREE_SENTINEL:
+        warnings.warn(
+            "poly_degree is deprecated. "
+            "Use baseline_method={'method': 'poly', 'poly_order': degree} instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        poly_degree_value = int(poly_degree)
+    else:
+        poly_degree_value = None
 
-        if str(baseline_method).lower() == "poly":
-            return {"method": "poly", "poly_degree": int(poly_degree)}
-
-        return baseline_method
-
-    return baseline_method
+    return normalise_baseline_spec(
+        baseline_method,
+        poly_degree=poly_degree_value,
+    )
 
 
 def run_multistart_curve_fit(
@@ -247,29 +247,36 @@ def build_single_fit_export_metadata(
     Shared export metadata builder for RamanFit / PLfit.
     """
     meta = {
+        "schema_version": "0.3.8",
         "spectrum_type": getattr(obj, "spectrum_type", None),
         "x_quantity": getattr(obj, "x_quantity", None),
         "x_unit": getattr(obj, "x_unit", None),
         "normalize": getattr(obj, "normalize", None),
-        "intensity_scale(peak_intensity)": getattr(obj, "peak_intensity", None),
+        "intensity_scale": getattr(obj, "peak_intensity", None),
         "peak_labels": getattr(obj, "peak_labels", None),
-        "custom_peaks": "True" if getattr(obj, "custom_peaks", None) is not None else "False",
+        "custom_peaks": bool(getattr(obj, "custom_peaks", None) is not None),
         "remove_peaks": getattr(obj, "remove_peaks_list", None),
         "peak_profile": getattr(obj, "peak_profile", None),
+        "params_per_peak": getattr(obj, "params_per_peak", None),
+        "baseline_spec": getattr(obj, "baseline_method", None),
     }
+
+    pp = getattr(obj, "preprocessing_recipe", None)
+    if pp is None:
+        raw_pp = getattr(obj, "preprocessing", None)
+        if raw_pp is not None and hasattr(raw_pp, "to_dict") and callable(getattr(raw_pp, "to_dict")):
+            try:
+                pp = raw_pp.to_dict()
+            except Exception:
+                pp = str(raw_pp)
+        else:
+            pp = raw_pp
+
+    if pp is not None:
+        meta["preprocessing_recipe"] = pp
 
     if extra_meta:
         meta.update(extra_meta)
-
-    pp = getattr(obj, "preprocessing", None)
-    if pp is not None:
-        if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):
-            try:
-                meta["preprocessing_recipe"] = pp.to_dict()
-            except Exception:
-                meta["preprocessing_recipe"] = str(pp)
-        else:
-            meta["preprocessing_recipe"] = pp
 
     if include_legacy:
         meta.update({
@@ -280,6 +287,7 @@ def build_single_fit_export_metadata(
             "smoothing": getattr(obj, "smoothing", None),
             "smooth_window": getattr(obj, "smooth_window", None),
             "smooth_order": getattr(obj, "smooth_order", None),
+            "intensity_scale(peak_intensity)": getattr(obj, "peak_intensity", None),
         })
 
     return {k: v for k, v in meta.items() if v is not None}
