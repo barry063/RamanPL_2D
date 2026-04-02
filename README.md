@@ -1,9 +1,9 @@
 # RamanPL_2D
 
-**RamanPL_2D** is a Python toolkit for the analysis and visualisation of **Raman and photoluminescence (PL) spectra** in two-dimensional materials.  
-It provides tools for extracting **peak positions, intensities, and FWHM**, performing **single-spectrum fitting, batch analysis, and spectral mapping**.
+**RamanPL_2D** is a Python toolkit for the analysis and visualisation of **Raman** and **photoluminescence (PL)** spectra in two-dimensional materials.  
+It provides tools for extracting **peak positions, peak intensities / heights, and FWHM**, and supports **single-spectrum fitting, batch analysis, and spectral mapping**.
 
-The package is designed to support reproducible analysis workflows for 2D material spectroscopy experiments.
+The package is designed to support reproducible spectroscopy analysis workflows for 2D materials research.
 
 
 ## Features
@@ -11,10 +11,9 @@ The package is designed to support reproducible analysis workflows for 2D materi
 ### Spectral analysis
 
 - Import and process Raman and PL spectra from **`.txt` and `.wdf`**
-- Compatible with **Renishaw WiRE exported data**
+- Compatible with **Renishaw WiRE** exported data
 - Single-spectrum fitting using two peak models:
-
-  - **Lorentzian** (default; compatible with materials library)
+  - **Lorentzian** (default; compatible with materials libraries)
   - **Pseudo-Voigt (pVoigt)** — linear combination of Lorentzian and Gaussian
 
 ### Flexible peak definitions
@@ -23,7 +22,7 @@ The package is designed to support reproducible analysis workflows for 2D materi
 - Fully user-defined peaks using `custom_peaks`
 - Remove unwanted peaks via `remove_peaks`
 - Consistent behaviour across:
-  - single spectrum fitting
+  - single-spectrum fitting
   - batch fitting
   - mapping
 
@@ -32,20 +31,48 @@ The package is designed to support reproducible analysis workflows for 2D materi
 Batch workflows allow automated analysis of many spectra:
 
 - automated fitting across multiple spectra
-- extraction of peak parameters (position, FWHM, peak height)
+- extraction of peak parameters (position, FWHM, intensity / peak height)
 - summary statistics **per peak**
 - export to `.csv` / `.txt`
 
 ### Mapping analysis
 
 - Heatmaps of fitted parameters:
-  - peak intensity
+  - peak intensity / peak height
   - peak position
   - FWHM
-- Raman specific derived maps:
+- Raman-specific derived maps:
   - **A1g − E2g peak separation**
   - **E2g / A1g intensity ratio**
 - Heatmaps of **integrated spectral intensity**
+- Mapping fit diagnostics:
+  - residual maps
+  - residual distribution inspection
+  - bound-sticking summaries
+  - optional compact or disabled per-pixel diagnostics for production runs
+
+### Preprocessing
+
+- Modular preprocessing with `Pipeline`
+- Shared preprocessing support across:
+  - single-spectrum fitting
+  - batch workflows
+  - mapping workflows
+- Supported preprocessing operations include:
+  - crop by range
+  - Savitzky–Golay smoothing
+  - baseline subtraction (`poly`, `gaussian`, `asLS`, `arPLS`, `airPLS`)
+
+### Performance and robustness
+
+- Adaptive mapping multistart fitting:
+  - cheap first-pass fit
+  - retry only when needed
+- Faster mapping preprocessing for common workflows:
+  - vectorised Savitzky–Golay smoothing
+  - vectorised Gaussian baseline subtraction
+  - batched polynomial baseline subtraction
+- Vectorised peak summation for cheaper repeated model evaluations during optimisation
 
 ### Visualisation
 
@@ -53,22 +80,16 @@ Batch workflows allow automated analysis of many spectra:
 - Waterfall plots for spectral collections
 - Dynamic inspection of spectral fitting results
 
-### Quality diagnostics
-
-- residual analysis
-- residual distribution inspection
-- dynamic spectrum fitting view
-
-For features like `pipeline` and `multistart`, please check the [code examples](#demonstration).
-
-For more details on the features and example of spefici use, please refer to the [example usage notebooks](example-usage/).
-
+For features such as `pipeline`, adaptive mapping fits, and diagnostics control, please check the [demonstration](#demonstration) section and example notebooks in `example-usage/`.
 ---
 
 ## Repository Structure
 
 ```bash
 
+## Repository Structure
+
+```bash
 RamanPL_2D/
 ├── example-usage/
 │   ├── Mapping/
@@ -77,42 +98,41 @@ RamanPL_2D/
 │   └── Ramanfit/
 │
 ├── src/
+│   ├── ramanpl/
+│   │   ├── __init__.py
+│   │   ├── RamanFit.py
+│   │   ├── PLfit.py
+│   │   ├── Mapping.py
+│   │   ├── batch.py
+│   │   ├── baselineAPI.py
+│   │   ├── dataImporter.py
+│   │   ├── exporter.py
+│   │   ├── operation.py
+│   │   ├── peak_models.py
+│   │   ├── preprocessing.py
+│   │   ├── schema.py
+│   │   ├── raman_materials.json
+│   │   ├── single_fit/
+│   │   │   ├── __init__.py
+│   │   │   ├── RamanFit.py
+│   │   │   ├── PLfit.py
+│   │   │   └── _single_fit_core.py
+│   │   └── mapping/
+│   │       ├── __init__.py
+│   │       ├── _diagnostics.py
+│   │       ├── _fit_utils.py
+│   │       ├── _image.py
+│   │       ├── _io.py
+│   │       ├── _pl_mapping.py
+│   │       ├── _preprocess.py
+│   │       └── _raman_mapping.py
+│   │
 │   ├── install.ipynb
-│   ├── setup.py
-│   └── ramanpl/
-│       ├── __init__.py
-│       ├── RamanFit.py                 # compatibility wrapper
-│       ├── PLfit.py                    # compatibility wrapper
-│       ├── Mapping.py                  # compatibility wrapper
-│       ├── batch.py
-│       ├── baselineAPI.py
-│       ├── dataImporter.py
-│       ├── exporter.py
-│       ├── operation.py
-│       ├── peak_models.py
-│       ├── preprocessing.py
-│       ├── schema.py
-│       ├── raman_materials.json
-│       │
-│       ├── single_fit/
-│       │   ├── __init__.py
-│       │   ├── RamanFit.py
-│       │   ├── PLfit.py
-│       │   └── _single_fit_core.py
-│       │
-│       └── mapping/
-│           ├── __init__.py
-│           ├── _diagnostics.py
-│           ├── _fit_utils.py
-│           ├── _image.py
-│           ├── _io.py
-│           ├── _pl_mapping.py
-│           ├── _preprocess.py
-│           └── _raman_mapping.py
+│   └── setup.py
 │
 ├── requirements.txt
-├── CHANGELOG
-└── README.md
+├── README.md
+└── CHANGELOG
 
 ```
 
@@ -223,26 +243,20 @@ from ramanpl import RamanFit
 
 ---
 
+
+---
+
 # Demonstration
 
-## Preprocessing Pipelines (after v0.3.4)
+## Preprocessing pipelines
 
-Version **0.3.4** introduces a modular **spectral preprocessing pipeline framework**.
-
-This enables standardised preprocessing workflows for Raman and PL spectra before fitting.
-
-The pipeline design is inspired by modern data-processing frameworks and allows users to construct reproducible analysis chains.
+Version **v0.3.4** introduced a modular preprocessing pipeline framework for Raman and PL spectra.
 
 Typical preprocessing steps include:
 
 - spectral cropping
 - smoothing
 - baseline subtraction
-- future extensions (normalisation, filtering, etc.)
-
----
-
-### Pipeline architecture
 
 A pipeline consists of ordered preprocessing steps:
 
@@ -258,7 +272,7 @@ Example steps currently included:
 | ------------------ | ---------------------------------------------------------------- |
 | `CropByRange`      | Crop spectra to selected spectral window                         |
 | `SmoothSavGol`     | Savitzky–Golay smoothing                                         |
-| `BaselineSubtract` | Background subtraction (poly / airPLS / arPLS / AsLS / Gaussian) |
+| `BaselineSubtract` | Background subtraction (`poly` / `airPLS` / `arPLS` / `AsLS` / `Gaussian`) |
 
 ---
 
@@ -267,47 +281,69 @@ Example steps currently included:
 For backward compatibility, the following arguments still work:
 
 ```python
-
 smoothing=True
 background_remove=True
 baseline_method="poly"
-baseline_kwargs={"poly_order": 3}
-
 ```
 
-In v0.3.5, pipeline-based preprocessing is supported across single, batch, and mapping workflows.
-For backwards compatibility, some legacy preprocessing metadata fields may still appear in exports.
-A later cleanup release will simplify metadata headers when `preprocessing=Pipeline(...)` is used explicitly.
-
-However, **pipeline-based preprocessing is recommended for new workflows.** The legacy argument `poly_degree` is deprecated. The canonical baseline specification in v0.3.8 is the dictionary form, for example `{"method": "poly", "poly_order": 3}`.
+However, pipeline-based preprocessing is recommended for new workflows.
 
 ## Baseline specification
 
 Baseline algorithms are now configured using a dictionary specification:
 
 Example of `airPLS` baseline specification:
+
 ```python
-baseline_spec = {   "method": "airpls",
-                    "lam": 1e6,
-                    "niter": 50,
-                    "tol": 1e-6,
-                }
+baseline_spec = {
+    "method": "airpls",
+    "lam": 1e6,
+    "niter": 50,
+    "tol": 1e-6,
+}
 ```
 
 Example polynomial baseline:
 
 ```python
-baseline_spec = {   "method": "poly",
-                    "poly_order": 3,
-                }
+baseline_spec = {
+    "method": "poly",
+    "poly_order": 3,
+}
 ```
-The legacy argument `poly_degree` is deprecated. The canonical baseline specification in v0.3.8 is the dictionary form, for example `{"method": "poly", "poly_order": 3}`.
 
-## Multi-start fitting (v0.3.0)
+The legacy argument `poly_degree` argument is deprecated and will be removed in a later release.
 
-Multi-start fitting helps reduce bound-sticking artefacts in multi-peak fits.
+## Adaptive mapping fitting and diagnostics (v0.3.9)
 
-The fitter performs several fits from different starting parameters and selects the best solution.
+Version v0.3.9 improves mapping efficiency in three main ways:
+
+- adaptive multistart fitting
+- faster cube-level preprocessing for common workflows
+- configurable diagnostics storage
+
+## Adaptive multistart fitting
+
+Mapping fits can now use a cheap first pass and only retry with more expensive initialisations when needed.
+
+Example:
+
+```python
+raman_map.fit_spectra(
+    warm_start=True,
+    fit_spectrum_kwargs=dict(
+        adaptive_multistart=True,
+        fast_n_starts=1,
+        n_starts=4,
+        p0_strategy="jitter",
+        retry_on_fail=True,
+        retry_on_high_rmse=True,
+        retry_on_bound_hit=False,
+        retry_rmse_gate=0.10,
+        diagnostics="light",
+    )
+)
+```
 
 ### How it works
 
@@ -340,25 +376,54 @@ raman_map.fit_spectra(
 )
 ```
 
+## Diagnostics levels
+
+Three diagnostics modes are available for mapping fits:
+
+| Mode    | Behaviour                                               |
+| ------- | ------------------------------------------------------- |
+| `full`  | stores full per-pixel diagnostics including bound masks |
+| `light` | stores compact QA summaries only                        |
+| `none`  | disables per-pixel diagnostics storage                  |
+
+Example:
+
+```python 
+pl_map.fit_spectra(
+    fit_spectrum_kwargs=dict(
+        diagnostics="none"
+    )
+)
+```
+
+`fit_summary()` still works in diagnostics="none" mode using the residual map, but detailed bound-sticking diagnostics are not available.
+
 ## Verifying bound-sticking (QA check)
 
-After fitting, you can quantify how often fitted parameters sit on their bounds. This is a practical sanity check for over-restrictive bounds or model misspecification.
-
-### Generic bound-hit check from fitted parameters
+After fitting, you can summarise mapping fit quality using:
 
 ```python
-rep = bound_hit_report(raman_map)
+
+rep = raman_map.fit_summary()
+
 ```
+
+This reports:
+
+- fit success rate
+- RMSE statistics
+- failure reasons, when diagnostics are available
+- bound-sticking summaries, when diagnostics are available
 
 ---
 
 ## TO-DO
 
-| Version | Planned feature                                   |
-| ------- | ------------------------------------------------- |
-| v0.3.9  | Optimise mapping and fitting efficiency           |
-| v0.4.0+ | integrate standardised analysis with RamanSPy     |
-| v0.5.0+ | integrate with machine learning abilities         |
+| Version | Planned feature |
+| ------- | --------------- |
+| v0.4.0+ | further standardise workflows with RamanSPy-style processing ideas |
+| v0.4.5+ | optimise iterative sparse baseline methods (`asLS`, `arPLS`, `airPLS`) |
+| v0.5.0+ | integrate machine-learning-assisted analysis workflows |
 
 
 ## License

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from scipy.signal import savgol_filter
+from scipy.ndimage import gaussian_filter1d
 
 from .schema import (
     AxisKind,
@@ -313,6 +314,199 @@ def _split_pipeline_for_mapping(pipeline: Optional[Pipeline]) -> Tuple[List[Crop
 
     return crop_steps, pointwise_steps
 
+def _resolve_savgol_params_for_mapping(n_points: int, window_length: int, polyorder: int) -> Tuple[int, int]:
+    """
+    Resolve Savitzky–Golay parameters exactly as SmoothSavGol.apply() would,
+    but once for a whole mapping cube.
+    """
+    w = int(window_length)
+    p = int(polyorder)
+
+    if w < 3:
+        raise ValueError("SmoothSavGol.window_length must be >= 3.")
+    if w % 2 == 0:
+        w += 1
+    if w > n_points:
+        w = n_points if (n_points % 2 == 1) else (n_points - 1)
+    if w < 3:
+        raise ValueError("SmoothSavGol: spectrum too short after window adjustment.")
+    if p >= w:
+        raise ValueError("SmoothSavGol.polyorder must be < window_length.")
+
+    return w, p
+
+def _batched_polynomial_baseline_cube(
+    *,
+    x: np.ndarray,
+    cube: np.ndarray,
+    poly_degree: int,
+) -> np.ndarray:
+    """
+    Compute polynomial baselines for an entire mapping cube in batch.
+
+    Parameters
+    ----------
+    x : ndarray, shape [N]
+        Shared spectral axis.
+    cube : ndarray, shape [Y, X, N]
+        Spectral cube.
+    poly_degree : int
+        Requested polynomial degree.
+
+    Returns
+    -------
+    baseline : ndarray, shape [Y, X, N]
+        Polynomial baseline evaluated for every spectrum.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    cube = np.asarray(cube, dtype=float)
+
+    if cube.ndim != 3:
+        raise ValueError("cube must be 3D with shape [Y, X, N].")
+    if cube.shape[2] != x.size:
+        raise ValueError("cube.shape[2] must match len(x).")
+    if x.size == 0:
+        raise ValueError("x must contain at least one point.")
+
+    # Match BaselineAPI._baseline_poly graceful degree handling
+    deg = int(poly_degree)
+    deg = max(0, min(deg, x.size - 1))
+
+    # Scale x to roughly [-1, 1] for numerical stability
+    xmin = float(np.min(x))
+    xmax = float(np.max(x))
+    if xmax > xmin:
+        x_scaled = 2.0 * (x - xmin) / (xmax - xmin) - 1.0
+    else:
+        x_scaled = np.zeros_like(x, dtype=float)
+
+    # Power-basis Vandermonde with ascending powers
+    V = np.polynomial.polynomial.polyvander(x_scaled, deg)   # shape [N, deg+1]
+
+    # Flatten cube to [P, N], where P = Y*X
+    Ydim, Xdim, N = cube.shape
+    Yflat = cube.reshape(-1, N)                              # shape [P, N]
+
+    # Solve V @ C ≈ Y^T  -> C shape [deg+1, P]
+    coeffs, _, _, _ = np.linalg.lstsq(V, Yflat.T, rcond=None)
+
+    # Evaluate baseline on the same x grid
+    baseline_flat = (V @ coeffs).T                           # shape [P, N]
+    baseline = baseline_flat.reshape(Ydim, Xdim, N)
+
+    return baseline
+
+def _apply_vectorised_mapping_steps(
+    *,
+    x: np.ndarray,
+    cube: np.ndarray,
+    pointwise_steps: List[PreprocessStep],
+) -> Tuple[np.ndarray, List[PreprocessStep], Dict[str, Any]]:
+    """
+    Apply mapping-safe vectorised steps over the full cube before any residual
+    per-spectrum loop.
+
+    Currently accelerated:
+    - SmoothSavGol
+    - BaselineSubtract with gaussian baseline
+    - BaselineSubtract with polynomial baseline
+
+    Returns
+    -------
+    cube_out
+        Processed cube after vectorised steps.
+    remaining_steps
+        Steps that still need per-spectrum execution.
+    shared_meta
+        Shared provenance metadata for the accelerated steps.
+    """
+    cube_out = np.asarray(cube, dtype=float)
+    remaining_steps: List[PreprocessStep] = []
+    shared_meta: Dict[str, Any] = {}
+
+    for step in pointwise_steps:
+        # ------------------------------------------------------------
+        # Fast path: Savitzky–Golay smoothing over axis=2
+        # ------------------------------------------------------------
+        if isinstance(step, SmoothSavGol):
+            n_points = cube_out.shape[2]
+            w, p = _resolve_savgol_params_for_mapping(
+                n_points=n_points,
+                window_length=step.window_length,
+                polyorder=step.polyorder,
+            )
+
+            cube_out = savgol_filter(cube_out, window_length=w, polyorder=p, axis=2)
+
+            shared_meta["smoothing"] = {
+                "method": "savgol",
+                "window_length": w,
+                "polyorder": p,
+            }
+            shared_meta["_smoothed_last"] = np.asarray(cube_out[0, 0, :], dtype=float).ravel()
+            continue
+
+        # ------------------------------------------------------------
+        # Fast path: baseline subtraction over axis=2 / whole cube
+        # ------------------------------------------------------------
+        if isinstance(step, BaselineSubtract):
+            spec = normalise_baseline_spec(
+                step.baseline_spec,
+                poly_degree=step.poly_degree,
+                gaussian_sigma=step.gaussian_sigma,
+            )
+            method, bkwargs = baseline_spec_to_runtime(spec)
+            method_l = str(method).strip().lower()
+
+            # ---- Gaussian baseline: fully vectorised
+            if method_l == "gaussian":
+                sigma = float(bkwargs.get("gaussian_sigma", step.gaussian_sigma))
+                if sigma <= 0:
+                    raise ValueError(f"gaussian_sigma must be > 0. Got {sigma}.")
+
+                baseline = gaussian_filter1d(cube_out, sigma=sigma, axis=2)
+                cube_out = cube_out - baseline
+
+                if bool(step.clip_nonnegative):
+                    cube_out = np.clip(cube_out, a_min=0.0, a_max=None)
+
+                shared_meta["baseline"] = {
+                    "spec": spec,
+                    "resolved_method": method,
+                    "clip_nonnegative": bool(step.clip_nonnegative),
+                    "kwargs": dict(bkwargs),
+                }
+                shared_meta["_baseline_last"] = np.asarray(baseline[0, 0, :], dtype=float).ravel()
+                continue
+
+            # ---- Polynomial baseline: batched least-squares over all pixels
+            if method_l == "poly":
+                poly_order = int(bkwargs.get("poly_degree", step.poly_degree))
+                baseline = _batched_polynomial_baseline_cube(
+                    x=x,
+                    cube=cube_out,
+                    poly_degree=poly_order,
+                )
+                cube_out = cube_out - baseline
+
+                if bool(step.clip_nonnegative):
+                    cube_out = np.clip(cube_out, a_min=0.0, a_max=None)
+
+                shared_meta["baseline"] = {
+                    "spec": spec,
+                    "resolved_method": method,
+                    "clip_nonnegative": bool(step.clip_nonnegative),
+                    "kwargs": dict(bkwargs),
+                }
+                shared_meta["_baseline_last"] = np.asarray(baseline[0, 0, :], dtype=float).ravel()
+                continue
+
+        # ------------------------------------------------------------
+        # Fallback: keep step for the slower per-spectrum route
+        # ------------------------------------------------------------
+        remaining_steps.append(step)
+
+    return cube_out, remaining_steps, shared_meta
 
 def apply_pipeline_to_mapping_cube(
     *,
@@ -329,29 +523,13 @@ def apply_pipeline_to_mapping_cube(
     Behaviour
     ---------
     - CropByRange steps are applied once at the shared axis/cube level.
-    - All remaining steps are applied pointwise to each spectrum in the cube.
-    - This preserves the current scientific meaning of smoothing/baseline steps
-      while enabling mapping support in v0.3.5.
+    - Fast vectorisable steps are applied once over the full cube:
+        * SmoothSavGol
+        * BaselineSubtract(method="gaussian")
+    - Remaining steps are applied spectrum-by-spectrum.
 
-    Parameters
-    ----------
-    x
-        Shared spectral axis, shape [N].
-    cube
-        Spectral cube, shape [Y, X, N].
-    pipeline
-        Preprocessing Pipeline. May be None.
-    modality
-        "Raman" or "PL".
-    axis_kind
-        "raman_shift_cm-1" | "energy_eV" | "wavelength_nm".
-    meta
-        Optional shared metadata/provenance.
-
-    Returns
-    -------
-    MappingPreprocessResult
-        Processed axis, processed cube, and shared metadata.
+    This preserves the scientific meaning of the current pipeline while
+    substantially reducing Python-loop overhead for common mapping workflows.
     """
     x = np.asarray(x, dtype=float).ravel()
     cube = np.asarray(cube, dtype=float)
@@ -420,29 +598,50 @@ def apply_pipeline_to_mapping_cube(
         meta_out["crop_mask"] = crop_mask_total
 
     # ------------------------------------------------------------
-    # 2) Apply remaining steps pointwise
+    # 2) Apply fast vectorised steps over the whole cube
     # ------------------------------------------------------------
-    cube_processed = np.empty_like(cube_work, dtype=float)
-    sample_meta = None
+    cube_work, remaining_steps, fast_meta = _apply_vectorised_mapping_steps(
+        x=x_work,
+        cube=cube_work,
+        pointwise_steps=pointwise_steps,
+    )
 
-    for iy in range(cube_work.shape[0]):
-        for ix in range(cube_work.shape[1]):
-            ds0 = SpectralDataset(
-                x=x_work,
-                y=np.asarray(cube_work[iy, ix, :], dtype=float).ravel(),
-                modality=modality,
-                axis_kind=axis_kind,
-                meta=dict(meta_out),
-            )
+    # ------------------------------------------------------------
+    # 3) Apply any residual steps pointwise
+    # ------------------------------------------------------------
+    if remaining_steps:
+        cube_processed = np.empty_like(cube_work, dtype=float)
+        sample_meta = dict(fast_meta)
 
-            ds1 = _apply_pipeline_steps(ds0, pointwise_steps)
-            cube_processed[iy, ix, :] = np.asarray(ds1.y, dtype=float).ravel()
+        base_meta_for_pointwise = dict(meta_out)
+        base_meta_for_pointwise.update(fast_meta)
 
-            # Store one representative metadata record for shared provenance.
-            if sample_meta is None:
-                sample_meta = dict(ds1.meta)
+        for iy in range(cube_work.shape[0]):
+            for ix in range(cube_work.shape[1]):
+                ds0 = SpectralDataset(
+                    x=x_work,
+                    y=np.asarray(cube_work[iy, ix, :], dtype=float).ravel(),
+                    modality=modality,
+                    axis_kind=axis_kind,
+                    meta=dict(base_meta_for_pointwise),
+                )
 
-    # Shared provenance
+                ds1 = _apply_pipeline_steps(ds0, remaining_steps)
+                cube_processed[iy, ix, :] = np.asarray(ds1.y, dtype=float).ravel()
+
+                if not sample_meta:
+                    sample_meta = dict(ds1.meta)
+                else:
+                    for k, v in ds1.meta.items():
+                        if k not in sample_meta:
+                            sample_meta[k] = v
+    else:
+        cube_processed = cube_work
+        sample_meta = dict(fast_meta)
+
+    # ------------------------------------------------------------
+    # 4) Shared provenance
+    # ------------------------------------------------------------
     meta_final = dict(meta_out)
     meta_final["pipeline"] = pipeline.to_dict()
 

@@ -14,15 +14,13 @@ def fit_summary(
     Works for both RamanMapping and PLMapping provided they define:
       - obj.X, obj.Y
       - obj.residual_map (RMSE in fit-space; NaN = failed/unfitted)
-      - obj.fit_diagnostics_map: [Y, X] of dicts with keys:
-          ok: bool
-          reason: str (optional, for failures)
-          n_params_at_lower_bounds / n_params_at_upper_bounds (optional)
+      - obj.fit_diagnostics_map: optional [Y, X] object array of dicts
+
+    If fit_diagnostics_map is None, RMSE statistics still work, but
+    failure reasons / bound-sticking details are omitted.
     """
     if not hasattr(obj, "residual_map"):
         raise AttributeError("Object has no residual_map. Run fit_spectra() first.")
-    if not hasattr(obj, "fit_diagnostics_map"):
-        raise AttributeError("Object has no fit_diagnostics_map. Run fit_spectra() first.")
 
     Y, X = int(obj.Y), int(obj.X)
     total = X * Y
@@ -33,30 +31,33 @@ def fit_summary(
     n_ok = int(np.count_nonzero(ok_mask))
     n_fail = total - n_ok
 
+    diag = getattr(obj, "fit_diagnostics_map", None)
+
     # Failure reasons (best-effort)
     reasons = Counter()
-    diag = obj.fit_diagnostics_map
-    for jj in range(Y):
-        for ii in range(X):
-            d = diag[jj, ii]
-            if not isinstance(d, dict):
-                continue
-            if d.get("ok") is False:
-                reasons[str(d.get("reason", "fit_failed"))] += 1
+    if diag is not None:
+        for jj in range(Y):
+            for ii in range(X):
+                d = diag[jj, ii]
+                if not isinstance(d, dict):
+                    continue
+                if d.get("ok") is False:
+                    reasons[str(d.get("reason", "fit_failed"))] += 1
 
     # Bound sticking stats (best-effort)
     lower_hits = []
     upper_hits = []
-    for jj in range(Y):
-        for ii in range(X):
-            d = diag[jj, ii]
-            if not isinstance(d, dict):
-                continue
-            if d.get("ok") is True:
-                if "n_params_at_lower_bounds" in d:
-                    lower_hits.append(int(d["n_params_at_lower_bounds"]))
-                if "n_params_at_upper_bounds" in d:
-                    upper_hits.append(int(d["n_params_at_upper_bounds"]))
+    if diag is not None:
+        for jj in range(Y):
+            for ii in range(X):
+                d = diag[jj, ii]
+                if not isinstance(d, dict):
+                    continue
+                if d.get("ok") is True:
+                    if "n_params_at_lower_bounds" in d:
+                        lower_hits.append(int(d["n_params_at_lower_bounds"]))
+                    if "n_params_at_upper_bounds" in d:
+                        upper_hits.append(int(d["n_params_at_upper_bounds"]))
 
     lower_hits = np.asarray(lower_hits, dtype=float) if lower_hits else None
     upper_hits = np.asarray(upper_hits, dtype=float) if upper_hits else None
@@ -68,7 +69,7 @@ def fit_summary(
         rmse_stats["mean"] = float(np.mean(rmse_vals))
         rmse_stats["median"] = float(np.median(rmse_vals))
         for q in rmse_quantiles:
-            rmse_stats[f"q{int(round(q*100))}"] = float(np.quantile(rmse_vals, q))
+            rmse_stats[f"q{int(round(q * 100))}"] = float(np.quantile(rmse_vals, q))
 
     out = dict(
         n_total=total,
@@ -91,7 +92,7 @@ def fit_summary(
 
     if print_summary:
         print("\n=== Fit summary ===")
-        print(f"Successful fits: {n_ok} / {total} ({100*out['success_rate']:.1f}%)")
+        print(f"Successful fits: {n_ok} / {total} ({100 * out['success_rate']:.1f}%)")
 
         if rmse_stats:
             q_bits = " | ".join([f"{k}: {v:.4g}" for k, v in rmse_stats.items()])
@@ -110,5 +111,7 @@ def fit_summary(
                 print(f"  - lower: mean {lb_mean:.3g}, max {out['bounds']['lower']['max']}")
             if ub_mean is not None:
                 print(f"  - upper: mean {ub_mean:.3g}, max {out['bounds']['upper']['max']}")
+        elif diag is None:
+            print("\nBound-sticking diagnostics unavailable (diagnostics='none').")
 
     return out

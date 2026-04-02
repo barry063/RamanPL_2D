@@ -165,3 +165,118 @@ def _width_param_to_fwhm(width_param: np.ndarray, profile: str) -> np.ndarray:
     if profile == "lorentzian":
         return 2.0 * w
     return w
+
+def _run_mapping_curve_fit_trials(
+    *,
+    model_fn,
+    x,
+    y,
+    lower_bound,
+    upper_bound,
+    p0_current,
+    maxfev=6400,
+    n_starts=1,
+    p0_strategy="midpoint",
+    random_state=None,
+    width_penalty=0.0,
+    prefer_nonbound=False,
+    score_tie_tol=1e-6,
+    peak_profile="lorentzian",
+    stride=3,
+):
+    """
+    Run one curve-fit stage for mapping data and return the best result from
+    the supplied starting-point trials.
+
+    This is shared by PLMapping and RamanMapping so both follow the same
+    selection logic.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    lb = np.asarray(lower_bound, dtype=float).ravel()
+    ub = np.asarray(upper_bound, dtype=float).ravel()
+    p0_current = np.asarray(p0_current, dtype=float).ravel()
+
+    p0_trials = _mapping_generate_p0_trials(
+        lb,
+        ub,
+        p0_current,
+        n_starts=n_starts,
+        strategy=p0_strategy,
+        random_state=random_state,
+    )
+
+    best_params = None
+    best_rmse = np.inf
+    best_score = np.inf
+    best_hits = np.inf
+    best_p0 = None
+    n_fail = 0
+    last_exception = None
+
+    for p0_try in p0_trials:
+        try:
+            params, _ = optimize.curve_fit(
+                model_fn,
+                x,
+                y,
+                p0=p0_try,
+                bounds=(lb, ub),
+                maxfev=maxfev,
+            )
+        except Exception as e:
+            n_fail += 1
+            last_exception = e
+            continue
+
+        y_hat = model_fn(x, *params)
+        rmse = float(np.sqrt(np.mean((y - y_hat) ** 2)))
+
+        hits = int(
+            np.count_nonzero(
+                _params_at_bounds(params, lb, ub, which="both", rtol=1e-6)
+            )
+        )
+
+        if width_penalty > 0:
+            widths = np.asarray(params[1::stride], dtype=float)
+            width_ub = np.asarray(ub[1::stride], dtype=float)
+
+            fwhm = _width_param_to_fwhm(widths, peak_profile)
+            fwhm_ub = _width_param_to_fwhm(width_ub, peak_profile)
+            fwhm_ub = np.where(fwhm_ub > 0, fwhm_ub, 1.0)
+
+            pen = float(np.mean((fwhm / fwhm_ub) ** 2))
+            score = rmse + width_penalty * pen
+        else:
+            score = rmse
+
+        if best_params is None:
+            best_params = params
+            best_rmse = rmse
+            best_score = score
+            best_hits = hits
+            best_p0 = p0_try
+        else:
+            better = score < best_score
+            near_tie = abs(score - best_score) <= score_tie_tol
+
+            if better or (prefer_nonbound and near_tie and hits < best_hits):
+                best_params = params
+                best_rmse = rmse
+                best_score = score
+                best_hits = hits
+                best_p0 = p0_try
+
+    return {
+        "ok": best_params is not None,
+        "best_params": best_params,
+        "best_rmse": float(best_rmse) if best_params is not None else np.inf,
+        "best_score": float(best_score) if best_params is not None else np.inf,
+        "best_hits": int(best_hits) if best_params is not None else np.inf,
+        "best_p0": None if best_p0 is None else np.asarray(best_p0, dtype=float),
+        "n_fail": int(n_fail),
+        "n_starts": int(max(1, n_starts)),
+        "p0_strategy": str(p0_strategy),
+        "last_exception": last_exception,
+    }

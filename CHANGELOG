@@ -1,5 +1,50 @@
 # Changelog
 
+## [v0.3.9] - 2026-04-02
+
+### Added
+- Added adaptive mapping fit execution for `PLMapping` and `RamanMapping`:
+  - cheap first-pass fit
+  - optional retry pass only when needed
+  - retry triggers configurable via `fit_spectrum_kwargs`
+- Added diagnostics levels for mapping fits:
+  - `diagnostics="full"`
+  - `diagnostics="light"`
+  - `diagnostics="none"`
+- Added compact diagnostics summaries so mapping QA can be retained without storing full per-pixel masks.
+
+### Changed
+- Optimised mapping preprocessing by introducing cube-level fast paths for common operations:
+  - vectorised Savitzky–Golay smoothing across the mapping cube
+  - vectorised Gaussian baseline subtraction across the mapping cube
+  - batched polynomial baseline subtraction across the mapping cube
+- Optimised peak-model evaluation by vectorising `peak_models.sum_peaks(...)` using NumPy broadcasting.
+- Updated mapping fit diagnostics handling so `fit_summary()` still works when diagnostics are reduced or disabled.
+- Refined pseudo-Voigt broadcasting support in peak models for mapping and batch optimisation paths.
+
+### Performance
+- Reduced Python-loop overhead in mapping preprocessing for common workflows using smoothing, Gaussian baseline correction, or polynomial baseline correction.
+- Reduced unnecessary multistart retries by allowing adaptive retry control through:
+  - `adaptive_multistart`
+  - `fast_n_starts`
+  - `retry_on_fail`
+  - `retry_on_high_rmse`
+  - `retry_on_bound_hit`
+  - `retry_rmse_gate`
+- Reduced memory overhead for production mapping workflows by allowing compact or disabled diagnostics.
+
+### Fixed
+- Fixed pseudo-Voigt vectorised peak summation so array-valued `eta` parameters are handled correctly during optimiser evaluation.
+- Preserved compatibility of mapping fit summaries when `fit_diagnostics_map` is absent (`diagnostics="none"`).
+- Preserved output shapes and fitting behaviour while applying preprocessing and model-evaluation performance refactors.
+
+### Notes
+- This release focuses on mapping and fitting efficiency without changing the user-facing scientific workflow.
+- Cached sparse-operator optimisation for iterative baseline methods (`asLS`, `arPLS`, `airPLS`) is deferred to a later release.
+- Further standardisation against RamanSPy-style workflows is planned for later `v0.4.x` builds.
+
+--------
+
 ## v0.3.8 — schema cleanup and workflow polish
 
 ### Changed
