@@ -244,8 +244,6 @@ from ramanpl import RamanFit
 ---
 
 
----
-
 # Demonstration
 
 ## Preprocessing pipelines
@@ -403,9 +401,7 @@ pl_map.fit_spectra(
 After fitting, you can summarise mapping fit quality using:
 
 ```python
-
 rep = raman_map.fit_summary()
-
 ```
 
 This reports:
@@ -417,21 +413,61 @@ This reports:
 
 ---
 
-## TO-DO
+# TO-DO
 
-| Version | Planned feature |
-| ------- | --------------- |
-| v0.4.0+ | further standardise workflows with RamanSPy-style processing ideas |
-| v0.4.5+ | optimise iterative sparse baseline methods (`asLS`, `arPLS`, `airPLS`) |
-| v0.5.0+ | integrate machine-learning-assisted analysis workflows |
+## 🚧 Development Roadmap
+
+> **Roadmap update (v0.4.x)**  
+> Development is now focused on **RamanSPy integration as an optional preprocessing backend**.  
+> Advanced features (machine learning fitting, baseline caching) are deferred until preprocessing and backend behaviour are stabilised.
 
 
-## License
+### v0.4.x — RamanSPy integration
+
+| Version | Scope | Details |
+|--------|------|--------|
+| **v0.4.0** | Backend infrastructure | - Add optional RamanSPy dependency<br>- Introduce internal adapter layer (`integration/ramanspy_adapter`)<br>- Implement Spectrum / mapping cube conversion<br>- Add preprocessing backend selector (`native / ramanspy / auto`)<br>- Record backend in metadata |
+| **v0.4.1** | Pipeline translation | - Map `preprocessing.Pipeline` → RamanSPy pipeline<br>- Support: crop, Savitzky–Golay, selected baselines<br>- Fallback to native backend where unsupported |
+| **v0.4.2** | Mapping integration (Raman) | - Apply RamanSPy backend in mapping preprocessing<br>- Ensure axis ordering and cube consistency<br>- Benchmark against native implementation |
+| **v0.4.3** | Single-spectrum integration (Raman) | - Enable backend in `RamanFit` preprocessing<br>- Preserve fitting behaviour and outputs |
+| **v0.4.4** | Batch integration | - Propagate backend into `RamanBatch`<br>- Ensure consistent export metadata<br>- Maintain existing plotting behaviour |
+| **v0.4.5** | Validation | - Regression tests (native vs RamanSPy)<br>- Numerical tolerance checks<br>- Update notebooks and documentation |
+
+
+### v0.4.x+ — stabilisation
+
+| Version | Scope | Details |
+|--------|------|--------|
+| **v0.4.6** | Performance | - Reduce conversion overhead (cube ↔ RamanSPy)<br>- Improve memory efficiency<br>- Profiling and optimisation |
+| **v0.4.7** | API cleanup & deprecation removal | - Consolidate backend interface<br>- Remove deprecated parameters and legacy pathways<br>- Finalise preprocessing schema (baseline / pipeline spec)<br>- Improve error handling and messaging |
+
+
+### v0.5.x — deferred features
+
+| Version | Scope | Details |
+|--------|------|--------|
+| **v0.5.0** | RamanSPy analysis (optional) | - Expose RamanSPy-based analysis workflows (e.g. decomposition, clustering)<br>- Interoperability with RamanSPy objects |
+| **v0.5.1** | Baseline caching *(deferred)* | - Cache preprocessing results across mapping pixels<br>- Backend-aware caching (native + RamanSPy) |
+| **v0.5.2** | Machine learning fitting *(deferred)* | - ML-assisted peak initialisation<br>- Reduce reliance on multi-start fitting |
+
+---
+
+### Notes
+
+- RamanSPy is used as an **optional preprocessing backend** only.
+- Integration is limited to **Raman workflows (cm⁻¹ axis)**; PL remains on the native backend.
+- Existing APIs (`Pipeline`, `RamanFit`, `Mapping`, `Batch`) remain **backward compatible** during v0.4.x.
+- Deprecated features will be removed in **v0.4.7** after backend stabilisation.
+- Deferred features will be revisited after preprocessing behaviour is stable.
+
+---
+
+# License
 
 This project is licensed for **BSD 3-Clause License**.  
 See the [LICENSE](LICENSE) file for details.
 
-## Contact
+# Contact
 
 For issues, questions, or collaboration ideas:  
 Hao Yu – <hy377@cam.ac.uk>
