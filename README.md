@@ -86,10 +86,6 @@ For features such as `pipeline`, adaptive mapping fits, and diagnostics control,
 ## Repository Structure
 
 ```bash
-
-## Repository Structure
-
-```bash
 RamanPL_2D/
 ├── example-usage/
 │   ├── Mapping/
