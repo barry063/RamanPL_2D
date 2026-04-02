@@ -81,6 +81,7 @@ Batch workflows allow automated analysis of many spectra:
 - Dynamic inspection of spectral fitting results
 
 For features such as `pipeline`, adaptive mapping fits, and diagnostics control, please check the [demonstration](#demonstration) section and example notebooks in `example-usage/`.
+
 ---
 
 ## Repository Structure
