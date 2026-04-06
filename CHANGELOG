@@ -1,5 +1,47 @@
 # Changelog
 
+## [v0.4.0] — 2026-04-06 RamanSPy backend foundation
+
+### Added
+- Introduced optional RamanSPy dependency via extras install.
+- Added internal `ramanpl.integration` module for RamanSPy interoperability.
+- Added RamanSPy adapter utilities for:
+  - single-spectrum conversion
+  - mapping cube conversion
+  - backend availability/version checks
+- Added preprocessing backend selector with supported values:
+  - `native`
+  - `auto`
+  - `ramanspy`
+
+### Updated
+- Extended preprocessing `Pipeline` to carry backend metadata and backend provenance.
+- Added backend resolution metadata to preprocessing outputs for both:
+  - single-spectrum workflows
+  - mapping workflows
+- Added first RamanSPy preprocessing translation support for Raman workflows:
+  - `CropByRange`
+  - `SmoothSavGol`
+  - `BaselineSubtract` with selected methods:
+    - `poly`
+    - `asls`
+    - `airpls`
+    - `arpls`
+- Added `preprocessing_backend` support to:
+  - `RamanFit`
+  - `PLfit`
+  - `RamanMapping`
+  - `PLMapping`
+- Preserved native fallback behaviour for unsupported workflows and preprocessing steps.
+
+### Notes
+- RamanSPy integration currently applies to **Raman preprocessing only**.
+- PL workflows remain on the native preprocessing backend.
+- `BaselineSubtract(method="gaussian")` remains native-only at this stage.
+- Mapping backend auto-selection is partially wired, but further cleanup is still required before finalising the full v0.4.0 release behaviour.
+
+---------
+
 ## [v0.3.9] - 2026-04-02
 
 ### Added

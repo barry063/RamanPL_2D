@@ -9,7 +9,12 @@ try:
     from ..dataImporter import DataImporter
     from ..exporter import build_export_meta, write_table
     from ..peak_models import single_peak, sum_peaks
-    from ..schema import normalise_baseline_spec, normalise_coord_mode, normalise_peak_profile
+    from ..schema import (
+        normalise_baseline_spec,
+        normalise_coord_mode,
+        normalise_peak_profile,
+        normalise_preprocess_backend,
+    )
     from ._diagnostics import fit_summary as _fit_summary
     from ._fit_utils import (
         _params_at_bounds,
@@ -24,7 +29,12 @@ except Exception:  # pragma: no cover
     from ramanpl.dataImporter import DataImporter
     from ramanpl.exporter import build_export_meta, write_table
     from ramanpl.peak_models import single_peak, sum_peaks
-    from ramanpl.schema import normalise_baseline_spec, normalise_coord_mode, normalise_peak_profile
+    from ramanpl.schema import (
+        normalise_baseline_spec,
+        normalise_coord_mode,
+        normalise_peak_profile,
+        normalise_preprocess_backend,
+    )
     from ramanpl.mapping._diagnostics import fit_summary as _fit_summary
     from ramanpl.mapping._fit_utils import (
         _params_at_bounds,
@@ -85,6 +95,7 @@ class RamanMapping(_MappingPreprocessMixin):
         smooth_poly=3,
         gaussian_sigma=10,
         peak_profile: str = "lorentzian",
+        preprocessing_backend: str = "native",
         preprocessing=None,
     ):
         """Initialize Raman mapping analyzer.
@@ -121,6 +132,7 @@ class RamanMapping(_MappingPreprocessMixin):
         self.smooth_window = smooth_window
         self.smooth_poly = smooth_poly
         self.gaussian_sigma = gaussian_sigma
+        self.preprocessing_backend = normalise_preprocess_backend(preprocessing_backend)
         self.peak_params = list(custom_peaks.keys())
 
         # --- identity metadata for exports ---
@@ -144,7 +156,8 @@ class RamanMapping(_MappingPreprocessMixin):
         self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
 
         # Shared preprocessing pipeline (legacy-compatible if None)
-        self._initialise_preprocessing(preprocessing=preprocessing)
+        self.preprocessing_backend_resolved = None
+        self.preprocessing_backend_info = None
 
         # ---- load mapping data (Raman always wavenumber axis) ----
         loader = MappingFileLoader(filename, x_range=self.data_range, axis="wavenumber")
@@ -190,6 +203,7 @@ class RamanMapping(_MappingPreprocessMixin):
         smooth_poly=3,
         gaussian_sigma=10,
         peak_profile: str = "lorentzian",
+        preprocessing_backend: str = "native",
         preprocessing=None,
     ):
         """
@@ -224,6 +238,7 @@ class RamanMapping(_MappingPreprocessMixin):
         obj.smooth_window = smooth_window
         obj.smooth_poly = smooth_poly
         obj.gaussian_sigma = gaussian_sigma
+        obj.preprocessing_backend = normalise_preprocess_backend(preprocessing_backend)
         obj.peak_params = list(custom_peaks.keys())
 
         obj.spectrum_type = "Raman"
@@ -250,6 +265,8 @@ class RamanMapping(_MappingPreprocessMixin):
         obj.peak_profile = normalise_peak_profile(peak_profile)
         obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
         obj._initialise_preprocessing(preprocessing=preprocessing)
+        obj.preprocessing_backend_resolved = None
+        obj.preprocessing_backend_info = None        
 
         # Validate shapes
         if obj.spectra.ndim != 3:
@@ -500,6 +517,9 @@ class RamanMapping(_MappingPreprocessMixin):
         # ---------- shared preprocessing path ----------
         xdata, spectra_fit_cube = self._get_processed_mapping_cube()
 
+        # expose resolved preprocessing backend on the mapping object
+        self.preprocessing_backend_resolved = self._preprocess_meta.get("preprocessing_backend", None)
+        self.preprocessing_backend_info = self._preprocess_meta.get("preprocessing_backend_info", None)
 
         # ---------- bounds ----------
         lower_bound, upper_bound = [], []

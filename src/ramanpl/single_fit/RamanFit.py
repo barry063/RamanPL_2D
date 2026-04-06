@@ -15,7 +15,11 @@ from importlib import resources
 
 from ramanpl.exporter import params_to_rows, write_rows, write_table
 from ramanpl.preprocessing import SpectralDataset, Pipeline, build_legacy_single_spectrum_pipeline
-from ramanpl.schema import normalise_baseline_spec, normalise_peak_profile
+from ramanpl.schema import (
+    normalise_baseline_spec,
+    normalise_peak_profile,
+    normalise_preprocess_backend,
+)
 from ..peak_models import sum_peaks, single_peak
 from ._single_fit_core import (
     POLY_DEGREE_SENTINEL,
@@ -60,6 +64,7 @@ class RamanFit:
         smooth_order=3,
         normalize=False,
         preprocessing=None,
+        preprocessing_backend: str = "native",
         custom_peaks=None,
         remove_peaks=None,
         peak_order=None,
@@ -220,6 +225,7 @@ class RamanFit:
         self.smoothing = smoothing
         self.smooth_window = smooth_window
         self.smooth_order = smooth_order
+        self.preprocessing_backend = normalise_preprocess_backend(preprocessing_backend)
 
         ds0 = SpectralDataset(
             x=self.wavenumber,
@@ -241,6 +247,7 @@ class RamanFit:
                 baseline_method=self.baseline_method,
                 poly_degree=None,
                 gaussian_sigma=int(gaussian_sigma),
+                backend=self.preprocessing_backend,
             )
         elif isinstance(preprocessing, Pipeline):
             pipe = preprocessing
@@ -250,6 +257,7 @@ class RamanFit:
             )
 
         self.preprocessing = pipe
+        self.preprocessing_backend = getattr(pipe, "backend", self.preprocessing_backend)
         try:
             self.preprocessing_recipe = pipe.to_dict()
         except Exception:
@@ -268,6 +276,8 @@ class RamanFit:
 
         self._smoothed_spectra = ds.meta.get("_smoothed_last", None)
         self._baseline = ds.meta.get("_baseline_last", None)
+        self.preprocessing_backend_resolved = ds.meta.get("preprocessing_backend", None)
+        self.preprocessing_backend_info = ds.meta.get("preprocessing_backend_info", None)
 
         if (self._smoothed_spectra is not None) or (self._baseline is not None):
             self._corrected_spectra = self.processed_spectra.copy()

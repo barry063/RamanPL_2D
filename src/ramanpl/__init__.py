@@ -36,6 +36,9 @@ __all__ = [
     "DataImporter",
     "BaselineAPI",
 
+    # Optional integration helpers
+    "integration",
+
     # Submodules (optional convenience)
     "Mapping",
     "operation",
@@ -48,7 +51,7 @@ __all__ = [
     "preprocessing",
 ]
 
-__version__ = "0.3.9"
+__version__ = "0.4.0"
 
 # Attributes that should resolve to a class/object directly
 _LAZY_ATTR_MAP = {
@@ -69,8 +72,8 @@ _LAZY_ATTR_MAP = {
 
 # Names that should resolve to modules for backwards compatibility
 _MODULE_EXPORTS = {
-    "RamanFit": "ramanpl.RamanFit",       # wrapper module
-    "PLfit": "ramanpl.PLfit",             # wrapper module
+    "RamanFit": "ramanpl.RamanFit",
+    "PLfit": "ramanpl.PLfit",
     "single_fit": "ramanpl.single_fit",
     "Mapping": "ramanpl.Mapping",
     "operation": "ramanpl.operation",
@@ -81,7 +84,9 @@ _MODULE_EXPORTS = {
     "Batch": "ramanpl.batch",
     "peak_models": "ramanpl.peak_models",
     "preprocessing": "ramanpl.preprocessing",
+    "integration": "ramanpl.integration",
 }
+
 
 def __getattr__(name: str) -> Any:
     # Backwards-compatible module-style exports

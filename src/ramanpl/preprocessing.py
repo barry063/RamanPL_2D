@@ -24,10 +24,18 @@ from scipy.ndimage import gaussian_filter1d
 from .schema import (
     AxisKind,
     Modality,
+    PreprocessBackend,
     baseline_spec_to_runtime,
     normalise_axis_kind,
     normalise_baseline_spec,
     normalise_modality,
+    normalise_preprocess_backend,
+)
+from .integration.ramanspy_bridge import resolve_preprocessing_backend
+from .integration.ramanspy_translate import (
+    pipeline_supports_ramanspy_translation,
+    apply_pipeline_ramanspy_single,
+    apply_pipeline_ramanspy_mapping,
 )
 
 # Local imports (package-safe)
@@ -37,6 +45,21 @@ try:
 except Exception:  # pragma: no cover (fallback for running as a script)
     from baselineAPI import BaselineAPI
     from dataImporter import DataImporter
+
+try:
+    from .integration.ramanspy_bridge import resolve_preprocessing_backend
+    from .integration.ramanspy_translate import (
+        pipeline_supports_ramanspy_translation,
+        apply_pipeline_ramanspy_single,
+        apply_pipeline_ramanspy_mapping,
+    )
+except Exception:  # pragma: no cover
+    from ramanpl.integration.ramanspy_bridge import resolve_preprocessing_backend
+    from ramanpl.integration.ramanspy_translate import (
+        pipeline_supports_ramanspy_translation,
+        apply_pipeline_ramanspy_single,
+        apply_pipeline_ramanspy_mapping,
+    )
 
 
 ArrayLike1D = Union[np.ndarray, Sequence[float]]
@@ -94,6 +117,87 @@ class MappingPreprocessResult:
         object.__setattr__(self, "axis_kind", normalise_axis_kind(self.axis_kind))
         object.__setattr__(self, "meta", dict(self.meta))
 
+def _resolve_pipeline_backend_for_input(
+    pipeline: "Pipeline | None",
+    *,
+    modality: str,
+    axis_kind: str,
+) -> Dict[str, Any]:
+    """
+    Resolve preprocessing backend selection for the current input.
+
+    Step-3 policy
+    -------------
+    - native: always native
+    - auto: use RamanSPy when available, supported for input, and all pipeline
+            steps are currently translatable
+    - ramanspy: require availability + supported input + translatable steps
+    """
+    requested_backend = "native" if pipeline is None else getattr(pipeline, "backend", "native")
+
+    info = dict(resolve_preprocessing_backend(
+        requested_backend=requested_backend,
+        modality=modality,
+        axis_kind=axis_kind,
+    ))
+
+    if pipeline is None:
+        info["translation_supported"] = True
+        info["unsupported_steps"] = []
+        return info
+
+    translation_supported, unsupported_steps = pipeline_supports_ramanspy_translation(pipeline)
+    info["translation_supported"] = translation_supported
+    info["unsupported_steps"] = list(unsupported_steps)
+
+    # Explicit native always stays native
+    if info["requested_backend"] == "native":
+        info["resolved_backend"] = "native"
+        info["execution_ready"] = True
+        return info
+
+    # Auto: promote to RamanSPy only when everything is ready
+    if info["requested_backend"] == "auto":
+        if (
+            info["ramanspy_available"]
+            and info["supported_for_input"]
+            and translation_supported
+        ):
+            info["resolved_backend"] = "ramanspy"
+            info["execution_ready"] = True
+            info["reason"] = None
+        else:
+            info["resolved_backend"] = "native"
+            info["execution_ready"] = True
+            if (
+                info["ramanspy_available"]
+                and info["supported_for_input"]
+                and not translation_supported
+            ):
+                info["reason"] = (
+                    "Using native backend because RamanSPy translation is not yet "
+                    f"implemented for: {unsupported_steps}"
+                )
+        return info
+
+    # Forced RamanSPy: must be fully supported
+    if info["requested_backend"] == "ramanspy":
+        if not info["ramanspy_available"]:
+            raise NotImplementedError(info["reason"])
+        if not info["supported_for_input"]:
+            raise NotImplementedError(info["reason"])
+        if not translation_supported:
+            raise NotImplementedError(
+                "RamanSPy translation is currently implemented only for "
+                f"CropByRange and SmoothSavGol. Unsupported steps: {unsupported_steps}"
+            )
+
+        info["resolved_backend"] = "ramanspy"
+        info["execution_ready"] = True
+        info["reason"] = None
+        return info
+
+    raise ValueError(f"Unsupported preprocessing backend '{info['requested_backend']}'.")
 
 class PreprocessStep:
     """
@@ -260,18 +364,36 @@ class Pipeline:
     Ordered list of preprocessing steps.
     """
     steps: List[PreprocessStep] = field(default_factory=list)
+    backend: PreprocessBackend = "native"
     name: str = "pipeline"
 
     def apply(self, ds: SpectralDataset) -> SpectralDataset:
-        out = ds
-        for step in self.steps:
-            out = step.apply(out)
+        backend_info = _resolve_pipeline_backend_for_input(
+            self,
+            modality=ds.modality,
+            axis_kind=ds.axis_kind,
+        )
+
+        if backend_info["resolved_backend"] == "ramanspy":
+            x_out, y_out, meta_partial = apply_pipeline_ramanspy_single(ds, self)
+            out = ds.copy_with(x=x_out, y=y_out, meta=meta_partial)
+        else:
+            out = ds
+            for step in self.steps:
+                out = step.apply(out)
+
         meta = dict(out.meta)
         meta["pipeline"] = self.to_dict()
+        meta["preprocessing_backend"] = backend_info["resolved_backend"]
+        meta["preprocessing_backend_info"] = backend_info
         return out.copy_with(meta=meta)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"name": self.name, "steps": [s.to_dict() for s in self.steps]}
+        return {
+            "name": self.name,
+            "backend": normalise_preprocess_backend(self.backend),
+            "steps": [s.to_dict() for s in self.steps],
+        }
 
 
 def _apply_pipeline_steps(ds: SpectralDataset, steps: List[PreprocessStep]) -> SpectralDataset:
@@ -543,13 +665,43 @@ def apply_pipeline_to_mapping_cube(
 
     meta_out: Dict[str, Any] = {} if meta is None else dict(meta)
 
+    backend_info = _resolve_pipeline_backend_for_input(
+        pipeline,
+        modality=modality,
+        axis_kind=axis_kind,
+    )
+
     if pipeline is None:
+        meta_out["preprocessing_backend"] = backend_info["resolved_backend"]
+        meta_out["preprocessing_backend_info"] = backend_info
         return MappingPreprocessResult(
             x=x.copy(),
             cube=cube.copy(),
             modality=modality,
             axis_kind=axis_kind,
             meta=meta_out,
+        )
+
+    if backend_info["resolved_backend"] == "ramanspy":
+        x_out, cube_out, meta_partial = apply_pipeline_ramanspy_mapping(
+            x=x,
+            cube_yxn=cube,
+            pipeline=pipeline,
+            modality=modality,
+            axis_kind=axis_kind,
+            meta=meta_out,
+        )
+        meta_partial = dict(meta_partial)
+        meta_partial["pipeline"] = pipeline.to_dict()
+        meta_partial["preprocessing_backend"] = backend_info["resolved_backend"]
+        meta_partial["preprocessing_backend_info"] = backend_info
+
+        return MappingPreprocessResult(
+            x=x_out,
+            cube=cube_out,
+            modality=modality,
+            axis_kind=axis_kind,
+            meta=meta_partial,
         )
 
     crop_steps, pointwise_steps = _split_pipeline_for_mapping(pipeline)
@@ -644,6 +796,8 @@ def apply_pipeline_to_mapping_cube(
     # ------------------------------------------------------------
     meta_final = dict(meta_out)
     meta_final["pipeline"] = pipeline.to_dict()
+    meta_final["preprocessing_backend"] = backend_info["resolved_backend"]
+    meta_final["preprocessing_backend_info"] = backend_info
 
     if sample_meta is not None:
         for key in (
@@ -674,6 +828,7 @@ def build_legacy_single_spectrum_pipeline(
     baseline_method,
     poly_degree=None,
     gaussian_sigma=50,
+    backend: str = "native",
 ) -> Pipeline:
     """
     Build a pipeline that reproduces the existing single-spectrum preprocessing order:
@@ -700,7 +855,7 @@ def build_legacy_single_spectrum_pipeline(
             )
         )
 
-    return Pipeline(steps=steps, name="legacy_single_spectrum")
+    return Pipeline(steps=steps, backend=backend, name="legacy_single_spectrum")
 
 def build_legacy_mapping_pipeline(
     *,
@@ -712,6 +867,7 @@ def build_legacy_mapping_pipeline(
     baseline_method,
     poly_degree=None,
     gaussian_sigma=50,
+    backend: str = "native",
 ) -> Pipeline:
     """
     Build a pipeline that reproduces the existing mapping preprocessing order:
@@ -745,4 +901,4 @@ def build_legacy_mapping_pipeline(
             )
         )
 
-    return Pipeline(steps=steps, name="legacy_mapping")
+    return Pipeline(steps=steps, backend=backend, name="legacy_mapping")

@@ -6,6 +6,7 @@ Modality = Literal["Raman", "PL"]
 AxisKind = Literal["raman_shift_cm-1", "energy_eV", "wavelength_nm"]
 PeakProfile = Literal["lorentzian", "pvoigt"]
 CoordMode = Literal["pixel", "real"]
+PreprocessBackend = Literal["native", "ramanspy", "auto"]
 
 
 def normalise_modality(value: str) -> Modality:
@@ -44,6 +45,13 @@ def normalise_coord_mode(value: str) -> CoordMode:
     s = str(value).strip().lower()
     if s not in {"pixel", "real"}:
         raise ValueError("coord_mode must be 'pixel' or 'real'")
+    return s  # type: ignore[return-value]
+
+
+def normalise_preprocess_backend(value: str) -> PreprocessBackend:
+    s = str(value).strip().lower()
+    if s not in {"native", "ramanspy", "auto"}:
+        raise ValueError("preprocessing backend must be 'native', 'ramanspy', or 'auto'")
     return s  # type: ignore[return-value]
 
 

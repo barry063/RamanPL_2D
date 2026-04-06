@@ -238,6 +238,19 @@ from ramanpl import RamanFit
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
 
+### 8. Optional RamanSPy backend
+
+RamanPL_2D now supports **RamanSPy as an optional preprocessing backend** for selected Raman workflows.
+
+Install with:
+
+```bash
+pip install RamanPL_2D[ramanspy]
+```
+
+This backend is optional. If RamanSPy is not installed, preprocessing falls back to the native implementation.
+
+
 ---
 
 
@@ -407,6 +420,54 @@ This reports:
 - RMSE statistics
 - failure reasons, when diagnostics are available
 - bound-sticking summaries, when diagnostics are available
+
+
+---
+
+## New Features in v0.4.x: RamanSPy integration
+
+
+### Preprocessing backend selection
+
+Preprocessing now supports three backend modes:
+
+- `native` — always use the built-in preprocessing implementation
+- `auto` — use RamanSPy when supported, otherwise fall back to native
+- `ramanspy` — force RamanSPy preprocessing (raises an error if unsupported)
+
+#### Single-spectrum example
+
+```python
+from ramanpl import RamanFit
+
+raman_fit = RamanFit.RamanFit(
+    spectra=spectra,
+    wavenumber=wavenumber,
+    custom_peaks={
+        "P1": ([210, 2, 0], [235, 30, 10]),
+        "P2": ([325, 2, 0], [360, 40, 10]),
+    },
+    smoothing=True,
+    background_remove=True,
+    baseline_method={"method": "poly", "poly_order": 3},
+    preprocessing_backend="auto",
+)
+```
+
+##### Custom preprocessing pipeline example
+
+```python
+from ramanpl.preprocessing import Pipeline, CropByRange, SmoothSavGol, BaselineSubtract
+
+pipe = Pipeline(
+    steps=[
+        CropByRange((120, 480)),
+        SmoothSavGol(window_length=9, polyorder=3),
+        BaselineSubtract({"method": "poly", "poly_order": 3}),
+    ],
+    backend="auto",
+)
+```
 
 ---
 

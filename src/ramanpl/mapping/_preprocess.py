@@ -6,12 +6,14 @@ try:
         build_legacy_mapping_pipeline,
         apply_pipeline_to_mapping_cube,
     )
+    from ..schema import normalise_preprocess_backend
 except Exception:  # pragma: no cover
     from preprocessing import (
         Pipeline,
         build_legacy_mapping_pipeline,
         apply_pipeline_to_mapping_cube,
     )
+    from schema import normalise_preprocess_backend
 
 
 class _MappingPreprocessMixin:
