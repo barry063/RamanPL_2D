@@ -116,48 +116,26 @@ class RamanMapping(_MappingPreprocessMixin):
             peak_profile: str = "lorentzian" or "pvoigt"
             preprocessing: Optional list of preprocessing steps to apply before fitting (e.g., ['normalize', 'smooth'])
         """
-        self.filename = filename
-        self.custom_peaks = custom_peaks
-        self.data_range = data_range
-        self.step_size = step_size
-        self.poly_degree = poly_degree
-        self.normalize = normalize          # DISPLAY flag only (fit-space can still be normalised)
-        self.background_remove = background_remove
-        self.smoothing = smoothing
-        self.baseline_method = normalise_baseline_spec(
-            baseline_method,
+        self._initialise_mapping_fit_common(
+            filename=filename,
+            custom_peaks=custom_peaks,
+            data_range=data_range,
+            step_size=step_size,
             poly_degree=poly_degree,
+            normalize=normalize,
+            background_remove=background_remove,
+            baseline_method=baseline_method,
+            smoothing=smoothing,
+            smooth_window=smooth_window,
+            smooth_poly=smooth_poly,
             gaussian_sigma=gaussian_sigma,
+            peak_profile=peak_profile,
+            preprocessing_backend=preprocessing_backend,
+            preprocessing=preprocessing,
+            spectrum_type="Raman",
+            x_quantity="Raman shift",
+            x_unit="cm^-1",
         )
-        self.smooth_window = smooth_window
-        self.smooth_poly = smooth_poly
-        self.gaussian_sigma = gaussian_sigma
-        self.preprocessing_backend = normalise_preprocess_backend(preprocessing_backend)
-        self.peak_params = list(custom_peaks.keys())
-
-        # --- identity metadata for exports ---
-        self.spectrum_type = "Raman"
-        self.x_quantity = "Raman shift"
-        self.x_unit = "cm^-1"
-        self.step_unit = "um"
-
-        if str(self.baseline_method.get("method", "")).lower() == "poly":
-            self.poly_order = int(self.baseline_method.get("poly_order", poly_degree))
-        else:
-            self.poly_order = None
-
-        # Baseline config
-        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
-            self.baseline_method
-        )
-
-        # ---- model choice ----
-        self.peak_profile = normalise_peak_profile(peak_profile)
-        self.params_per_peak = 3 if self.peak_profile == "lorentzian" else 4
-
-        # Shared preprocessing pipeline (legacy-compatible if None)
-        self.preprocessing_backend_resolved = None
-        self.preprocessing_backend_info = None
 
         # ---- load mapping data (Raman always wavenumber axis) ----
         loader = MappingFileLoader(filename, x_range=self.data_range, axis="wavenumber")
@@ -170,17 +148,7 @@ class RamanMapping(_MappingPreprocessMixin):
         self.image_viewer = MappingImage(filename) if filename.endswith(".wdf") else None
 
         # ---- allocate output arrays ----
-        num_peaks = len(self.custom_peaks)
-        self.peak_positions = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
-        self.peak_intensities = np.full((self.Y, self.X, num_peaks), np.nan, dtype=float)
-        self.fitted_params = np.full((self.Y, self.X, num_peaks * self.params_per_peak), np.nan, dtype=float)
-
-        self.residual_map = np.full((self.Y, self.X), np.nan, dtype=float)
-        self.norm_scale_map = np.full((self.Y, self.X), np.nan, dtype=float)
-
-        self.Peaks_distance = np.full((self.Y, self.X), np.nan, dtype=float)
-        self.ratio_A1g_E2g = np.full((self.Y, self.X), np.nan, dtype=float)
-        self.ratio_E2g_A1g = np.full((self.Y, self.X), np.nan, dtype=float)
+        self._allocate_fit_outputs()
 
     ### Updated in v0.3.5 ###
     @classmethod
@@ -222,38 +190,25 @@ class RamanMapping(_MappingPreprocessMixin):
         """
         obj = cls.__new__(cls)
 
-        obj.filename = None
-        obj.custom_peaks = custom_peaks
-        obj.data_range = data_range
-        obj.step_size = step_size
-        obj.poly_degree = poly_degree
-        obj.normalize = normalize
-        obj.background_remove = background_remove
-        obj.smoothing = smoothing
-        obj.baseline_method = normalise_baseline_spec(
-            baseline_method,
+        obj._initialise_mapping_fit_common(
+            filename=None,
+            custom_peaks=custom_peaks,
+            data_range=data_range,
+            step_size=step_size,
             poly_degree=poly_degree,
+            normalize=normalize,
+            background_remove=background_remove,
+            baseline_method=baseline_method,
+            smoothing=smoothing,
+            smooth_window=smooth_window,
+            smooth_poly=smooth_poly,
             gaussian_sigma=gaussian_sigma,
-        )
-        obj.smooth_window = smooth_window
-        obj.smooth_poly = smooth_poly
-        obj.gaussian_sigma = gaussian_sigma
-        obj.preprocessing_backend = normalise_preprocess_backend(preprocessing_backend)
-        obj.peak_params = list(custom_peaks.keys())
-
-        obj.spectrum_type = "Raman"
-        obj.x_quantity = "Raman shift"
-        obj.x_unit = "cm^-1"
-        obj.step_unit = "um"
-
-        if str(obj.baseline_method.get("method", "")).lower() == "poly":
-            obj.poly_order = int(obj.baseline_method.get("poly_order", poly_degree))
-        else:
-            obj.poly_order = None
-
-        # Baseline config (same as __init__)
-        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
-            obj.baseline_method
+            peak_profile=peak_profile,
+            preprocessing_backend=preprocessing_backend,
+            preprocessing=preprocessing,
+            spectrum_type="Raman",
+            x_quantity="Raman shift",
+            x_unit="cm^-1",
         )
 
         obj.X = int(X)
@@ -261,12 +216,12 @@ class RamanMapping(_MappingPreprocessMixin):
         obj.wavenumber = np.asarray(xdata, dtype=float).ravel()
         obj.spectra = np.asarray(spectra, dtype=float)
 
-        # New in v0.3.3
-        obj.peak_profile = normalise_peak_profile(peak_profile)
-        obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
-        obj._initialise_preprocessing(preprocessing=preprocessing)
-        obj.preprocessing_backend_resolved = None
-        obj.preprocessing_backend_info = None        
+        # # New in v0.3.3
+        # obj.peak_profile = normalise_peak_profile(peak_profile)
+        # obj.params_per_peak = 3 if obj.peak_profile == "lorentzian" else 4
+        # obj._initialise_preprocessing(preprocessing=preprocessing)
+        # obj.preprocessing_backend_resolved = None
+        # obj.preprocessing_backend_info = None        
 
         # Validate shapes
         if obj.spectra.ndim != 3:
@@ -282,17 +237,7 @@ class RamanMapping(_MappingPreprocessMixin):
         obj._x_trimmed_on_load = False
 
         # Allocate arrays (same as __init__)
-        num_peaks = len(obj.custom_peaks)
-        obj.peak_positions = np.full((obj.Y, obj.X, num_peaks), np.nan)
-        obj.peak_intensities = np.full((obj.Y, obj.X, num_peaks), np.nan)
-        obj.fitted_params = np.full((obj.Y, obj.X, num_peaks * obj.params_per_peak), np.nan)
-
-        obj.residual_map = np.full((obj.Y, obj.X), np.nan)
-        obj.norm_scale_map = np.full((obj.Y, obj.X), np.nan)
-
-        obj.Peaks_distance = np.full((obj.Y, obj.X), np.nan, dtype=float)
-        obj.ratio_A1g_E2g = np.full((obj.Y, obj.X), np.nan, dtype=float)
-        obj.ratio_E2g_A1g = np.full((obj.Y, obj.X), np.nan, dtype=float)
+        obj._allocate_fit_outputs()
 
         return obj
 
@@ -372,6 +317,18 @@ class RamanMapping(_MappingPreprocessMixin):
         """Display optical image with mapping area overlay."""
         if self.image_viewer:
             self.image_viewer.show_optical_image()
+
+    def _allocate_fit_outputs(self):
+        """
+        Allocate fit-related output arrays for RamanMapping.
+
+        Includes both the shared fit outputs and Raman-specific derived maps.
+        """
+        self._allocate_basic_fit_outputs(num_peaks=len(self.custom_peaks))
+
+        self.Peaks_distance = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.ratio_A1g_E2g = np.full((self.Y, self.X), np.nan, dtype=float)
+        self.ratio_E2g_A1g = np.full((self.Y, self.X), np.nan, dtype=float)
 
     def fit_summary(self, **kwargs):
         """Backward-compatible instance wrapper for mapping fit diagnostics."""
@@ -1130,83 +1087,6 @@ class RamanMapping(_MappingPreprocessMixin):
         plt.show()
 
     ### Updated in v0.3.8
-    @staticmethod
-    def custom_peaks_from_ramanfit(raman_fit):
-        """
-        Build Mapping-compatible custom_peaks dict from a RamanFit instance.
-
-        Supports both lorentzian (3 params/peak) and pvoigt (4 params/peak).
-        """
-        import numpy as np
-
-        labels = list(raman_fit.peak_labels)
-        lb = np.asarray(raman_fit.lower_bound, dtype=float)
-        ub = np.asarray(raman_fit.upper_bound, dtype=float)
-        stride = int(getattr(raman_fit, "params_per_peak", 3))
-
-        if lb.size != ub.size or lb.size != stride * len(labels):
-            raise ValueError("RamanFit bounds length mismatch with peak_labels.")
-
-        out = {}
-        for k, name in enumerate(labels):
-            s = stride * k
-            out[name] = (lb[s:s+stride].tolist(), ub[s:s+stride].tolist())
-        return out
-
-    def _params_to_export_dict(self, xaxis, peak_labels, params, intensity_scale=1.0):
-        """
-        Convert a parameter vector into per-peak export dict entries.
-
-        Conventions
-        -----------
-        - Lorentzian: width is HWHM; FWHM = 2*HWHM; peak_height_norm = amp_area/(pi*HWHM)
-        - pVoigt: width parameter is treated as FWHM (consistent with your PLfit/RamanFit pVoigt step);
-                peak_height_norm is computed numerically as max(single_peak(xaxis)).
-        """
-        import numpy as np
-
-        profile = self.peak_profile
-        stride = int(self.params_per_peak)
-        p = np.asarray(params, dtype=float).ravel()
-        xaxis = np.asarray(xaxis, dtype=float).ravel()
-
-        out = {}
-        for i, name in enumerate(peak_labels):
-            block = p[stride*i:stride*(i+1)]
-            centre = float(block[0])
-
-            if profile == "lorentzian":
-                hwhm = float(block[1])
-                amp_area = float(block[2])
-                fwhm = 2.0 * hwhm
-                peak_height_norm = (amp_area / (np.pi * hwhm)) if hwhm != 0 else np.nan
-                peak_height = float(peak_height_norm * intensity_scale)
-                out[name] = dict(
-                    centre=centre, fwhm=fwhm,
-                    peak_height=peak_height,
-                    peak_height_norm=float(peak_height_norm),
-                    amp=amp_area, scale=hwhm,
-                )
-            else:
-                fwhm = float(block[1])       # pVoigt width treated as FWHM
-                amp_area = float(block[2])
-                eta = float(block[3])
-
-                y_norm = single_peak(xaxis, block, profile="pvoigt")
-                peak_height_norm = float(np.nanmax(y_norm))
-                peak_height = float(peak_height_norm * intensity_scale)
-
-                out[name] = dict(
-                    centre=centre, fwhm=fwhm,
-                    peak_height=peak_height,
-                    peak_height_norm=peak_height_norm,
-                    amp=amp_area, scale=fwhm, eta=eta,
-                )
-
-        return out
-
-
-    ### Updated in v0.3.8
     def export_fit_map(
         self,
         out_path: str,
@@ -1269,27 +1149,12 @@ class RamanMapping(_MappingPreprocessMixin):
 
             rows.append(r)
 
-        meta = build_export_meta(
-            export_kind="mapping_fit",
-            map_kind="fit_params",
-            spectrum_type=getattr(self, "spectrum_type", None),
-            x_quantity=getattr(self, "x_quantity", None),
-            x_unit=getattr(self, "x_unit", None),
+        meta = self._build_mapping_fit_export_meta(
             coord_mode=coord_mode,
-            step_size=getattr(self, "step_size", None),
-            step_unit=getattr(self, "step_unit", "um"),
             scaled=scaled,
             peak_labels=peak_labels,
-            peak_profile=getattr(self, "peak_profile", None),
-            params_per_peak=getattr(self, "params_per_peak", None),
-            baseline_spec=getattr(self, "baseline_method", None),
-            preprocessing_recipe=getattr(self, "preprocessing_recipe", None),
-            background_remove=getattr(self, "background_remove", None),
-            smoothing=getattr(self, "smoothing", None),
-            smooth_window=getattr(self, "smooth_window", None),
-            smooth_poly=getattr(self, "smooth_poly", None),
         )
-
+        
         return write_table(
             rows,
             out_path,

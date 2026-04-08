@@ -238,9 +238,10 @@ from ramanpl import RamanFit
 - Open `example_analysis.ipynb` in the `example-usage/` folder using VS Code or Jupyter.
 - Run the cells to see the toolkit in action.
 
+
 ### 8. Optional RamanSPy backend
 
-RamanPL_2D now supports **RamanSPy as an optional preprocessing backend** for selected Raman workflows.
+RamanPL_2D supports **RamanSPy as an optional preprocessing backend** for supported **Raman** workflows.
 
 Install with:
 
@@ -426,14 +427,33 @@ This reports:
 
 ## New Features in v0.4.x: RamanSPy integration
 
-
 ### Preprocessing backend selection
 
-Preprocessing now supports three backend modes:
+Preprocessing supports three backend modes:
 
 - `native` — always use the built-in preprocessing implementation
-- `auto` — use RamanSPy when supported, otherwise fall back to native
-- `ramanspy` — force RamanSPy preprocessing (raises an error if unsupported)
+- `auto` — use RamanSPy when available, supported for the input, and the full preprocessing pipeline is currently translatable; otherwise fall back to native
+- `ramanspy` — force RamanSPy preprocessing and raise an error if unavailable or unsupported
+
+### Current support
+
+RamanSPy preprocessing support in the current build is limited to:
+
+- **Raman workflows**
+- **Raman shift axis (`cm^-1`)**
+- the following translated preprocessing steps:
+  - `CropByRange`
+  - `SmoothSavGol`
+  - `BaselineSubtract` with:
+    - `poly`
+    - `asls`
+    - `airpls`
+    - `arpls`
+
+The following remain native-only for now:
+
+- PL preprocessing workflows
+- `BaselineSubtract(method="gaussian")`
 
 #### Single-spectrum example
 
@@ -454,7 +474,7 @@ raman_fit = RamanFit.RamanFit(
 )
 ```
 
-##### Custom preprocessing pipeline example
+#### Custom preprocessing pipeline example
 
 ```python
 from ramanpl.preprocessing import Pipeline, CropByRange, SmoothSavGol, BaselineSubtract
@@ -466,6 +486,21 @@ pipe = Pipeline(
         BaselineSubtract({"method": "poly", "poly_order": 3}),
     ],
     backend="auto",
+)
+```
+
+In `auto` mode, RamanPL_2D records the resolved backend in preprocessing metadata. In mapping exports, the requested and resolved backend are both written into export metadata for provenance.
+
+#### Forced RamanSPy example
+
+```python
+from ramanpl.preprocessing import Pipeline, SmoothSavGol
+
+pipe = Pipeline(
+    steps=[
+        SmoothSavGol(window_length=9, polyorder=3),
+    ],
+    backend="ramanspy",
 )
 ```
 
@@ -485,11 +520,12 @@ pipe = Pipeline(
 | Version | Scope | Details |
 |--------|------|--------|
 | **v0.4.0** | Backend infrastructure | - Add optional RamanSPy dependency<br>- Introduce internal adapter layer (`integration/ramanspy_adapter`)<br>- Implement Spectrum / mapping cube conversion<br>- Add preprocessing backend selector (`native / ramanspy / auto`)<br>- Record backend in metadata |
-| **v0.4.1** | Pipeline translation | - Map `preprocessing.Pipeline` → RamanSPy pipeline<br>- Support: crop, Savitzky–Golay, selected baselines<br>- Fallback to native backend where unsupported |
-| **v0.4.2** | Mapping integration (Raman) | - Apply RamanSPy backend in mapping preprocessing<br>- Ensure axis ordering and cube consistency<br>- Benchmark against native implementation |
-| **v0.4.3** | Single-spectrum integration (Raman) | - Enable backend in `RamanFit` preprocessing<br>- Preserve fitting behaviour and outputs |
-| **v0.4.4** | Batch integration | - Propagate backend into `RamanBatch`<br>- Ensure consistent export metadata<br>- Maintain existing plotting behaviour |
-| **v0.4.5** | Validation | - Regression tests (native vs RamanSPy)<br>- Numerical tolerance checks<br>- Update notebooks and documentation |
+| **v0.4.1** | Pipeline translation and stabilisation | - Translate `preprocessing.Pipeline` → RamanSPy for supported Raman preprocessing steps<br>- Support: crop, Savitzky–Golay, selected baselines (`poly`, `asls`, `airpls`, `arpls`)<br>- Preserve native fallback for unsupported steps and workflows<br>- Stabilise backend propagation through single-spectrum and mapping preprocessing |
+| **v0.4.2** | Validation and documentation | - Add regression tests for `native / auto / ramanspy` backend behaviour<br>- Add Raman vs PL backend-compatibility checks<br>- Update notebooks and README examples<br>- Verify export metadata and preprocessing provenance |
+| **v0.4.3** | Mapping benchmarking and performance review | - Benchmark Raman mapping preprocessing: native vs RamanSPy<br>- Check conversion overhead and memory behaviour<br>- Confirm axis ordering and cube consistency on representative datasets |
+| **v0.4.4** | Batch integration | - Propagate backend into `RamanBatch`<br>- Ensure consistent export metadata<br>- Maintain existing plotting and table behaviour |
+| **v0.4.5** | API cleanup and hardening | - Improve backend error messages and consistency<br>- Reduce remaining duplication in mapping/batch internals<br>- Consolidate preprocessing/export helper paths |
+
 
 
 ### v0.4.x+ — stabilisation
@@ -512,11 +548,11 @@ pipe = Pipeline(
 
 ### Notes
 
-- RamanSPy is used as an **optional preprocessing backend** only.
-- Integration is limited to **Raman workflows (cm⁻¹ axis)**; PL remains on the native backend.
+- RamanSPy is currently used as an **optional preprocessing backend** only.
+- Integration is limited to **Raman workflows (cm⁻¹ axis)**; PL workflows remain on the native backend.
 - Existing APIs (`Pipeline`, `RamanFit`, `Mapping`, `Batch`) remain **backward compatible** during v0.4.x.
-- Deprecated features will be removed in **v0.4.7** after backend stabilisation.
-- Deferred features will be revisited after preprocessing behaviour is stable.
+- `BaselineSubtract(method="gaussian")` remains native-only at this stage.
+- Current development priority is **validation, documentation, and backend stabilisation** before broader RamanSPy feature expansion.
 
 ---
 

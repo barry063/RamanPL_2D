@@ -57,11 +57,11 @@ def can_use_ramanspy(*, modality: str, axis_kind: str) -> Tuple[bool, str | None
     """
     Check whether RamanSPy backend is valid for the given data semantics.
 
-    Current policy for v0.4.0
+    Current policy for v0.4.1
     -------------------------
-    - Raman only
+    - Raman workflows only
     - Raman shift axis only (cm^-1)
-    - PL remains on the native backend
+    - PL workflows remain on the native backend
     """
     mod = normalise_modality(modality)
     ax = normalise_axis_kind(axis_kind)

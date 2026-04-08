@@ -126,11 +126,11 @@ def _resolve_pipeline_backend_for_input(
     """
     Resolve preprocessing backend selection for the current input.
 
-    Step-3 policy
+    v0.4.1 policy
     -------------
     - native: always native
     - auto: use RamanSPy when available, supported for input, and all pipeline
-            steps are currently translatable
+      steps are currently translatable
     - ramanspy: require availability + supported input + translatable steps
     """
     requested_backend = "native" if pipeline is None else getattr(pipeline, "backend", "native")
@@ -154,6 +154,7 @@ def _resolve_pipeline_backend_for_input(
     if info["requested_backend"] == "native":
         info["resolved_backend"] = "native"
         info["execution_ready"] = True
+        info["reason"] = None
         return info
 
     # Auto: promote to RamanSPy only when everything is ready
@@ -188,8 +189,10 @@ def _resolve_pipeline_backend_for_input(
             raise NotImplementedError(info["reason"])
         if not translation_supported:
             raise NotImplementedError(
-                "RamanSPy translation is currently implemented only for "
-                f"CropByRange and SmoothSavGol. Unsupported steps: {unsupported_steps}"
+                "RamanSPy translation is currently implemented for "
+                "CropByRange, SmoothSavGol, and BaselineSubtract "
+                "(poly / asls / airpls / arpls). "
+                f"Unsupported steps: {unsupported_steps}"
             )
 
         info["resolved_backend"] = "ramanspy"

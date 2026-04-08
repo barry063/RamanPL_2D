@@ -33,15 +33,28 @@ def resolve_preprocessing_backend(
     axis_kind: str,
 ) -> Dict[str, Any]:
     """
-    Resolve preprocessing backend selection for the current input.
+    Resolve preprocessing backend availability for the current input.
 
-    v0.4.0 policy
+    Notes
+    -----
+    This function resolves only backend availability and input compatibility.
+
+    It does NOT decide whether a specific RamanPL Pipeline is translatable to
+    RamanSPy. Pipeline-step translation support is checked later by the
+    preprocessing layer.
+
+    v0.4.1 policy
     -------------
-    - native: execute natively
-    - auto:   currently resolves to native, even if RamanSPy is installed
+    - native:
+        always resolves to native
+    - auto:
+        may later promote to RamanSPy if:
+            * RamanSPy is installed
+            * the input is Raman / cm^-1 compatible
+            * the pipeline is fully translatable
     - ramanspy:
-        accepted as a selector value, but execution is not enabled yet;
-        callers should raise a clear NotImplementedError
+        valid only when RamanSPy is installed and the input is compatible;
+        pipeline translation support is checked separately upstream
     """
     backend = normalise_preprocess_backend(requested_backend)
     mod = normalise_modality(modality)
@@ -60,31 +73,21 @@ def resolve_preprocessing_backend(
         reason = None
 
     elif backend == "auto":
+        # Final promotion to RamanSPy is decided later after pipeline translation check
         resolved = "native"
         execution_ready = True
-        if available and supported_for_input:
-            reason = (
-                "RamanSPy is available and supported for this input, "
-                "but preprocessing execution is not enabled yet in v0.4.0. "
-                "Using native backend."
-            )
-        else:
-            reason = None
+        reason = None
 
     elif backend == "ramanspy":
         resolved = "ramanspy"
-        execution_ready = False
+        execution_ready = bool(available and supported_for_input)
+
         if not available:
-            reason = (
-                "RamanSPy backend requested, but RamanSPy is not installed."
-            )
+            reason = "RamanSPy backend requested, but RamanSPy is not installed."
         elif not supported_for_input:
             reason = support_reason
         else:
-            reason = (
-                "RamanSPy backend requested, but preprocessing execution "
-                "is not enabled yet in v0.4.0."
-            )
+            reason = None
 
     else:  # pragma: no cover
         raise ValueError(f"Unsupported preprocessing backend '{backend}'.")
