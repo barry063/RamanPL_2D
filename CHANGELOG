@@ -1,5 +1,52 @@
 # Changelog
 
+## [v0.4.2] — 2026-04-12 Validation, regression coverage, and release alignment
+
+### Added
+- Added regression tests for preprocessing backend resolution:
+  - `native`
+  - `auto`
+  - `ramanspy`
+- Added Raman-versus-PL backend compatibility tests for single-spectrum workflows.
+- Added regression tests for single-fit helper behaviour, including:
+  - `generate_p0_trials(...)` anchoring for `midpoint` and `jitter`
+  - deprecated baseline argument warning behaviour
+- Added regression tests for `dataImporter.py`, including:
+  - `mask_by_xrange(...)`
+  - TXT map import with shuffled coordinate block ordering
+- Added regression tests for export/provenance metadata, including:
+  - preprocessing backend requested/resolved fields
+  - preprocessing recipe propagation in mapping export metadata
+
+### Changed
+- Updated package version metadata to `0.4.2`.
+- Aligned installation metadata between `setup.py` and `requirements.txt`.
+- Refreshed README guidance for:
+  - local editable installation
+  - optional RamanSPy installation
+  - current repository structure
+  - current RamanSPy backend support boundary
+
+### Fixed
+- Removed the module-level warning filter side effect from `baselineAPI.py`.
+- Fixed duplicated `{"asls", "asls"}` membership logic.
+- Promoted `PreprocessStep` to an abstract base class so incomplete base usage fails early.
+- Corrected `generate_p0_trials(...)` behaviour so:
+  - `midpoint` is centred on `(lb + ub) / 2`
+  - `jitter` is centred on the user-supplied `base_p0`
+- Updated deprecated baseline warnings in the single-fit core to `FutureWarning`.
+- Simplified `mask_by_xrange(...)` without changing interval selection behaviour.
+- Fixed TXT mapping import so spectra are assigned by coordinate identity rather than row-order assumptions.
+- Vectorised map TXT export in `operation.py` to reduce Python-loop overhead.
+
+### Notes
+- RamanSPy integration in this release remains limited to supported **Raman preprocessing workflows**.
+- PL workflows continue to use the native preprocessing backend.
+- `BaselineSubtract(method="gaussian")` remains native-only.
+- This release focuses on validation, correctness locking, and release/documentation consistency rather than new analysis features.
+
+---------
+
 ## [v0.4.1] — 2026-04-08 RamanSPy preprocessing translation and stabilisation
 
 ### Added

@@ -93,44 +93,51 @@ RamanPL_2D/
 │   ├── multi-plot/
 │   ├── PLfit/
 │   └── Ramanfit/
-│
 ├── src/
-│   ├── ramanpl/
-│   │   ├── __init__.py
-│   │   ├── RamanFit.py
-│   │   ├── PLfit.py
-│   │   ├── Mapping.py
-│   │   ├── batch.py
-│   │   ├── baselineAPI.py
-│   │   ├── dataImporter.py
-│   │   ├── exporter.py
-│   │   ├── operation.py
-│   │   ├── peak_models.py
-│   │   ├── preprocessing.py
-│   │   ├── schema.py
-│   │   ├── raman_materials.json
-│   │   ├── single_fit/
-│   │   │   ├── __init__.py
-│   │   │   ├── RamanFit.py
-│   │   │   ├── PLfit.py
-│   │   │   └── _single_fit_core.py
-│   │   └── mapping/
-│   │       ├── __init__.py
-│   │       ├── _diagnostics.py
-│   │       ├── _fit_utils.py
-│   │       ├── _image.py
-│   │       ├── _io.py
-│   │       ├── _pl_mapping.py
-│   │       ├── _preprocess.py
-│   │       └── _raman_mapping.py
-│   │
 │   ├── install.ipynb
-│   └── setup.py
-│
+│   ├── setup.py
+│   └── ramanpl/
+│       ├── __init__.py
+│       ├── RamanFit.py
+│       ├── PLfit.py
+│       ├── Mapping.py
+│       ├── _single_fit_core.py
+│       ├── batch.py
+│       ├── baselineAPI.py
+│       ├── dataImporter.py
+│       ├── exporter.py
+│       ├── operation.py
+│       ├── peak_models.py
+│       ├── preprocessing.py
+│       ├── schema.py
+│       ├── raman_materials.json
+│       ├── integration/
+│       │   ├── __init__.py
+│       │   ├── ramanspy_adapter.py
+│       │   ├── ramanspy_bridge.py
+│       │   └── ramanspy_translate.py
+│       ├── single_fit/
+│       │   ├── __init__.py
+│       │   ├── RamanFit.py
+│       │   ├── PLfit.py
+│       │   └── _single_fit_core.py
+│       └── mapping/
+│           ├── __init__.py
+│           ├── _diagnostics.py
+│           ├── _fit_utils.py
+│           ├── _image.py
+│           ├── _io.py
+│           ├── _pl_mapping.py
+│           ├── _preprocess.py
+│           └── _raman_mapping.py
+├── tests/
+│   ├── test_preprocessing_backend_resolution.py
+│   ├── test_single_fit_regressions.py
+│   ├── test_data_importer_regressions.py
+│   └── test_export_provenance_regressions.py
 ├── requirements.txt
 ├── README.md
 └── CHANGELOG
-
 ```
 
 ## Change log
@@ -188,21 +195,21 @@ To use the `RamanPL_2D` toolkit in your own scripts or Jupyter notebooks, you ca
 
 #### Option 1: Install as Editable Package (Recommended)
 
-This method allows you to import your package from anywhere, and changes in your source code will be automatically reflected without needing to reinstall.
+This method allows you to import the package from anywhere, and source-code changes will be reflected without reinstalling.
 
-1. Navigate to the Source Folder
-
-```bash
-    cd "path to code\RamanPL_2D\src"
-```
-
-2. Install Using `pip`
+1. Navigate to the source folder:
 
 ```bash
-pip install .
+cd "path\to\RamanPL_2D\src"
 ```
 
-3. This will install the library in **editable** mode. You can now import it in Python like:
+2. Install in editable mode:
+
+```bash
+pip install -e .
+```
+
+3. You can then import it in Python as usual:
 
 ```python
 from ramanpl import RamanFit
@@ -243,13 +250,15 @@ from ramanpl import RamanFit
 
 RamanPL_2D supports **RamanSPy as an optional preprocessing backend** for supported **Raman** workflows.
 
+For a local source install from the `src/` directory, use:
+
 Install with:
 
 ```bash
-pip install RamanPL_2D[ramanspy]
+pip install -e .[ramanspy]
 ```
 
-This backend is optional. If RamanSPy is not installed, preprocessing falls back to the native implementation.
+If RamanSPy is not installed, preprocessing falls back to the native implementation when `preprocessing_backend="auto"` is used.
 
 
 ---
