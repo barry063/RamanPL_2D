@@ -150,9 +150,7 @@ class DataImporter:
         if xdata.size == 0:
             return np.zeros((0,), dtype=bool)
 
-        if xdata[0] <= xdata[-1]:
-            return (xdata >= lo) & (xdata <= hi)
-        return (xdata <= hi) & (xdata >= lo)
+        return (xdata >= lo) & (xdata <= hi)
 
     @staticmethod
     def select_by_xrange(xdata: np.ndarray, ydata: np.ndarray, x_range, axis: str = "auto"):
@@ -252,11 +250,21 @@ class DataImporter:
         xdata = np.asarray(data[:pts, 2], dtype=float).ravel()
         spectra_cube = np.zeros((Y, X, xdata.size), dtype=float)
 
-        index = 0
-        for j in range(Y):
-            for i in range(X):
-                spectra_cube[j, i, :] = np.asarray(data[index:index + pts, 3], dtype=float).ravel()
-                index += pts
+        # Build coordinate → index maps from the unique sorted arrays produced by
+        # np.unique above. Float equality is safe here because every value in data[:,0]
+        # and data[:,1] was produced by the same np.loadtxt call.
+        x_to_i = {float(xc): ix for ix, xc in enumerate(x_coords)}
+        y_to_j = {float(yc): iy for iy, yc in enumerate(y_coords)}
+
+        for row_start in range(0, len(data), pts):
+            xi = x_to_i.get(float(data[row_start, 0]))
+            yi = y_to_j.get(float(data[row_start, 1]))
+            if xi is None or yi is None:
+                raise RuntimeError(
+                    f"Unexpected coordinate ({data[row_start, 0]}, {data[row_start, 1]}) "
+                    "in mapping .txt — file may be malformed."
+                )
+            spectra_cube[yi, xi, :] = np.asarray(data[row_start:row_start + pts, 3], dtype=float).ravel()
 
         return spectra_cube, xdata, X, Y
 

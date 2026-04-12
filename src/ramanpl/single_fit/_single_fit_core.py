@@ -98,12 +98,15 @@ def generate_p0_trials(
             trials.append(rng.uniform(lb, ub))
         return trials
 
-    # midpoint and jitter: jitter around base_p0
+    # midpoint: jitter around the bound midpoint (lb+ub)/2
+    # jitter:   jitter around the user-supplied base_p0
+    anchor = 0.5 * (lb + ub) if strategy == "midpoint" else base_p0
+
     scale = 0.10 * (ub - lb)
     scale = np.where(scale > 0, scale, 1.0)
 
     for _ in range(m):
-        p = base_p0 + rng.normal(loc=0.0, scale=scale)
+        p = anchor + rng.normal(loc=0.0, scale=scale)
         trials.append(np.clip(p, lb, ub))
 
     return trials
@@ -120,7 +123,7 @@ def resolve_baseline_method_with_deprecation(
         warnings.warn(
             "Tuple baseline_method is deprecated. "
             "Use a dict, e.g. {'method': 'poly', 'poly_order': 3}.",
-            DeprecationWarning,
+            FutureWarning,
             stacklevel=3,
         )
 
@@ -128,7 +131,7 @@ def resolve_baseline_method_with_deprecation(
         warnings.warn(
             "poly_degree is deprecated. "
             "Use baseline_method={'method': 'poly', 'poly_order': degree} instead.",
-            DeprecationWarning,
+            FutureWarning,
             stacklevel=3,
         )
         poly_degree_value = int(poly_degree)

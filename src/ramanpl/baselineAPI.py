@@ -2,7 +2,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Any
 import warnings
-warnings.filterwarnings("default", category=FutureWarning, module=r"ramanpl(\..*)?$")
 import numpy as np
 from numpy.polynomial import Polynomial
 from scipy.ndimage import gaussian_filter1d
@@ -124,7 +123,7 @@ class BaselineAPI:
         elif method == "gaussian":
             baseline = BaselineAPI._baseline_gaussian(y, **kwargs)
 
-        elif method in {"asls", "asls"}:
+        elif method in {"asls"}:
             baseline = BaselineAPI._baseline_asls(y, mask=mask, **kwargs)
 
         elif method in {"arpls"}:

@@ -14,6 +14,7 @@ providing a shared preprocessing path for mapping/batch integration.
 
 from __future__ import annotations
 
+import abc
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -31,13 +32,6 @@ from .schema import (
     normalise_modality,
     normalise_preprocess_backend,
 )
-from .integration.ramanspy_bridge import resolve_preprocessing_backend
-from .integration.ramanspy_translate import (
-    pipeline_supports_ramanspy_translation,
-    apply_pipeline_ramanspy_single,
-    apply_pipeline_ramanspy_mapping,
-)
-
 # Local imports (package-safe)
 try:
     from .baselineAPI import BaselineAPI
@@ -202,15 +196,16 @@ def _resolve_pipeline_backend_for_input(
 
     raise ValueError(f"Unsupported preprocessing backend '{info['requested_backend']}'.")
 
-class PreprocessStep:
+class PreprocessStep(abc.ABC):
     """
-    Base class for preprocessing steps.
+    Abstract base class for preprocessing steps.
+    Subclasses must implement apply().
     """
 
     name: str = "step"
 
-    def apply(self, ds: SpectralDataset) -> SpectralDataset:
-        raise NotImplementedError
+    @abc.abstractmethod
+    def apply(self, ds: SpectralDataset) -> SpectralDataset: ...
 
     def to_dict(self) -> Dict[str, Any]:
         return {"name": self.name}

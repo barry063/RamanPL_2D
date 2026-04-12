@@ -532,15 +532,12 @@ class ArithmeticSpectrum:
         if cube.shape[2] != x.size:
             raise ValueError("cube spectral length must match x length.")
 
-        # Build rows: for each pixel (j,i), write N rows
-        rows = []
-        for j in range(Y):
-            for i in range(X):
-                inten = cube[j, i, :]
-                Xi = np.full_like(x, float(i))
-                Yj = np.full_like(x, float(j))
-                rows.append(np.column_stack([Xi, Yj, x, inten]))
-
-        data = np.vstack(rows)
+        # Vectorised build: meshgrid of pixel indices broadcast to [Y, X, N]
+        yi_grid, xi_grid = np.meshgrid(np.arange(Y), np.arange(X), indexing="ij")  # [Y, X]
+        Xi_all = np.broadcast_to(xi_grid[:, :, None], cube.shape).reshape(-1).astype(float)
+        Yj_all = np.broadcast_to(yi_grid[:, :, None], cube.shape).reshape(-1).astype(float)
+        x_all  = np.broadcast_to(x[None, None, :],    cube.shape).reshape(-1)
+        I_all  = cube.reshape(-1)
+        data = np.column_stack([Xi_all, Yj_all, x_all, I_all])
         header = "X\tY\txaxis\tintensity"
         np.savetxt(path, data, delimiter="\t", header=header, comments="")
