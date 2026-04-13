@@ -900,3 +900,82 @@ def build_legacy_mapping_pipeline(
         )
 
     return Pipeline(steps=steps, backend=backend, name="legacy_mapping")
+
+
+# ---------------------------------------------------------------------------
+# Benchmark pipeline builders (v0.4.3)
+# ---------------------------------------------------------------------------
+
+def make_benchmark_pipeline_crop_only() -> Pipeline:
+    """Return a crop-only benchmark pipeline (300–1700 cm⁻¹, native backend)."""
+    return Pipeline(
+        steps=[CropByRange(data_range=(300.0, 1700.0))],
+        backend="native",
+        name="benchmark_crop_only",
+    )
+
+
+def make_benchmark_pipeline_savgol_only() -> Pipeline:
+    """Return a Savitzky–Golay-only benchmark pipeline (native backend, no crop)."""
+    return Pipeline(
+        steps=[SmoothSavGol(window_length=11, polyorder=3)],
+        backend="native",
+        name="benchmark_savgol_only",
+    )
+
+
+def make_benchmark_pipeline_poly_baseline() -> Pipeline:
+    """Return a crop + SavGol + polynomial baseline benchmark pipeline (native backend)."""
+    return Pipeline(
+        steps=[
+            CropByRange(data_range=(300.0, 1700.0)),
+            SmoothSavGol(window_length=11, polyorder=3),
+            BaselineSubtract({"method": "poly", "poly_order": 3}),
+        ],
+        backend="native",
+        name="benchmark_poly_baseline",
+    )
+
+
+def make_benchmark_pipeline_asls_baseline() -> Pipeline:
+    """Return a crop + SavGol + AsLS baseline benchmark pipeline (native backend)."""
+    return Pipeline(
+        steps=[
+            CropByRange(data_range=(300.0, 1700.0)),
+            SmoothSavGol(window_length=11, polyorder=3),
+            BaselineSubtract({"method": "asls", "lam": 1e5, "p": 0.01, "niter": 10}),
+        ],
+        backend="native",
+        name="benchmark_asls_baseline",
+    )
+
+
+def make_benchmark_pipeline_airpls_baseline() -> Pipeline:
+    """Return a crop + SavGol + airPLS baseline benchmark pipeline (native backend)."""
+    return Pipeline(
+        steps=[
+            CropByRange(data_range=(300.0, 1700.0)),
+            SmoothSavGol(window_length=11, polyorder=3),
+            BaselineSubtract({"method": "airpls", "lam": 1e5, "niter": 10}),
+        ],
+        backend="native",
+        name="benchmark_airpls_baseline",
+    )
+
+
+def make_benchmark_pipeline_arpls_baseline() -> Pipeline:
+    """Return a crop + SavGol + arPLS baseline benchmark pipeline (native backend)."""
+    return Pipeline(
+        steps=[
+            CropByRange(data_range=(300.0, 1700.0)),
+            SmoothSavGol(window_length=11, polyorder=3),
+            BaselineSubtract({"method": "arpls", "lam": 1e5, "niter": 10}),
+        ],
+        backend="native",
+        name="benchmark_arpls_baseline",
+    )
+
+
+def pipeline_to_benchmark_name(pipeline: Pipeline) -> str:
+    """Return the benchmark label for a pipeline (its ``name`` field)."""
+    return str(getattr(pipeline, "name", "unknown"))

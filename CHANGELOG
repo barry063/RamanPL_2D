@@ -1,5 +1,35 @@
 # Changelog
 
+## [v0.4.3] — 2026-04-13 Mapping backend benchmarking and validation
+
+### Added
+- Benchmark pipeline builder helpers in `preprocessing.py`:
+  `make_benchmark_pipeline_crop_only`, `make_benchmark_pipeline_savgol_only`,
+  `make_benchmark_pipeline_poly_baseline`, `make_benchmark_pipeline_asls_baseline`,
+  `make_benchmark_pipeline_airpls_baseline`, `make_benchmark_pipeline_arpls_baseline`,
+  `pipeline_to_benchmark_name`.
+- `benchmarks/benchmark_mapping_preprocessing.py`: reproducible harness measuring runtime
+  (`time.perf_counter`) and memory (`tracemalloc`) for native vs RamanSPy on three synthetic
+  mapping datasets (3×4, 10×12, 20×24 pixels) across six pipeline configurations. Results
+  written to `benchmarks/results/mapping_preprocess_benchmark.csv`.
+- `tests/test_mapping_backend_parity.py`: six parity tests comparing native vs RamanSPy
+  preprocessing output for all supported Raman mapping pipelines (skipped when RamanSPy absent).
+- `tests/test_mapping_cube_consistency.py`: five tests validating cube shape invariants,
+  axis ordering consistency between backends, and adapter round-trip correctness.
+- `tests/test_mapping_backend_benchmark_smoke.py`: four smoke tests for benchmark harness
+  functions.
+- `tests/test_mapping_memory_runtime_smoke.py`: three smoke tests for runtime and memory
+  measurement helpers.
+
+### Notes
+- Benchmark and validation release; no new analysis features or API changes.
+- RamanBatch, PL RamanSPy, new preprocessing steps, and exporter redesign remain out of scope.
+- Memory measurement uses `tracemalloc` (stdlib); `psutil` not added as a dependency.
+- RamanSPy parity and consistency tests skip gracefully when RamanSPy is not installed.
+- All 20 existing tests continue to pass.
+
+---------
+
 ## [v0.4.2] — 2026-04-12 Validation, regression coverage, and release alignment
 
 ### Added

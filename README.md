@@ -513,6 +513,16 @@ pipe = Pipeline(
 )
 ```
 
+### Mapping backend benchmarking (v0.4.3)
+
+Version v0.4.3 introduces a reproducible benchmark harness
+(`benchmarks/benchmark_mapping_preprocessing.py`) for Raman mapping cube preprocessing. The
+harness compares native and RamanSPy backend runtime and memory usage across six pipeline
+configurations (crop, Savitzky–Golay, polynomial baseline, AsLS, airPLS, arPLS) on three
+synthetic datasets (3×4, 10×12, and 20×24 pixels). Cube consistency and parity tests validate
+axis ordering, shape invariants, and adapter round-trip correctness for both backends;
+RamanBatch integration remains planned for v0.4.4.
+
 ---
 
 # TO-DO
