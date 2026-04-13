@@ -80,64 +80,71 @@ Batch workflows allow automated analysis of many spectra:
 - Waterfall plots for spectral collections
 - Dynamic inspection of spectral fitting results
 
-For features such as `pipeline`, adaptive mapping fits, and diagnostics control, please check the [demonstration](#demonstration) section and example notebooks in `example-usage/`.
+For features such as `pipeline`, adaptive mapping fits, and diagnostics control, please check the [demonstration](#demonstration) section and example notebooks in [`example-usage/`](example-usage/).
+
+For development roadmap and future plans, see the [development roadmap](#development-roadmap) section below.
 
 ---
 
 ## Repository Structure
 
-```bash
+```text
 RamanPL_2D/
-├── example-usage/
-│   ├── Mapping/
-│   ├── multi-plot/
-│   ├── PLfit/
-│   └── Ramanfit/
 ├── src/
-│   ├── install.ipynb
-│   ├── setup.py
 │   └── ramanpl/
 │       ├── __init__.py
-│       ├── RamanFit.py
-│       ├── PLfit.py
-│       ├── Mapping.py
-│       ├── _single_fit_core.py
-│       ├── batch.py
-│       ├── baselineAPI.py
-│       ├── dataImporter.py
-│       ├── exporter.py
-│       ├── operation.py
-│       ├── peak_models.py
-│       ├── preprocessing.py
-│       ├── schema.py
-│       ├── raman_materials.json
-│       ├── integration/
+│       ├── baselineAPI.py                  # Baseline subtraction API and baseline spec parsing
+│       ├── batch.py                        # Batch workflows for Raman / PL spectra
+│       ├── exporter.py                     # CSV / TXT export helpers and metadata provenance
+│       ├── preprocessing.py                # Shared preprocessing pipeline definitions and benchmark pipeline builders
+│       ├── operation.py                    # Spectrum / map arithmetic operations
+│       │
+│       ├── data_importer/
 │       │   ├── __init__.py
-│       │   ├── ramanspy_adapter.py
-│       │   ├── ramanspy_bridge.py
-│       │   └── ramanspy_translate.py
+│       │   └── data_importer.py            # WDF / TXT import for single spectra and mapping data
+│       │
 │       ├── single_fit/
 │       │   ├── __init__.py
-│       │   ├── RamanFit.py
-│       │   ├── PLfit.py
-│       │   └── _single_fit_core.py
-│       └── mapping/
+│       │   ├── _single_fit_core.py         # Shared fitting core logic
+│       │   ├── _raman_fit.py               # Raman single-spectrum fitting
+│       │   └── _pl_fit.py                  # PL single-spectrum fitting
+│       │
+│       ├── mapping/
+│       │   ├── __init__.py
+│       │   ├── _io.py                      # Mapping I/O, coordinates, and layout helpers
+│       │   ├── _preprocess.py              # Mapping preprocessing execution
+│       │   ├── _raman_mapping.py           # Raman mapping workflow
+│       │   └── _pl_mapping.py              # PL mapping workflow
+│       │
+│       └── integration/
 │           ├── __init__.py
-│           ├── _diagnostics.py
-│           ├── _fit_utils.py
-│           ├── _image.py
-│           ├── _io.py
-│           ├── _pl_mapping.py
-│           ├── _preprocess.py
-│           └── _raman_mapping.py
+│           ├── ramanspy_adapter.py         # RamanPL_2D ↔ RamanSPy data conversion helpers
+│           ├── ramanspy_bridge.py          # Backend execution bridge for RamanSPy preprocessing
+│           └── ramanspy_translate.py       # Translation of supported preprocessing pipelines to RamanSPy
+│
+├── benchmarks/
+│   └── benchmark_mapping_preprocessing.py  # v0.4.3 mapping benchmark harness
+│
 ├── tests/
 │   ├── test_preprocessing_backend_resolution.py
 │   ├── test_single_fit_regressions.py
 │   ├── test_data_importer_regressions.py
-│   └── test_export_provenance_regressions.py
-├── requirements.txt
+│   ├── test_export_provenance_regressions.py
+│   ├── test_mapping_backend_parity.py
+│   ├── test_mapping_cube_consistency.py 
+│   ├── test_mapping_backend_benchmark_smoke.py
+│   └── test_mapping_memory_runtime_smoke.py
+│
+├── example-usage/                          # Example notebooks and demonstrations
+│   ├── Ramanfit/
+│   ├── PLfit/
+│   ├── multi-plot/
+│   └── Mapping/
+│
 ├── README.md
-└── CHANGELOG
+├── CHANGELOG
+├── pyproject.toml / setup.py
+└── requirements*.txt
 ```
 
 ## Change log
@@ -531,35 +538,34 @@ RamanBatch integration remains planned for v0.4.4.
 
 > **Roadmap update (v0.4.x)**  
 > Development remains focused on **RamanSPy integration as an optional preprocessing backend**.  
-> The immediate priority is to **benchmark, stabilise, and complete backend behaviour for supported Raman workflows** before moving on to broader analysis features.  
-> Advanced features such as **baseline caching** and **ML-assisted fitting** remain deferred until the preprocessing/backend pathway is mature.
+> The immediate priority is to **complete backend propagation, harden preprocessing internals, and improve performance for supported Raman workflows**.  
+> Advanced features such as **machine-learning-assisted fitting** remain deferred until preprocessing and backend behaviour are stabilised.
 
-### v0.4.x — RamanSPy integration and stabilisation
+### v0.4.x — RamanSPy integration
 
 | Version | Scope | Details |
 |--------|------|--------|
-| **v0.4.0** | Backend infrastructure | - Add optional RamanSPy dependency  <br> - Introduce internal adapter layer (`integration/ramanspy_adapter`)  <br> - Implement spectrum / mapping-cube conversion  <br> - Add preprocessing backend selector (`native / ramanspy / auto`)  <br> - Record backend in metadata |
+| **v0.4.0** | Backend infrastructure | - Add optional RamanSPy dependency  <br> - Introduce internal adapter layer (`integration/ramanspy_adapter`)  <br> - Implement Spectrum / mapping cube conversion  <br> - Add preprocessing backend selector (`native / ramanspy / auto`)  <br> - Record backend in metadata |
 | **v0.4.1** | Pipeline translation and stabilisation | - Translate `preprocessing.Pipeline` → RamanSPy for supported Raman preprocessing steps  <br> - Support: crop, Savitzky–Golay, selected baselines (`poly`, `asls`, `airpls`, `arpls`)  <br> - Preserve native fallback for unsupported steps and workflows  <br> - Stabilise backend propagation through single-spectrum and mapping preprocessing |
 | **v0.4.2** | Validation and documentation | - Add regression tests for `native / auto / ramanspy` backend behaviour  <br> - Add Raman vs PL backend-compatibility checks  <br> - Update notebooks and README examples  <br> - Verify export metadata and preprocessing provenance |
-| **v0.4.3** | Mapping benchmarking and performance review | - Benchmark Raman mapping preprocessing: native vs RamanSPy  <br> - Measure conversion overhead and memory behaviour  <br> - Confirm axis ordering, cube consistency, and representative-dataset correctness  <br> - Use benchmark results to guide the next integration and optimisation steps |
-| **v0.4.4** | Batch integration | - Propagate backend support into `RamanBatch`  <br> - Ensure consistent preprocessing/export metadata  <br> - Maintain existing plotting and table behaviour  <br> - Keep unsupported workflows on the native path |
-| **v0.4.5** | API cleanup and hardening | - Improve backend error messages and consistency  <br> - Reduce remaining duplication in mapping/batch internals  <br> - Consolidate preprocessing/export helper paths  <br> - Tighten fallback and provenance behaviour |
+| **v0.4.3** | Mapping benchmarking and performance review | - Benchmark Raman mapping preprocessing: native vs RamanSPy  <br> - Check conversion overhead and memory behaviour  <br> - Confirm axis ordering and cube consistency on representative datasets |
+| **v0.4.4** | Batch integration | - Propagate backend into `RamanBatch`  <br> - Ensure consistent export metadata  <br> - Maintain existing plotting and table behaviour |
 
-### v0.4.x+ — completion and optimisation
-
-| Version | Scope | Details |
-|--------|------|--------|
-| **v0.4.6** | Performance | - Reduce conversion overhead (cube ↔ RamanSPy)  <br> - Improve memory efficiency  <br> - Profile native vs RamanSPy preprocessing on representative workloads |
-| **v0.4.7** | API cleanup & deprecation removal | - Consolidate the backend interface  <br> - Remove deprecated parameters and legacy pathways  <br> - Finalise preprocessing schema (`baseline_spec` / pipeline spec)  <br> - Improve error handling and messaging |
-
-### v0.5.x — RamanSPy completion and deferred features
+### v0.4.x+ — stabilisation, hardening, and optimisation
 
 | Version | Scope | Details |
 |--------|------|--------|
-| **v0.5.0** | RamanSPy integration milestone + optional analysis | - Treat RamanSPy preprocessing integration as complete for the supported Raman workflow scope  <br> - Expose RamanSPy object interoperability where useful  <br> - Optionally add RamanSPy-based analysis workflows (for example decomposition or clustering) without reopening the core preprocessing architecture |
-| **v0.5.1** | Baseline caching *(deferred)* | - Cache preprocessing results across mapping pixels  <br> - Backend-aware caching for native and RamanSPy pathways |
-| **v0.5.2** | Machine learning fitting *(deferred)* | - ML-assisted peak initialisation  <br> - Explore fit acceleration only after backend behaviour is mature |
+| **v0.4.5** | API cleanup and hardening | - Improve backend error messages and consistency  <br> - Reduce remaining duplication in mapping/batch internals  <br> - Consolidate preprocessing/export helper paths  <br> - Introduce an internal baseline-engine abstraction for `BaselineAPI`  <br> - Split façade / native implementation / optional third-party engine dispatch  <br> - Normalise baseline spec handling and capability checks |
+| **v0.4.6** | Performance | - Reduce conversion overhead (cube ↔ RamanSPy)  <br> - Improve memory efficiency  <br> - Add Whittaker-system / penalty caching for repeated baseline solves on shared axes  <br> - Optimise native `asls` / `airpls` / `arpls` implementations around reusable system structure  <br> - Evaluate optional direct `pybaselines` integration for supported baseline methods  <br> - Profile native legacy vs native optimised vs optional `pybaselines` paths |
+| **v0.4.7** | API cleanup & deprecation removal | - Consolidate backend interface  <br> - Remove deprecated parameters and legacy pathways  <br> - Finalise preprocessing schema (baseline / pipeline spec)  <br> - Improve error handling and messaging  <br> - Finalise baseline-engine interface and optionally expose user control for engine selection |
 
+### v0.5.x — deferred features
+
+| Version | Scope | Details |
+|--------|------|--------|
+| **v0.5.0** | RamanSPy analysis (optional) | - Expose RamanSPy-based analysis workflows (e.g. decomposition, clustering)  <br> - Interoperability with RamanSPy objects |
+| **v0.5.1** | Baseline caching *(deferred)* | - Cache preprocessing results across mapping pixels where appropriate beyond baseline-solver reuse  <br> - Backend-aware caching for native and RamanSPy pathways |
+| **v0.5.5+** | Machine learning fitting *(deferred)* | - ML-assisted peak initialisation  <br> - Explore fit acceleration only after backend behaviour is mature |
 ---
 
 ### Notes
