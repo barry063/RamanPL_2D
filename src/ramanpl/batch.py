@@ -583,6 +583,10 @@ def _infer_metadata_from_fitters(
         "baseline_spec": "baseline_method",
         "preprocessing_recipe": "preprocessing_recipe",
 
+        # backend provenance fields (set by RamanFit after preprocessing)
+        "preprocessing_backend_requested": "preprocessing_backend",
+        "preprocessing_backend_resolved": "preprocessing_backend_resolved",
+
         # optional fitter identity fields
         "materials": "materials",
         "substrate": "substrate",
@@ -1194,8 +1198,15 @@ class _BaseBatch:
         meta_user = dict(metadata or {})
 
         meta_user.setdefault("schema_version", "0.3.8")
+        meta_user.setdefault("export_kind", "batch_fit")
 
         if self._last_fitter_kwargs is not None:
+            if "preprocessing_backend" in self._last_fitter_kwargs:
+                meta_user.setdefault(
+                    "preprocessing_backend_requested",
+                    self._last_fitter_kwargs["preprocessing_backend"],
+                )
+
             if "preprocessing" in self._last_fitter_kwargs:
                 pp = self._last_fitter_kwargs["preprocessing"]
                 if hasattr(pp, "to_dict") and callable(getattr(pp, "to_dict")):

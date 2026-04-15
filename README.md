@@ -528,7 +528,13 @@ harness compares native and RamanSPy backend runtime and memory usage across six
 configurations (crop, Savitzky–Golay, polynomial baseline, AsLS, airPLS, arPLS) on three
 synthetic datasets (3×4, 10×12, and 20×24 pixels). Cube consistency and parity tests validate
 axis ordering, shape invariants, and adapter round-trip correctness for both backends;
-RamanBatch integration remains planned for v0.4.4.
+v0.4.4 completes `RamanBatch` backend integration: `preprocessing_backend="native" | "auto" | "ramanspy"` now propagates cleanly through batch fitting, export metadata records both requested and resolved backend (with `export_kind: "batch_fit"`), and all existing plotting/table behaviour is preserved. Example:
+
+```python
+b = RamanBatch(files, materials=["MoS2"], preprocessing_backend="auto")
+b.fit()
+b.export("raman_fit.txt", wide=True)  # header includes preprocessing_backend_requested/resolved
+```
 
 ---
 
@@ -549,7 +555,7 @@ RamanBatch integration remains planned for v0.4.4.
 | **v0.4.1** | Pipeline translation and stabilisation | - Translate `preprocessing.Pipeline` → RamanSPy for supported Raman preprocessing steps  <br> - Support: crop, Savitzky–Golay, selected baselines (`poly`, `asls`, `airpls`, `arpls`)  <br> - Preserve native fallback for unsupported steps and workflows  <br> - Stabilise backend propagation through single-spectrum and mapping preprocessing |
 | **v0.4.2** | Validation and documentation | - Add regression tests for `native / auto / ramanspy` backend behaviour  <br> - Add Raman vs PL backend-compatibility checks  <br> - Update notebooks and README examples  <br> - Verify export metadata and preprocessing provenance |
 | **v0.4.3** | Mapping benchmarking and performance review | - Benchmark Raman mapping preprocessing: native vs RamanSPy  <br> - Check conversion overhead and memory behaviour  <br> - Confirm axis ordering and cube consistency on representative datasets |
-| **v0.4.4** | Batch integration | - Propagate backend into `RamanBatch`  <br> - Ensure consistent export metadata  <br> - Maintain existing plotting and table behaviour |
+| **v0.4.4** ✅ | Batch integration | - Propagate `preprocessing_backend` into `RamanBatch` via `fitter_kwargs`  <br> - Export metadata records `preprocessing_backend_requested` / `preprocessing_backend_resolved` (uniform → scalar, heterogeneous → list)  <br> - `export_kind: "batch_fit"` added to all batch exports  <br> - Unsupported workflows fall back to native in `auto`; forced `ramanspy` raises on untranslatable pipelines  <br> - All existing plotting/table/summary behaviour preserved |
 
 ### v0.4.x+ — stabilisation, hardening, and optimisation
 

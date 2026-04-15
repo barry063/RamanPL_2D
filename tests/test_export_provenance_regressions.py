@@ -166,3 +166,110 @@ def test_pl_mapping_fit_export_meta_keeps_pl_identity():
     assert meta["preprocessing_backend_requested"] == "native"
     assert meta["preprocessing_backend_resolved"] == "native"
     assert meta["preprocessing_recipe"] == [{"step": "crop", "range": [1.82, 1.98]}]
+
+
+# ---------------------------------------------------------------------------
+# Batch export provenance tests (v0.4.4)
+# ---------------------------------------------------------------------------
+
+def _write_raman_txt(path, x, y):
+    import numpy as np
+    data = np.column_stack([x, y])
+    np.savetxt(path, data, delimiter="\t", header="wavenumber\tintensity", comments="")
+
+
+def _fit_batch(tmp_path, n=2, **kwargs):
+    """Create and fit a minimal RamanBatch for export tests."""
+    from ramanpl.batch import RamanBatch
+
+    x = np.linspace(350.0, 430.0, 81)
+    rng = np.random.default_rng(7)
+    files = []
+    for i in range(n):
+        y = 10.0 + 80.0 * np.exp(-0.5 * ((x - 385.0) / 4.0) ** 2) + rng.normal(0, 0.3, x.size)
+        p = tmp_path / f"spec_{i}.txt"
+        _write_raman_txt(str(p), x, y)
+        files.append(str(p))
+
+    custom_peaks = {"test_peak": ([370.0, 1.0, 0.01], [400.0, 15.0, 300.0])}
+    batch = RamanBatch(
+        files,
+        custom_peaks=custom_peaks,
+        normalize=False,
+        smoothing=False,
+        background_remove=False,
+        **kwargs,
+    )
+    batch.fit()
+    return batch
+
+
+def test_raman_batch_export_meta_includes_backend_provenance(tmp_path):
+    """Batch TXT export header must contain preprocessing_backend_requested and _resolved."""
+    batch = _fit_batch(tmp_path, preprocessing_backend="native")
+    out = tmp_path / "batch_out.txt"
+    batch.export(str(out), wide=True)
+
+    text = out.read_text(encoding="utf-8")
+
+    assert "preprocessing_backend_requested" in text, (
+        "TXT export header is missing 'preprocessing_backend_requested'"
+    )
+    assert "preprocessing_backend_resolved" in text, (
+        "TXT export header is missing 'preprocessing_backend_resolved'"
+    )
+
+
+def test_raman_batch_export_meta_uniform_backend_is_scalar(tmp_path):
+    """When all spectra use the same backend, the metadata value must be a scalar string."""
+    import json
+
+    batch = _fit_batch(tmp_path, n=3, preprocessing_backend="native")
+    out = tmp_path / "batch_uniform.txt"
+    batch.export(str(out), wide=True)
+
+    # Extract the header lines (lines starting with #) and parse the value
+    header_lines = [
+        ln[2:].strip()  # strip leading "# "
+        for ln in out.read_text(encoding="utf-8").splitlines()
+        if ln.startswith("# ")
+    ]
+
+    resolved_line = next(
+        (ln for ln in header_lines if ln.startswith("preprocessing_backend_resolved")),
+        None,
+    )
+    assert resolved_line is not None, "Header missing 'preprocessing_backend_resolved'"
+
+    # Value is the JSON after the colon
+    _, raw_value = resolved_line.split(":", 1)
+    value = json.loads(raw_value.strip())
+
+    # Uniform batch → scalar string, not a list
+    assert isinstance(value, str), (
+        f"Uniform backend should serialise as a string, got {type(value).__name__}: {value!r}"
+    )
+    assert value == "native"
+
+
+def test_raman_batch_txt_export_writes_export_kind(tmp_path):
+    """Batch TXT export header must contain export_kind: 'batch_fit'."""
+    import json
+
+    batch = _fit_batch(tmp_path, preprocessing_backend="native")
+    out = tmp_path / "batch_kind.txt"
+    batch.export(str(out), wide=True)
+
+    header_lines = [
+        ln[2:].strip()
+        for ln in out.read_text(encoding="utf-8").splitlines()
+        if ln.startswith("# ")
+    ]
+
+    kind_line = next(
+        (ln for ln in header_lines if ln.startswith("export_kind")),
+        None,
+    )
+    assert kind_line is not None, "Header missing 'export_kind'"
+    _, raw_value = kind_line.split(":", 1)
+    assert json.loads(raw_value.strip()) == "batch_fit"

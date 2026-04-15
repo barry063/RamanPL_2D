@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.4.4] — 2026-04-15 Batch backend propagation and export provenance
+
+### Added
+- `preprocessing_backend` kwarg now propagates cleanly from `RamanBatch` through
+  `fit_spectra_batch` into each `RamanFit` fitter instance via `fitter_kwargs`.
+- `_infer_metadata_from_fitters()` in `batch.py` now extracts `preprocessing_backend_requested`
+  and `preprocessing_backend_resolved` from fitter objects after fitting. Uniform values across
+  the batch serialise as a scalar; heterogeneous values serialise as a list.
+- `_BaseBatch.export()` now writes `export_kind: "batch_fit"` and a fallback
+  `preprocessing_backend_requested` entry (from `_last_fitter_kwargs`) to all batch exports,
+  aligning batch provenance metadata with the existing mapping export schema.
+- `tests/test_batch_backend_regressions.py` (new file, 6 tests):
+  - Backend resolution: `auto` + supported pipeline → `ramanspy`; `auto` + untranslatable
+    pipeline → native fallback; forced `ramanspy` + untranslatable → `NotImplementedError`.
+  - Behaviour preservation: `plot_overlay` / `plot_waterfall` return `(fig, ax)` and preserve
+    source ordering; long-format DataFrame has exactly `{source, peak, position, fwhm,
+    peak_height}`; `summary_by_peak()` produces `count / mean / std` columns per peak.
+- `tests/test_export_provenance_regressions.py` extended with 3 batch export provenance tests:
+  - TXT header contains `preprocessing_backend_requested` and `preprocessing_backend_resolved`.
+  - Uniform backend serialises as a scalar string (not a list).
+  - TXT header contains `export_kind: "batch_fit"`.
+
+### Notes
+- `PLBatch` is unchanged; PL RamanSPy support remains out of scope.
+- No changes to `exporter.py`, `preprocessing.py`, or `ramanspy_bridge.py`.
+- All 47 tests pass (34 existing + 13 new).
+
+---------
+
 ## [v0.4.3] — 2026-04-13 Mapping backend benchmarking and validation
 
 ### Added

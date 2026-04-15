@@ -9,6 +9,8 @@
 # params_per_peak: 3
 # baseline_spec: {"method": "poly", "poly_order": 3}
 # preprocessing_recipe: {"name": "crop_smooth_arpls", "backend": "native", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": {"method": "arpls"}, "clip_nonnegative": true}]}
+# preprocessing_backend_requested: "native"
+# preprocessing_backend_resolved: "native"
 # materials: ["WS2"]
 # substrate: "Si"
 # background_remove: false
@@ -24,6 +26,7 @@
 # fitter_class: "RamanFit"
 # n_spectra: 3
 # schema_version: "0.3.8"
+# export_kind: "batch_fit"
 # preprocessing: {"name": "crop_smooth_arpls", "backend": "native", "steps": [{"name": "crop", "data_range": [200, 800]}, {"name": "savgol", "window_length": 11, "polyorder": 3}, {"name": "baseline", "baseline_spec": {"method": "arpls"}, "clip_nonnegative": true}]}
 # fit_spectrum_kwargs: {}
 # 
