@@ -652,13 +652,30 @@ def _infer_metadata_from_fitters(
         merged = _merge(vals)
         if merged is not None:
             meta["custom_peaks"] = merged
-    
+
     # Removed peaks (list / mixed)
     if any(hasattr(f, "remove_peaks_list") for f in fitters):
         vals = [getattr(f, "remove_peaks_list", None) for f in fitters]
         merged = _merge(vals)
         if merged is not None:
             meta["remove_peaks"] = merged
+
+    # Backend fallback reason: extracted from canonical _backend_outcome when available.
+    # Uses shared serialise_backend_provenance for consistent key naming.
+    if any(hasattr(f, "_backend_outcome") for f in fitters):
+        from ramanpl.exporter import serialise_backend_provenance
+
+        outcomes = [getattr(f, "_backend_outcome", None) for f in fitters]
+        # Collect fallback_reason values from all outcomes that have fallback_used=True
+        fallback_reasons = [
+            o.get("fallback_reason")
+            for o in outcomes
+            if isinstance(o, dict) and o.get("fallback_used", False) and o.get("fallback_reason")
+        ]
+        if fallback_reasons:
+            merged_reason = _merge(fallback_reasons)
+            if merged_reason is not None:
+                meta["preprocessing_backend_fallback_reason"] = merged_reason
 
     # Fitter identity
     fitter_names = [type(f).__name__ for f in fitters]

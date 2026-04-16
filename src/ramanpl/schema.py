@@ -55,6 +55,40 @@ def normalise_preprocess_backend(value: str) -> PreprocessBackend:
     return s  # type: ignore[return-value]
 
 
+# Canonical keys that a backend outcome dict must contain.
+# Used to guard against drift between resolve_backend_outcome() and callers.
+BACKEND_OUTCOME_REQUIRED_KEYS: frozenset = frozenset({
+    "requested_backend",
+    "resolved_backend",
+    "execution_ready",
+    "ramanspy_available",
+    "supported_for_input",
+    "translation_supported",
+    "unsupported_steps",
+    "fallback_used",
+    "fallback_reason",
+    "failure_mode",
+    "modality",
+    "axis_kind",
+})
+
+
+def validate_backend_outcome_keys(outcome: Dict[str, Any]) -> None:
+    """
+    Raise ValueError if outcome is missing any required canonical backend keys.
+
+    Parameters
+    ----------
+    outcome
+        Dict returned by resolve_backend_outcome().
+    """
+    missing = BACKEND_OUTCOME_REQUIRED_KEYS - set(outcome.keys())
+    if missing:
+        raise ValueError(
+            f"Backend outcome dict is missing required keys: {sorted(missing)}"
+        )
+
+
 def normalise_baseline_spec(
     baseline_method: Any,
     *,

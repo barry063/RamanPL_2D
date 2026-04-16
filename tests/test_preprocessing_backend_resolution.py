@@ -147,7 +147,8 @@ def test_auto_falls_back_to_native_when_translation_is_not_supported(monkeypatch
     assert info["execution_ready"] is True
     assert info["translation_supported"] is False
     assert info["unsupported_steps"] == ["BaselineSubtract(method='gaussian')"]
-    assert "not yet implemented" in info["reason"]
+    assert info["fallback_used"] is True
+    assert "not yet implemented" in info["fallback_reason"]
 
 
 def test_forced_ramanspy_raises_for_unsupported_translation(monkeypatch):

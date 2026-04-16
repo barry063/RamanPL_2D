@@ -90,6 +90,47 @@ def _meta_value_to_text(v: Any) -> str:
     except Exception:
         return str(v)
 
+def serialise_backend_provenance(outcome: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Extract the stable public subset of a canonical backend outcome dict for export.
+
+    This is the single serialisation point used by single-fit, mapping, and batch
+    to ensure consistent provenance keys across all workflow types.
+
+    Always includes:
+        preprocessing_backend_requested
+        preprocessing_backend_resolved
+
+    Conditionally includes:
+        preprocessing_backend_fallback_reason  (only when fallback_used=True)
+
+    Parameters
+    ----------
+    outcome
+        A canonical backend outcome dict as produced by resolve_backend_outcome().
+        If None or empty, returns an empty dict.
+    """
+    if not outcome:
+        return {}
+
+    result: Dict[str, Any] = {}
+
+    requested = outcome.get("requested_backend")
+    if requested is not None:
+        result["preprocessing_backend_requested"] = requested
+
+    resolved = outcome.get("resolved_backend")
+    if resolved is not None:
+        result["preprocessing_backend_resolved"] = resolved
+
+    if outcome.get("fallback_used", False):
+        reason = outcome.get("fallback_reason")
+        if reason is not None:
+            result["preprocessing_backend_fallback_reason"] = reason
+
+    return result
+
+
 def build_export_meta(
     *,
     export_kind: str,

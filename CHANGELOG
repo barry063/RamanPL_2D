@@ -1,5 +1,62 @@
 # Changelog
 
+## [v0.4.5] — 2026-04-16 Backend API cleanup and provenance hardening
+
+### Added
+- `resolve_backend_outcome()` in `integration/ramanspy_bridge.py`: canonical backend
+  decision function that combines availability checks, input compatibility, and pipeline
+  translation support into a single outcome dict with fields `fallback_used`,
+  `fallback_reason`, and `failure_mode`. Replaces scattered per-caller decision logic.
+- `format_backend_fallback_reason()` and `format_backend_error_message()` helpers in
+  `ramanspy_bridge.py` for consistent user-facing message generation.
+- `inspect_pipeline_backend_support()` in `preprocessing.py`: public helper that inspects
+  a pipeline's translation support without committing to a full backend resolution.
+- `serialise_backend_provenance()` in `exporter.py`: single shared helper that extracts the
+  stable public subset (`preprocessing_backend_requested`, `preprocessing_backend_resolved`,
+  optionally `preprocessing_backend_fallback_reason`) from a canonical outcome dict.
+- `BACKEND_OUTCOME_REQUIRED_KEYS` frozenset and `validate_backend_outcome_keys()` in
+  `schema.py` to guard against outcome dict key drift.
+- `_backend_outcome` attribute on `RamanFit` and `PLfit` fitter objects (alias for
+  `preprocessing_backend_info`) giving all callers a stable provenance handle.
+- New test files:
+  - `tests/test_backend_message_consistency.py` (12 tests): fallback/error wording stable
+    across auto/forced ramanspy scenarios; message helper unit tests.
+  - `tests/test_backend_provenance_consistency.py` (14 tests): serialisation consistency,
+    pipeline support summary, schema guard.
+  - `tests/test_single_fit_backend_meta.py` (6 tests): fitter `_backend_outcome` attribute
+    correctness, export metadata provenance fields.
+
+### Changed
+- `_resolve_pipeline_backend_for_input()` in `preprocessing.py` refactored to a thin
+  wrapper: calls `pipeline_supports_ramanspy_translation()` then delegates the full
+  decision to `resolve_backend_outcome()`. All decision logic now lives in one place.
+- `build_single_fit_export_metadata()` in `_single_fit_core.py` now calls
+  `serialise_backend_provenance()` when `_backend_outcome` is available, providing
+  consistent provenance keys in single-fit exports.
+- `_build_mapping_fit_export_meta()` in `mapping/_preprocess.py` now reads
+  `preprocessing_backend_info` from `_preprocess_meta` and uses
+  `serialise_backend_provenance()` instead of assembling provenance fields directly.
+  Mapping exports now correctly reflect the resolved backend after preprocessing runs.
+- `_infer_metadata_from_fitters()` in `batch.py` now additionally extracts
+  `preprocessing_backend_fallback_reason` from fitter `_backend_outcome` objects.
+
+### Fixed
+- Mapping exports previously always wrote `preprocessing_backend_resolved: null` because
+  `self.preprocessing_backend_resolved` was never updated after preprocessing. Now reads
+  the resolved backend from `_preprocess_meta["preprocessing_backend_info"]` via the
+  shared serialiser.
+- Inconsistent fallback reason wording: previously only set in some paths, now produced
+  by a single `_build_auto_fallback_reason()` helper for all callers.
+- `preprocessing_backend_fallback_reason` absent from batch and single-fit exports even
+  when auto fallback occurred. Now emitted consistently by `serialise_backend_provenance()`.
+
+### Notes
+- No new analysis features, no PL RamanSPy expansion, no performance work.
+- All plotting, table, and numerical preprocessing behaviour is unchanged.
+- 77 tests pass (47 existing + 30 new).
+
+---------
+
 ## [v0.4.4] — 2026-04-15 Batch backend propagation and export provenance
 
 ### Added

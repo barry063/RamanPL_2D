@@ -41,14 +41,14 @@ except Exception:  # pragma: no cover (fallback for running as a script)
     from dataImporter import DataImporter
 
 try:
-    from .integration.ramanspy_bridge import resolve_preprocessing_backend
+    from .integration.ramanspy_bridge import resolve_preprocessing_backend, resolve_backend_outcome
     from .integration.ramanspy_translate import (
         pipeline_supports_ramanspy_translation,
         apply_pipeline_ramanspy_single,
         apply_pipeline_ramanspy_mapping,
     )
 except Exception:  # pragma: no cover
-    from ramanpl.integration.ramanspy_bridge import resolve_preprocessing_backend
+    from ramanpl.integration.ramanspy_bridge import resolve_preprocessing_backend, resolve_backend_outcome
     from ramanpl.integration.ramanspy_translate import (
         pipeline_supports_ramanspy_translation,
         apply_pipeline_ramanspy_single,
@@ -111,6 +111,42 @@ class MappingPreprocessResult:
         object.__setattr__(self, "axis_kind", normalise_axis_kind(self.axis_kind))
         object.__setattr__(self, "meta", dict(self.meta))
 
+def inspect_pipeline_backend_support(
+    pipeline: "Pipeline | None",
+    modality: str,
+    axis_kind: str,
+) -> Dict[str, Any]:
+    """
+    Inspect whether a pipeline can be translated to RamanSPy for the given input.
+
+    This is a public helper for tests and callers that need to query translation
+    support without committing to a full backend resolution.
+
+    Returns
+    -------
+    dict with keys:
+        pipeline_translatable : bool
+        unsupported_steps : list[str]
+        translation_reason : str or None  (explanation when not translatable)
+    """
+    if pipeline is None:
+        return {
+            "pipeline_translatable": True,
+            "unsupported_steps": [],
+            "translation_reason": None,
+        }
+
+    translatable, unsupported = pipeline_supports_ramanspy_translation(pipeline)
+    steps = list(unsupported)
+    reason = None if translatable else f"Pipeline contains unsupported steps: {steps}"
+
+    return {
+        "pipeline_translatable": translatable,
+        "unsupported_steps": steps,
+        "translation_reason": reason,
+    }
+
+
 def _resolve_pipeline_backend_for_input(
     pipeline: "Pipeline | None",
     *,
@@ -120,81 +156,28 @@ def _resolve_pipeline_backend_for_input(
     """
     Resolve preprocessing backend selection for the current input.
 
-    v0.4.1 policy
-    -------------
-    - native: always native
-    - auto: use RamanSPy when available, supported for input, and all pipeline
-      steps are currently translatable
-    - ramanspy: require availability + supported input + translatable steps
+    Thin wrapper around resolve_backend_outcome() that handles pipeline
+    translation inspection before delegating the final decision.
     """
     requested_backend = "native" if pipeline is None else getattr(pipeline, "backend", "native")
 
-    info = dict(resolve_preprocessing_backend(
+    if pipeline is None:
+        return resolve_backend_outcome(
+            requested_backend=requested_backend,
+            modality=modality,
+            axis_kind=axis_kind,
+            translation_supported=True,
+            unsupported_steps=[],
+        )
+
+    translation_supported, unsupported_steps = pipeline_supports_ramanspy_translation(pipeline)
+    return resolve_backend_outcome(
         requested_backend=requested_backend,
         modality=modality,
         axis_kind=axis_kind,
-    ))
-
-    if pipeline is None:
-        info["translation_supported"] = True
-        info["unsupported_steps"] = []
-        return info
-
-    translation_supported, unsupported_steps = pipeline_supports_ramanspy_translation(pipeline)
-    info["translation_supported"] = translation_supported
-    info["unsupported_steps"] = list(unsupported_steps)
-
-    # Explicit native always stays native
-    if info["requested_backend"] == "native":
-        info["resolved_backend"] = "native"
-        info["execution_ready"] = True
-        info["reason"] = None
-        return info
-
-    # Auto: promote to RamanSPy only when everything is ready
-    if info["requested_backend"] == "auto":
-        if (
-            info["ramanspy_available"]
-            and info["supported_for_input"]
-            and translation_supported
-        ):
-            info["resolved_backend"] = "ramanspy"
-            info["execution_ready"] = True
-            info["reason"] = None
-        else:
-            info["resolved_backend"] = "native"
-            info["execution_ready"] = True
-            if (
-                info["ramanspy_available"]
-                and info["supported_for_input"]
-                and not translation_supported
-            ):
-                info["reason"] = (
-                    "Using native backend because RamanSPy translation is not yet "
-                    f"implemented for: {unsupported_steps}"
-                )
-        return info
-
-    # Forced RamanSPy: must be fully supported
-    if info["requested_backend"] == "ramanspy":
-        if not info["ramanspy_available"]:
-            raise NotImplementedError(info["reason"])
-        if not info["supported_for_input"]:
-            raise NotImplementedError(info["reason"])
-        if not translation_supported:
-            raise NotImplementedError(
-                "RamanSPy translation is currently implemented for "
-                "CropByRange, SmoothSavGol, and BaselineSubtract "
-                "(poly / asls / airpls / arpls). "
-                f"Unsupported steps: {unsupported_steps}"
-            )
-
-        info["resolved_backend"] = "ramanspy"
-        info["execution_ready"] = True
-        info["reason"] = None
-        return info
-
-    raise ValueError(f"Unsupported preprocessing backend '{info['requested_backend']}'.")
+        translation_supported=translation_supported,
+        unsupported_steps=list(unsupported_steps),
+    )
 
 class PreprocessStep(abc.ABC):
     """

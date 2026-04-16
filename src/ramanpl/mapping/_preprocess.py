@@ -163,9 +163,22 @@ class _MappingPreprocessMixin:
         coord_mode = normalise_coord_mode(coord_mode)
 
         try:
-            from ..exporter import build_export_meta
+            from ..exporter import build_export_meta, serialise_backend_provenance
         except Exception:  # pragma: no cover
-            from exporter import build_export_meta
+            from exporter import build_export_meta, serialise_backend_provenance
+
+        # Use canonical backend provenance from preprocessing result when available,
+        # falling back to instance attributes for compatibility.
+        backend_outcome = self._preprocess_meta.get("preprocessing_backend_info") if self._preprocess_meta else None
+        provenance = serialise_backend_provenance(backend_outcome) if backend_outcome else {}
+
+        if not provenance:
+            provenance = {
+                k: v for k, v in {
+                    "preprocessing_backend_requested": getattr(self, "preprocessing_backend", None),
+                    "preprocessing_backend_resolved": getattr(self, "preprocessing_backend_resolved", None),
+                }.items() if v is not None
+            }
 
         return build_export_meta(
             export_kind="mapping_fit",
@@ -182,12 +195,11 @@ class _MappingPreprocessMixin:
             params_per_peak=getattr(self, "params_per_peak", None),
             baseline_spec=getattr(self, "baseline_method", None),
             preprocessing_recipe=getattr(self, "preprocessing_recipe", None),
-            preprocessing_backend_requested=getattr(self, "preprocessing_backend", None),
-            preprocessing_backend_resolved=getattr(self, "preprocessing_backend_resolved", None),
             background_remove=getattr(self, "background_remove", None),
             smoothing=getattr(self, "smoothing", None),
             smooth_window=getattr(self, "smooth_window", None),
             smooth_poly=getattr(self, "smooth_poly", None),
+            **provenance,
         )
 
     def _params_to_export_dict(self, xaxis, peak_labels, params, intensity_scale=1.0):

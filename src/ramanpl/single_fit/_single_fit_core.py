@@ -249,6 +249,8 @@ def build_single_fit_export_metadata(
     """
     Shared export metadata builder for RamanFit / PLfit.
     """
+    from ..exporter import serialise_backend_provenance
+
     meta = {
         "schema_version": "0.3.8",
         "spectrum_type": getattr(obj, "spectrum_type", None),
@@ -277,6 +279,19 @@ def build_single_fit_export_metadata(
 
     if pp is not None:
         meta["preprocessing_recipe"] = pp
+
+    # Backend provenance: use canonical serialiser when _backend_outcome is available,
+    # otherwise fall back to direct attribute reading for older fitter objects.
+    backend_outcome = getattr(obj, "_backend_outcome", None) or getattr(obj, "preprocessing_backend_info", None)
+    if backend_outcome:
+        meta.update(serialise_backend_provenance(backend_outcome))
+    else:
+        requested = getattr(obj, "preprocessing_backend", None)
+        resolved = getattr(obj, "preprocessing_backend_resolved", None)
+        if requested is not None:
+            meta["preprocessing_backend_requested"] = requested
+        if resolved is not None:
+            meta["preprocessing_backend_resolved"] = resolved
 
     if extra_meta:
         meta.update(extra_meta)

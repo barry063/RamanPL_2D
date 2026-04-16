@@ -278,6 +278,7 @@ class RamanFit:
         self._baseline = ds.meta.get("_baseline_last", None)
         self.preprocessing_backend_resolved = ds.meta.get("preprocessing_backend", None)
         self.preprocessing_backend_info = ds.meta.get("preprocessing_backend_info", None)
+        self._backend_outcome = self.preprocessing_backend_info
 
         if (self._smoothed_spectra is not None) or (self._baseline is not None):
             self._corrected_spectra = self.processed_spectra.copy()
