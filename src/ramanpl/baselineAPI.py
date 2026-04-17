@@ -10,6 +10,32 @@ from scipy.sparse.linalg import spsolve
 from .schema import baseline_spec_to_runtime, normalise_baseline_spec
 
 
+# --- Shared Whittaker helpers ------------------------------------------------
+
+def _whittaker_diff_matrix(n: int, diff_order: int) -> sparse.csc_matrix:
+    """Build the difference operator D of shape (n-diff_order, n) as csc."""
+    if diff_order == 2 and n > 2:
+        return sparse.diags([1, -2, 1], [0, 1, 2], shape=(n - 2, n), format="csc")
+    # General: compose first-order difference operators D_{k-1} @ ... @ D_1
+    D = sparse.diags([-1, 1], [0, 1], shape=(n - 1, n), format="csc")
+    for _ in range(diff_order - 1):
+        n_cur = D.shape[0]
+        D = sparse.diags([-1, 1], [0, 1], shape=(n_cur - 1, n_cur), format="csc") @ D
+    return D.tocsc()
+
+
+# Cache D^T D by (n, diff_order) — invariant across calls with the same spectrum length.
+_DtD_cache: dict = {}
+
+
+def _get_cached_DtD(n: int, diff_order: int) -> sparse.csc_matrix:
+    key = (n, diff_order)
+    if key not in _DtD_cache:
+        D = _whittaker_diff_matrix(n, diff_order)
+        _DtD_cache[key] = (D.T @ D).tocsc()
+    return _DtD_cache[key]
+
+
 @dataclass(frozen=True)
 class BaselineResult:
     """Container for baseline subtraction results."""
@@ -236,13 +262,9 @@ class BaselineAPI:
         if diff_order < 1:
             raise ValueError(f"diff_order must be >= 1. Got {diff_order}.")
 
-        # Difference matrix
-        D = sparse.diags([1, -2, 1], [0, 1, 2], shape=(n - 2, n), format="csc")
-        if diff_order != 2:
-            # Generalise by repeated differencing
-            D = sparse.eye(n, format="csc")
-            for _ in range(diff_order):
-                D = sparse.diff(D, n=1, axis=0).tocsc()
+        # DtD is constant within a call (D depends only on n, diff_order); cache across calls.
+        DtD = _get_cached_DtD(n, diff_order)
+        lam_DtD = lam * DtD  # W and z change each iteration; this does not
 
         # Initial weights
         w = np.ones(n, dtype=float)
@@ -256,7 +278,7 @@ class BaselineAPI:
 
         for _ in range(niter):
             W = sparse.diags(w, 0, shape=(n, n), format="csc")
-            Z = W + lam * (D.T @ D)
+            Z = W + lam_DtD
             z = spsolve(Z, w * y)
 
             # Asymmetric weights: penalise points above baseline more strongly
@@ -316,12 +338,9 @@ class BaselineAPI:
         if tol <= 0:
             raise ValueError(f"tol must be > 0. Got {tol}.")
 
-        # Difference matrix
-        D = sparse.diags([1, -2, 1], [0, 1, 2], shape=(n - 2, n), format="csc")
-        if diff_order != 2:
-            D = sparse.eye(n, format="csc")
-            for _ in range(diff_order):
-                D = sparse.diff(D, n=1, axis=0).tocsc()
+        # DtD is constant within a call (D depends only on n, diff_order); cache across calls.
+        DtD = _get_cached_DtD(n, diff_order)
+        lam_DtD = lam * DtD
 
         # Initial weights
         w = np.ones(n, dtype=float)
@@ -338,7 +357,7 @@ class BaselineAPI:
             w_prev = w.copy()
 
             W = sparse.diags(w, 0, shape=(n, n), format="csc")
-            Z = W + lam * (D.T @ D)
+            Z = W + lam_DtD
             z = spsolve(Z, w * y)
 
             d = y - z
@@ -434,15 +453,9 @@ class BaselineAPI:
         if ridge < 0:
             raise ValueError(f"ridge must be >= 0. Got {ridge}.")
 
-        # Difference matrix
-        D = sparse.diags([1, -2, 1], [0, 1, 2], shape=(n - 2, n), format="csc")
-        if diff_order != 2:
-            D = sparse.eye(n, format="csc")
-            for _k in range(diff_order):
-                D = sparse.diff(D, n=1, axis=0).tocsc()
-
-        DtD = (D.T @ D).tocsc()
-        I = sparse.eye(n, format="csc")
+        DtD = _get_cached_DtD(n, diff_order)
+        # lam and ridge are call-level constants; pre-compute to avoid per-iteration sparse ops.
+        lam_DtD_ridge_I = lam * DtD + ridge * sparse.eye(n, format="csc")
 
         # Mask handling
         if mask is not None:
@@ -464,7 +477,7 @@ class BaselineAPI:
         for i in range(1, niter + 1):
             # Solve (W + lam*DtD + ridge*I) z = W y
             W = sparse.diags(w, 0, shape=(n, n), format="csc")
-            Z = W + lam * DtD + ridge * I
+            Z = W + lam_DtD_ridge_I
             z = spsolve(Z, w * y)
 
             d = y - z

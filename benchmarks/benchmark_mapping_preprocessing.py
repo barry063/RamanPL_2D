@@ -67,17 +67,19 @@ _DEFAULT_OUTPUT = Path(__file__).parent / "results" / "mapping_preprocess_benchm
 # ---------------------------------------------------------------------------
 
 def build_mapping_benchmark_cases():
-    """Return a list of (name, x, cube) tuples for three synthetic Raman mapping datasets."""
+    """Return a list of (name, x, cube) tuples for five synthetic Raman mapping datasets."""
     rng = np.random.default_rng(0)
-    x = np.linspace(200.0, 1800.0, 150)
-    peak = np.exp(-0.5 * ((x - 520.0) / 15.0) ** 2)
 
     cases = []
-    for name, shape in [
-        ("small_3x4",   (3,  4,  150)),
-        ("medium_10x12", (10, 12, 150)),
-        ("larger_20x24", (20, 24, 150)),
+    for name, n_pts, shape in [
+        ("small_3x4",      150, (3,  4,  150)),
+        ("medium_10x12",   150, (10, 12, 150)),
+        ("larger_20x24",   150, (20, 24, 150)),
+        ("extended_30x30", 150, (30, 30, 150)),
+        ("tall_axis_10x12", 500, (10, 12, 500)),
     ]:
+        x = np.linspace(200.0, 1800.0, n_pts)
+        peak = np.exp(-0.5 * ((x - 520.0) / 15.0) ** 2)
         cube = (peak[None, None, :] + rng.uniform(0.0, 0.05, shape)).astype(float)
         cases.append((name, x, cube))
     return cases

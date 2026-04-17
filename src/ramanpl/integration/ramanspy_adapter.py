@@ -167,8 +167,8 @@ def to_ramanspy_image(
             f"cube_yxn.shape[2] ({cube_yxn.shape[2]}) must match len(x) ({x.size})."
         )
 
-    # RamanPL internal convention: [Y, X, N]
-    # RamanSPy image convention for this adapter: [X, Y, N]
+    # RamanPL convention: [Y, X, N]; RamanSPy image convention: [X, Y, N].
+    # The transpose is unavoidable — conversion overhead not further reducible here (v0.4.6).
     cube_xyn = np.transpose(cube_yxn, (1, 0, 2))
 
     return rp.SpectralImage(cube_xyn, spectral_axis=x)

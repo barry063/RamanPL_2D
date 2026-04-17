@@ -11,7 +11,9 @@
 # peak_profile: "pvoigt"
 # params_per_peak: 4
 # baseline_spec: {"method": "poly", "poly_order": 1}
-# preprocessing_recipe: {"name": "legacy_single_spectrum", "steps": []}
+# preprocessing_recipe: {"name": "legacy_single_spectrum", "backend": "native", "steps": []}
+# preprocessing_backend_requested: "native"
+# preprocessing_backend_resolved: "native"
 # background_remove: false
 # baseline_method: {"method": "poly", "poly_order": 1}
 # poly_degree: 1
@@ -22,5 +24,5 @@
 # intensity_scale(peak_intensity): 1152.0439453125
 # 
 Peak	Centre	FWHM	Eta	Amp	PeakHeight_norm	PeakHeight
-trion	1.8100626610370572	0.08251071963373843	0.9611472319921782	0.0686337128107192	0.5393359508442228	621.338716659447
-exciton	1.8343416893808977	0.051404852372388725	0.3563895668270876	0.03158685891197854	0.5109425579193034	588.6282802534149
+trion	1.8100626613999455	0.08251071973289505	0.9611472262902799	0.06863371386543587	0.5393359599080786	621.3387271014071
+exciton	1.8343416894990372	0.05140485210381671	0.3563895429348838	0.031586857811175345	0.5109425472343989	588.6282679439353

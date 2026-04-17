@@ -1,5 +1,55 @@
 # Changelog
 
+## [v0.4.6] — 2026-04-17 Performance profiling and baseline optimisation
+
+### Optimised
+- `baselineAPI.py` — `asLS`, `arPLS`, `airPLS`: extracted shared `_whittaker_diff_matrix()`
+  helper to deduplicate difference-operator construction across all three methods. Added
+  `_DtD_cache` (module-level dict) and `_get_cached_DtD(n, diff_order)` so `D^T D` is
+  computed once per `(n, diff_order)` key and reused across all calls. Pre-computed
+  `lam * DtD` (and for airPLS, `ridge * I`) before each method's iteration loop so that
+  only `W` and `Z` are rebuilt per iteration. Eliminates `O(niter)` sparse matrix products
+  per spectrum; gain is proportional to `niter` and spectrum length.
+
+### Added
+- `benchmarks/benchmark_baseline_kernels.py` (new): microbenchmark sweeping spectrum length
+  (128, 512, 1024) across all five native baseline methods. Records runtime and peak memory.
+  Does not test scientific correctness — see `test_baseline_numerical_parity.py` for that.
+- Extended `benchmarks/benchmark_mapping_preprocessing.py` with two additional dataset sizes:
+  `extended_30x30` (150-point axis) and `tall_axis_10x12` (500-point axis).
+- `tests/test_baseline_numerical_parity.py` (new): 11 tests verifying asLS, arPLS, airPLS
+  numerical output against reference implementations within `atol=1e-10`.
+- `tests/test_baseline_operator_cache.py` (new): 9 tests covering cache identity, keying,
+  numerical correctness, and `_whittaker_diff_matrix` shape/correctness.
+- `tests/test_batch_performance_path_regressions.py` (new): 4 batch regression tests
+  confirming fit output, summary table shape, and provenance fields are unchanged after
+  lower-level baseline optimisation.
+- `tests/test_mapping_backend_parity.py`: added two native self-consistency tests
+  (`asLS`, `arPLS`) confirming the DtD cache does not cause state mutation between calls.
+- `tests/test_mapping_cube_consistency.py`: added cube shape + finite-values test for asLS
+  preprocessing via the DtD-cached path.
+
+### Changed
+- `integration/ramanspy_adapter.py`: added inline comment documenting that the `[Y,X,N] →
+  [X,Y,N]` transpose is unavoidable (conversion overhead not further reducible in this build).
+- `README.md` repository structure section corrected to reflect actual source layout: fixed
+  `single_fit/` filenames (`RamanFit.py`, `PLfit.py`), removed non-existent `data_importer/`
+  subpackage, added missing top-level modules (`dataImporter.py`, `peak_models.py`, `schema.py`,
+  `raman_materials.json`), added missing `mapping/` modules (`_diagnostics.py`, `_fit_utils.py`,
+  `_image.py`), noted compatibility façades, listed all 15 test files, and updated benchmarks
+  section to include `benchmark_baseline_kernels.py`.
+
+### Notes
+- Scientific behaviour and public API are unchanged.
+- Gains are strongest for `asLS`/`arPLS` on long spectra or large mapping cubes (20+ iterations
+  eliminated per spectrum call).
+- `airPLS` already pre-computed `DtD` per-call before v0.4.6; now additionally pre-computes
+  `lam * DtD + ridge * I` before the loop and uses the cross-call cache.
+- `preprocessing.py` per-spectrum loop is already copy-minimal for float64 cubes (audited).
+- API/deprecation cleanup and new preprocessing algorithms remain deferred to v0.4.7.
+
+---------
+
 ## [v0.4.5] — 2026-04-16 Backend API cleanup and provenance hardening
 
 ### Added

@@ -120,3 +120,34 @@ def test_mapping_arpls_baseline_native_vs_ramanspy_parity():
     assert r_n.x.shape == r_r.x.shape
     rmse = float(np.sqrt(np.mean((r_n.cube - r_r.cube) ** 2)))
     assert rmse < 1e-3, f"arPLS parity RMSE {rmse:.2e} exceeds 1e-3"
+
+
+# ---------------------------------------------------------------------------
+# v0.4.6 post-optimisation: native self-consistency (DtD cache correctness)
+# ---------------------------------------------------------------------------
+
+def _run_native(pipeline_native):
+    p = Pipeline(steps=pipeline_native.steps, backend="native", name=pipeline_native.name)
+    return apply_pipeline_to_mapping_cube(
+        x=_x, cube=_cube, pipeline=p, modality="Raman", axis_kind="raman_shift_cm-1"
+    )
+
+
+def test_mapping_asls_native_repeated_calls_identical():
+    """Two native asLS calls on the same cube must produce bit-identical results.
+
+    This locks down that the DtD cache introduced in v0.4.6 does not
+    introduce state mutation between calls.
+    """
+    r1 = _run_native(make_benchmark_pipeline_asls_baseline())
+    r2 = _run_native(make_benchmark_pipeline_asls_baseline())
+    np.testing.assert_array_equal(r1.cube, r2.cube,
+                                  err_msg="asLS native results differ between repeated calls")
+
+
+def test_mapping_arpls_native_repeated_calls_identical():
+    """Same cache-correctness check for arPLS."""
+    r1 = _run_native(make_benchmark_pipeline_arpls_baseline())
+    r2 = _run_native(make_benchmark_pipeline_arpls_baseline())
+    np.testing.assert_array_equal(r1.cube, r2.cube,
+                                  err_msg="arPLS native results differ between repeated calls")

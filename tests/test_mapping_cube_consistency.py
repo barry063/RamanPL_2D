@@ -19,6 +19,7 @@ from ramanpl.preprocessing import (
     Pipeline,
     SmoothSavGol,
     make_benchmark_pipeline_crop_only,
+    make_benchmark_pipeline_asls_baseline,
 )
 from ramanpl.integration.ramanspy_adapter import to_ramanspy_image, from_ramanspy_image
 
@@ -116,6 +117,20 @@ def test_mapping_selected_pixel_identity_consistent_between_backends():
         rtol=1e-9, atol=1e-9,
         err_msg="Pixel (2, 1) spectrum differs between backends after SavGol",
     )
+
+
+def test_mapping_asls_cube_shape_preserved_after_v046_optimisation():
+    """v0.4.6: asLS baseline preprocessing via DtD-cached path must preserve cube shape."""
+    pipeline = make_benchmark_pipeline_asls_baseline()
+    result = apply_pipeline_to_mapping_cube(
+        x=_x, cube=_cube, pipeline=pipeline,
+        modality="Raman", axis_kind="raman_shift_cm-1",
+    )
+    assert result.cube.ndim == 3
+    assert result.cube.shape[0] == _Y
+    assert result.cube.shape[1] == _X
+    assert result.cube.shape[2] == result.x.size
+    assert np.all(np.isfinite(result.cube)), "asLS cube contains non-finite values"
 
 
 def test_mapping_coordinates_remain_consistent_after_preprocessing():

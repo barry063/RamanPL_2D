@@ -91,49 +91,68 @@ For development roadmap and future plans, see the [development roadmap](#develop
 ```text
 RamanPL_2D/
 ├── src/
+│   ├── setup.py
 │   └── ramanpl/
 │       ├── __init__.py
-│       ├── baselineAPI.py                  # Baseline subtraction API and baseline spec parsing
+│       ├── baselineAPI.py                  # Baseline subtraction kernels (asLS/arPLS/airPLS/poly/gaussian); shared DtD cache
 │       ├── batch.py                        # Batch workflows for Raman / PL spectra
+│       ├── dataImporter.py                 # WDF / TXT import for single spectra and mapping data
 │       ├── exporter.py                     # CSV / TXT export helpers and metadata provenance
-│       ├── preprocessing.py                # Shared preprocessing pipeline definitions and benchmark pipeline builders
 │       ├── operation.py                    # Spectrum / map arithmetic operations
+│       ├── peak_models.py                  # Peak model definitions (Lorentzian, Gaussian, pVoigt)
+│       ├── preprocessing.py                # Preprocessing pipeline framework and benchmark pipeline builders
+│       ├── raman_materials.json            # Built-in Raman materials library
+│       ├── schema.py                       # Canonical schema validators (modality, axis kind, baseline spec)
 │       │
-│       ├── data_importer/
+│       ├── single_fit/                     # Single-spectrum fitting (Raman and PL)
 │       │   ├── __init__.py
-│       │   └── data_importer.py            # WDF / TXT import for single spectra and mapping data
+│       │   ├── _single_fit_core.py         # Shared fitting utilities (multistart, export helpers, RMSE)
+│       │   ├── RamanFit.py                 # Raman single-spectrum fitter
+│       │   └── PLfit.py                    # PL single-spectrum fitter
 │       │
-│       ├── single_fit/
+│       ├── mapping/                        # Mapping workflows (Raman and PL)
 │       │   ├── __init__.py
-│       │   ├── _single_fit_core.py         # Shared fitting core logic
-│       │   ├── _raman_fit.py               # Raman single-spectrum fitting
-│       │   └── _pl_fit.py                  # PL single-spectrum fitting
-│       │
-│       ├── mapping/
-│       │   ├── __init__.py
+│       │   ├── _diagnostics.py             # Per-pixel fit diagnostics helpers
+│       │   ├── _fit_utils.py               # Shared mapping fit utilities
+│       │   ├── _image.py                   # Heatmap and image plotting helpers
 │       │   ├── _io.py                      # Mapping I/O, coordinates, and layout helpers
-│       │   ├── _preprocess.py              # Mapping preprocessing execution
-│       │   ├── _raman_mapping.py           # Raman mapping workflow
-│       │   └── _pl_mapping.py              # PL mapping workflow
+│       │   ├── _pl_mapping.py              # PL mapping workflow
+│       │   ├── _preprocess.py              # Mapping preprocessing mixin (cache, dispatch, provenance)
+│       │   └── _raman_mapping.py           # Raman mapping workflow
 │       │
-│       └── integration/
-│           ├── __init__.py
-│           ├── ramanspy_adapter.py         # RamanPL_2D ↔ RamanSPy data conversion helpers
-│           ├── ramanspy_bridge.py          # Backend execution bridge for RamanSPy preprocessing
-│           └── ramanspy_translate.py       # Translation of supported preprocessing pipelines to RamanSPy
+│       ├── integration/                    # Optional RamanSPy backend
+│       │   ├── __init__.py
+│       │   ├── ramanspy_adapter.py         # RamanPL ↔ RamanSPy array conversion helpers
+│       │   ├── ramanspy_bridge.py          # Backend resolution and fallback decision logic
+│       │   └── ramanspy_translate.py       # Translation of preprocessing pipelines to RamanSPy
+│       │
+│       │   # Compatibility façades (preserve legacy import paths)
+│       ├── RamanFit.py                     # re-exports ramanpl.single_fit.RamanFit
+│       ├── PLfit.py                        # re-exports ramanpl.single_fit.PLfit
+│       └── Mapping.py                      # re-exports ramanpl.mapping classes
 │
 ├── benchmarks/
-│   └── benchmark_mapping_preprocessing.py  # v0.4.3 mapping benchmark harness
+│   ├── benchmark_baseline_kernels.py       # Microbenchmark for native 1D baseline routines (v0.4.6)
+│   ├── benchmark_mapping_preprocessing.py  # Mapping cube preprocessing benchmark: runtime + memory
+│   └── results/
+│       └── mapping_preprocess_benchmark.csv
 │
 ├── tests/
-│   ├── test_preprocessing_backend_resolution.py
-│   ├── test_single_fit_regressions.py
+│   ├── test_backend_message_consistency.py
+│   ├── test_backend_provenance_consistency.py
+│   ├── test_baseline_numerical_parity.py       # asLS/arPLS/airPLS numerical parity (v0.4.6)
+│   ├── test_baseline_operator_cache.py         # DtD cache correctness (v0.4.6)
+│   ├── test_batch_backend_regressions.py
+│   ├── test_batch_performance_path_regressions.py  # Batch regression guard post-optimisation (v0.4.6)
 │   ├── test_data_importer_regressions.py
 │   ├── test_export_provenance_regressions.py
-│   ├── test_mapping_backend_parity.py
-│   ├── test_mapping_cube_consistency.py 
 │   ├── test_mapping_backend_benchmark_smoke.py
-│   └── test_mapping_memory_runtime_smoke.py
+│   ├── test_mapping_backend_parity.py
+│   ├── test_mapping_cube_consistency.py
+│   ├── test_mapping_memory_runtime_smoke.py
+│   ├── test_preprocessing_backend_resolution.py
+│   ├── test_single_fit_backend_meta.py
+│   └── test_single_fit_regressions.py
 │
 ├── example-usage/                          # Example notebooks and demonstrations
 │   ├── Ramanfit/
@@ -143,7 +162,6 @@ RamanPL_2D/
 │
 ├── README.md
 ├── CHANGELOG
-├── pyproject.toml / setup.py
 └── requirements*.txt
 ```
 
@@ -564,7 +582,7 @@ b.export("raman_fit.txt", wide=True)  # header includes preprocessing_backend_re
 
 | Version | Scope | Details |
 |--------|------|--------|
-| **v0.4.6** | Performance profiling and hotspot identification | Extend performance work from benchmarking into optimisation planning.<br>Profile native baseline subtraction paths (`poly`, `gaussian`, `asls`, `airpls`, `arpls`) on representative Raman workloads.<br>Compare native preprocessing, RamanSPy preprocessing, and conversion overhead for both single-spectrum and mapping cases.<br>Record reproducible benchmark outputs and identify the highest-value native optimisation targets.<br>Use profiling results to guide optimisation without changing scientific behaviour. |
+| **v0.4.6** ✅ | Performance profiling and baseline optimisation | Pre-compute `D^T D` once per `(n, diff_order)` key and cache across calls in `asLS`, `arPLS`, `airPLS` — eliminates `O(niter)` sparse matrix products per spectrum.<br>Added `benchmarks/benchmark_baseline_kernels.py` microbenchmark for native baseline methods; extended mapping benchmark with 5 cube sizes (up from 3).<br>Added parity, cache-correctness, and batch regression tests.<br>Scientific behaviour and public API unchanged. |
 | **v0.4.7** | API cleanup & deprecation removal | Finalise the preprocessing/backend contract before broader documentation and release hardening.<br>Remove deprecated parameters and legacy pathways.<br>Finalise preprocessing schema (`baseline_spec` / pipeline spec).<br>Freeze backend provenance/export field names and resolution behaviour.<br>Ensure example notebooks and release tests target the stabilised API. |
 | **v0.4.8** | Executable examples and backend demonstrations | Add user-facing notebooks that document supported backend behaviour clearly.<br>Add a supported Raman single-spectrum notebook comparing `native / auto / ramanspy`.<br>Add a supported Raman mapping notebook showing backend propagation and export provenance.<br>Add an unsupported/native-fallback notebook demonstrating clear fallback behaviour for unsupported workflows.<br>Link these notebooks from the README as the canonical backend-behaviour examples. |
 | **v0.4.9** | Native baseline optimisation | Strengthen the native preprocessing path using the results of v0.4.6 profiling.<br>Optimise the highest-cost native baseline methods first, especially iterative Whittaker-style baselines.<br>Improve mapping-scale execution efficiency where spectra share the same x-axis.<br>Preserve numerical behaviour through parity/regression tests.<br>Benchmark before/after performance to confirm real improvement. |

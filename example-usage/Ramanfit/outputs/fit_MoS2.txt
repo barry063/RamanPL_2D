@@ -11,7 +11,9 @@
 # peak_profile: "lorentzian"
 # params_per_peak: 3
 # baseline_spec: {"method": "poly", "poly_order": 3}
-# preprocessing_recipe: {"name": "legacy_single_spectrum", "steps": [{"name": "savgol", "window_length": 11, "polyorder": 8}]}
+# preprocessing_recipe: {"name": "legacy_single_spectrum", "backend": "native", "steps": [{"name": "savgol", "window_length": 11, "polyorder": 8}]}
+# preprocessing_backend_requested: "native"
+# preprocessing_backend_resolved: "native"
 # materials: ["MoS2"]
 # substrate: "Si"
 # background_remove: false
