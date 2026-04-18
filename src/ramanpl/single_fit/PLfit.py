@@ -314,6 +314,11 @@ class PLfit:
             stride=self.params_per_peak,
         )
 
+    def _jac(self, x, *params):
+        """Analytical Jacobian for Lorentzian fits (used automatically by fit_spectrum)."""
+        from ..peak_models import sum_peaks_jac_lorentzian
+        return sum_peaks_jac_lorentzian(x, *params)
+
     def fit_spectrum(
         self,
         *,
@@ -323,10 +328,18 @@ class PLfit:
         diagnose_bounds: bool = True,
         bounds_tol: float = 1e-6,
         return_diagnostics: bool = False,
+        maxfev: int = 6400,
     ):
         """
         Perform bounded least-squares fitting with optional multi-start.
+
+        maxfev:
+            Maximum number of function evaluations passed to curve_fit.
+            Reduce (e.g. 1600) to speed up fitting of well-conditioned spectra.
+            Lorentzian fits automatically use an analytical Jacobian, which
+            already reduces cost significantly regardless of this value.
         """
+        jac = self._jac if self.peak_profile == "lorentzian" else None
         best_params, best_cov, diagnostics = run_multistart_curve_fit(
             model=self._model,
             x=self.energy,
@@ -337,7 +350,8 @@ class PLfit:
             n_starts=n_starts,
             p0_strategy=p0_strategy,
             random_state=random_state,
-            maxfev=6400,
+            maxfev=maxfev,
+            jac=jac,
             diagnose_bounds=diagnose_bounds,
             bounds_tol=bounds_tol,
             fail_label="PLfit.fit_spectrum",

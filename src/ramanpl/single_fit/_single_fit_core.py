@@ -115,6 +115,7 @@ def run_multistart_curve_fit(
     p0_strategy: str = "midpoint",
     random_state=None,
     maxfev: int = 6400,
+    jac=None,
     diagnose_bounds: bool = True,
     bounds_tol: float = 1e-6,
     fail_label: str = "single-spectrum fitter",
@@ -153,6 +154,7 @@ def run_multistart_curve_fit(
                 p0=p0,
                 bounds=(lb, ub),
                 maxfev=int(maxfev),
+                jac=jac,
             )
         except Exception as e:
             n_fail += 1

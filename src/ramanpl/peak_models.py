@@ -123,6 +123,40 @@ def sum_peaks(
 
     raise ValueError(f"Unknown profile: {profile}")
 
+def sum_peaks_jac_lorentzian(x: np.ndarray, *params) -> np.ndarray:
+    """
+    Analytical Jacobian of sum_peaks() for the Lorentzian profile.
+
+    Returns an array of shape (n_data, 3*n_peaks). Pass as jac= to
+    scipy.optimize.curve_fit to eliminate finite-difference derivative
+    calls (~n_params extra model evaluations per iteration).
+
+    Column order: [dc_0, dscale_0, damp_0, dc_1, dscale_1, damp_1, ...].
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    p = np.asarray(params, dtype=float).ravel()
+    n_peaks = p.size // 3
+    blocks = p.reshape(n_peaks, 3)
+
+    c     = blocks[:, 0]          # (n_peaks,)
+    scale = blocks[:, 1]
+    amp   = blocks[:, 2]
+
+    x2 = x[:, None]               # (n_data, 1)
+    dx = x2 - c                   # (n_data, n_peaks)
+    D  = dx ** 2 + scale ** 2    # (n_data, n_peaks)
+
+    dL_dc     = amp / np.pi * 2.0 * scale * dx / D ** 2
+    dL_dscale = amp / np.pi * (dx ** 2 - scale ** 2) / D ** 2
+    dL_damp   = scale / (np.pi * D)
+
+    J = np.empty((x.size, 3 * n_peaks), dtype=float)
+    J[:, 0::3] = dL_dc
+    J[:, 1::3] = dL_dscale
+    J[:, 2::3] = dL_damp
+    return J
+
+
 def single_peak(x, params, *, profile: PeakProfile) -> np.ndarray:
     p = list(params)
     if profile == "lorentzian":

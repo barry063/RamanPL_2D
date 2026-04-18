@@ -60,6 +60,20 @@ def resolve_preprocessing_backend(
     mod = normalise_modality(modality)
     ax = normalise_axis_kind(axis_kind)
 
+    if backend == "native":
+        # Short-circuit: never need ramanspy availability for native backend.
+        return {
+            "requested_backend": "native",
+            "resolved_backend": "native",
+            "execution_ready": True,
+            "ramanspy_available": False,
+            "ramanspy_version": None,
+            "supported_for_input": False,
+            "reason": None,
+            "modality": mod,
+            "axis_kind": ax,
+        }
+
     available = has_ramanspy()
     supported_for_input, support_reason = can_use_ramanspy(
         modality=mod,
@@ -67,12 +81,7 @@ def resolve_preprocessing_backend(
     )
     version = get_ramanspy_version()
 
-    if backend == "native":
-        resolved = "native"
-        execution_ready = True
-        reason = None
-
-    elif backend == "auto":
+    if backend == "auto":
         # Final promotion to RamanSPy is decided later after pipeline translation check
         resolved = "native"
         execution_ready = True

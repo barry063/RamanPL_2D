@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from importlib import import_module
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 from typing import Any, Dict, Tuple
@@ -12,9 +13,12 @@ except Exception:  # pragma: no cover
     from ramanpl.schema import normalise_axis_kind, normalise_modality
 
 
+@lru_cache(maxsize=1)
 def has_ramanspy() -> bool:
     """
     Return True if RamanSPy is installed and importable.
+
+    Result is cached after the first call to avoid repeated slow import probes.
     """
     try:
         import_module("ramanspy")
