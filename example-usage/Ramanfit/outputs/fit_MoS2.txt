@@ -18,7 +18,6 @@
 # substrate: "Si"
 # background_remove: false
 # baseline_method: {"method": "poly", "poly_order": 3}
-# poly_degree: 3
 # gaussian_sigma: 50
 # smoothing: true
 # smooth_window: 11

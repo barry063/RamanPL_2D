@@ -16,7 +16,6 @@
 # preprocessing_backend_resolved: "native"
 # background_remove: false
 # baseline_method: {"method": "poly", "poly_order": 1}
-# poly_degree: 1
 # gaussian_sigma: 50
 # smoothing: false
 # smooth_window: 11
