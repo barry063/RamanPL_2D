@@ -20,11 +20,9 @@ from ramanpl.schema import (
 )
 from ..peak_models import sum_peaks, single_peak
 from ._single_fit_core import (
-    POLY_DEGREE_SENTINEL,
     build_single_fit_export_metadata,
     export_p0_dict,
     make_compat_data_importer,
-    resolve_baseline_method_with_deprecation,
     run_multistart_curve_fit,
 )
 
@@ -46,9 +44,8 @@ class PLfit:
     - `normalize` controls display/output scaling only.
     - When `preprocessing` is supplied, it overrides the legacy smoothing/background flags.
     """
-    def __init__(self, spectra, energy, background_remove=False, 
+    def __init__(self, spectra, energy, background_remove=False,
             baseline_method={"method": "poly", "poly_order": 1},
-            poly_degree=POLY_DEGREE_SENTINEL,
             gaussian_sigma=50, smoothing=False,
             smooth_window=11, smooth_order=3, normalize=True, preprocessing=None,
             preprocessing_backend: str = "native",
@@ -87,12 +84,6 @@ class PLfit:
         self.energy = np.array(energy)
         self.processed_spectra = np.array(spectra.copy())
 
-        # ----------------- v0.3.8 update for baseline_method handling -----------------
-        baseline_method = resolve_baseline_method_with_deprecation(
-            baseline_method=baseline_method,
-            poly_degree=poly_degree,
-        )
-
         self._smoothed_spectra = None
         self._baseline = None
         self._corrected_spectra = None
@@ -109,10 +100,8 @@ class PLfit:
 
         if str(self.baseline_method.get("method", "")).lower() == "poly":
             self.poly_order = int(self.baseline_method.get("poly_order", 1))
-            self.poly_degree = self.poly_order  # legacy compatibility field
         else:
             self.poly_order = None
-            self.poly_degree = None
 
         self.gaussian_sigma = gaussian_sigma
         self.smoothing = smoothing

@@ -22,11 +22,9 @@ from ramanpl.schema import (
 )
 from ..peak_models import sum_peaks, single_peak
 from ._single_fit_core import (
-    POLY_DEGREE_SENTINEL,
     build_single_fit_export_metadata,
     export_p0_dict,
     make_compat_data_importer,
-    resolve_baseline_method_with_deprecation,
     run_multistart_curve_fit,
 )
 
@@ -57,7 +55,6 @@ class RamanFit:
         substrate=None,
         background_remove=False,
         baseline_method={"method": "poly", "poly_order": 3},
-        poly_degree= POLY_DEGREE_SENTINEL,
         gaussian_sigma=50,
         smoothing=False,
         smooth_window=11,
@@ -191,12 +188,6 @@ class RamanFit:
         self.wavenumber = np.array(wavenumber)
         self.processed_spectra = np.array(spectra.copy())
         
-        ## --------------------------poslished after v0.3.8---------------------------
-        baseline_method = resolve_baseline_method_with_deprecation(
-            baseline_method=baseline_method,
-            poly_degree=poly_degree,
-        )
-
         self._smoothed_spectra = None
         self._baseline = None
         self._corrected_spectra = None
@@ -216,10 +207,8 @@ class RamanFit:
 
         if str(self.baseline_method.get("method", "")).lower() == "poly":
             self.poly_order = int(self.baseline_method.get("poly_order", 3))
-            self.poly_degree = self.poly_order  # legacy compatibility field
         else:
             self.poly_order = None
-            self.poly_degree = None
 
         self.gaussian_sigma = gaussian_sigma
         self.smoothing = smoothing

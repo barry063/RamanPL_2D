@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, Sequence, Tuple
-import warnings
 
 import numpy as np
 from scipy import optimize
 from ..schema import normalise_baseline_spec
-
-POLY_DEGREE_SENTINEL = object()
 
 
 def make_compat_data_importer(axis: str, default_readlines=(300, 780)):
@@ -23,12 +20,6 @@ def make_compat_data_importer(axis: str, default_readlines=(300, 780)):
             from ramanpl.dataImporter import DataImporter as _Shared
 
             if x_range is None and readlines is None and default_readlines is not None:
-                warnings.warn(
-                    "Implicit default readlines is deprecated. "
-                    "Please pass x_range=(xmin, xmax) explicitly.",
-                    FutureWarning,
-                    stacklevel=2,
-                )
                 readlines = default_readlines
 
             return _Shared.data_import(
@@ -110,38 +101,6 @@ def generate_p0_trials(
         trials.append(np.clip(p, lb, ub))
 
     return trials
-
-
-def resolve_baseline_method_with_deprecation(
-    baseline_method,
-    poly_degree=POLY_DEGREE_SENTINEL,
-):
-    """
-    Resolve legacy baseline styles into the canonical v0.3.8 dict spec.
-    """
-    if isinstance(baseline_method, tuple):
-        warnings.warn(
-            "Tuple baseline_method is deprecated. "
-            "Use a dict, e.g. {'method': 'poly', 'poly_order': 3}.",
-            FutureWarning,
-            stacklevel=3,
-        )
-
-    if poly_degree is not POLY_DEGREE_SENTINEL:
-        warnings.warn(
-            "poly_degree is deprecated. "
-            "Use baseline_method={'method': 'poly', 'poly_order': degree} instead.",
-            FutureWarning,
-            stacklevel=3,
-        )
-        poly_degree_value = int(poly_degree)
-    else:
-        poly_degree_value = None
-
-    return normalise_baseline_spec(
-        baseline_method,
-        poly_degree=poly_degree_value,
-    )
 
 
 def run_multistart_curve_fit(
@@ -300,7 +259,6 @@ def build_single_fit_export_metadata(
         meta.update({
             "background_remove": getattr(obj, "background_remove", None),
             "baseline_method": getattr(obj, "baseline_method", None),
-            "poly_degree": getattr(obj, "poly_degree", None),
             "gaussian_sigma": getattr(obj, "gaussian_sigma", None),
             "smoothing": getattr(obj, "smoothing", None),
             "smooth_window": getattr(obj, "smooth_window", None),

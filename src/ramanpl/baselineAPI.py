@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Any
-import warnings
 import numpy as np
 from numpy.polynomial import Polynomial
 from scipy.ndimage import gaussian_filter1d
@@ -52,42 +51,6 @@ class BaselineAPI:
       (keeps your current pre-processing order).
     - subtract() ALWAYS applies non-negativity clipping (unphysical negatives removed).
     """
-
-    @staticmethod
-    def parse_spec(baseline_method, poly_degree=None, gaussian_sigma=None):
-        """
-        Normalise baseline specifications to the runtime contract used by subtract().
-
-        Canonical v0.3.8 user-facing form:
-            {"method": "poly", "poly_order": 3}
-            {"method": "gaussian", "gaussian_sigma": 10}
-            {"method": "airpls", "lam": 1e6, "niter": 50, "tol": 1e-6}
-        """
-        if isinstance(baseline_method, (tuple, list)):
-            warnings.warn(
-                "Tuple/list baseline_method is deprecated. "
-                "Use a dict specification instead, e.g. "
-                "{'method': 'poly', 'poly_order': 3}.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-
-        if poly_degree is not None:
-            warnings.warn(
-                "poly_degree is deprecated. "
-                "Use baseline_method={'method': 'poly', 'poly_order': degree} instead.",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-
-        spec = normalise_baseline_spec(
-            baseline_method,
-            poly_degree=poly_degree,
-            gaussian_sigma=gaussian_sigma,
-        )
-        return baseline_spec_to_runtime(spec)
-
-
 
     @staticmethod
     def subtract(

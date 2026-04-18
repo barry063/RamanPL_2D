@@ -160,9 +160,8 @@ def resolve_backend_outcome(
     backend = info["requested_backend"]
 
     if backend == "native":
-        info["resolved_backend"] = "native"
-        info["execution_ready"] = True
-        info["reason"] = None
+        # resolve_preprocessing_backend() already set resolved_backend="native",
+        # execution_ready=True, reason=None for native — nothing to override.
         return info
 
     if backend == "auto":

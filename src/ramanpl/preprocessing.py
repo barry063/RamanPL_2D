@@ -61,6 +61,47 @@ Range2 = Optional[Tuple[float, float]]
 BaselineSpec = Dict[str, Any]
 
 
+# ---------------------------------------------------------------------------
+# Canonical preprocessing contract helpers (v0.4.7)
+# ---------------------------------------------------------------------------
+
+def canonicalize_baseline_spec(spec) -> Dict[str, Any]:
+    """
+    Canonical entry point for normalising baseline specs.
+
+    Wraps normalise_baseline_spec(); fails early on invalid input with a
+    deterministic error message. Downstream callers should use this instead
+    of calling normalise_baseline_spec() directly.
+    """
+    return normalise_baseline_spec(spec)
+
+
+def canonicalize_pipeline_steps(steps) -> List["PreprocessStep"]:
+    """
+    Validate that steps is a non-empty list of PreprocessStep instances.
+
+    Raises ValueError for empty lists and TypeError for non-PreprocessStep items.
+    """
+    if not isinstance(steps, (list, tuple)) or len(steps) == 0:
+        raise ValueError("Pipeline steps must be a non-empty list of PreprocessStep instances.")
+    result = list(steps)
+    for s in result:
+        if not isinstance(s, PreprocessStep):
+            raise TypeError(
+                f"All pipeline steps must be PreprocessStep instances. Got {type(s).__name__}."
+            )
+    return result
+
+
+def normalize_backend_request(backend: str) -> str:
+    """
+    Canonical entry point for normalising a backend request string.
+
+    Wraps normalise_preprocess_backend(); raises ValueError on unknown backend.
+    """
+    return normalise_preprocess_backend(backend)
+
+
 @dataclass(frozen=True)
 class SpectralDataset:
     """
@@ -251,19 +292,7 @@ class SmoothSavGol(PreprocessStep):
         y = np.asarray(ds.y, dtype=float).ravel()
         n = y.size
 
-        w = int(self.window_length)
-        p = int(self.polyorder)
-
-        if w < 3:
-            raise ValueError("SmoothSavGol.window_length must be >= 3.")
-        if w % 2 == 0:
-            w += 1  # minimal automatic correction
-        if w > n:
-            w = n if (n % 2 == 1) else (n - 1)
-        if w < 3:
-            raise ValueError("SmoothSavGol: spectrum too short after window adjustment.")
-        if p >= w:
-            raise ValueError("SmoothSavGol.polyorder must be < window_length.")
+        w, p = _resolve_savgol_params(n, self.window_length, self.polyorder)
 
         y_s = savgol_filter(y, window_length=w, polyorder=p)
 
@@ -294,15 +323,20 @@ class BaselineSubtract(PreprocessStep):
     clip_nonnegative: bool = True
     name: str = "baseline"
 
+    def __post_init__(self):
+        # Normalise baseline_spec at construction time so apply() and the
+        # vectorised mapping fast-path share one canonical dict.
+        object.__setattr__(self, "baseline_spec", normalise_baseline_spec(
+            self.baseline_spec,
+            poly_degree=self.poly_degree,
+            gaussian_sigma=self.gaussian_sigma,
+        ))
+
     def apply(self, ds: SpectralDataset) -> SpectralDataset:
         x = np.asarray(ds.x, dtype=float).ravel()
         y = np.asarray(ds.y, dtype=float).ravel()
 
-        spec = normalise_baseline_spec(
-            self.baseline_spec,
-            poly_degree=self.poly_degree,
-            gaussian_sigma=self.gaussian_sigma,
-        )
+        spec = self.baseline_spec  # already normalised in __post_init__
         method, bkwargs = baseline_spec_to_runtime(spec)
 
         result = BaselineAPI.subtract(
@@ -330,11 +364,7 @@ class BaselineSubtract(PreprocessStep):
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "baseline_spec": normalise_baseline_spec(
-                self.baseline_spec,
-                poly_degree=self.poly_degree,
-                gaussian_sigma=self.gaussian_sigma,
-            ),
+            "baseline_spec": self.baseline_spec,  # already normalised in __post_init__
             "clip_nonnegative": bool(self.clip_nonnegative),
         }
 
@@ -417,10 +447,12 @@ def _split_pipeline_for_mapping(pipeline: Optional[Pipeline]) -> Tuple[List[Crop
 
     return crop_steps, pointwise_steps
 
-def _resolve_savgol_params_for_mapping(n_points: int, window_length: int, polyorder: int) -> Tuple[int, int]:
+def _resolve_savgol_params(n_points: int, window_length: int, polyorder: int) -> Tuple[int, int]:
     """
-    Resolve Savitzky–Golay parameters exactly as SmoothSavGol.apply() would,
-    but once for a whole mapping cube.
+    Resolve Savitzky–Golay window and polyorder for a spectrum of length n_points.
+
+    Shared by SmoothSavGol.apply() and the mapping vectorised fast-path so the
+    parameter clamping logic is defined exactly once.
     """
     w = int(window_length)
     p = int(polyorder)
@@ -437,6 +469,10 @@ def _resolve_savgol_params_for_mapping(n_points: int, window_length: int, polyor
         raise ValueError("SmoothSavGol.polyorder must be < window_length.")
 
     return w, p
+
+
+# Backwards-compatible alias used by external callers.
+_resolve_savgol_params_for_mapping = _resolve_savgol_params
 
 def _batched_polynomial_baseline_cube(
     *,
@@ -533,11 +569,7 @@ def _apply_vectorised_mapping_steps(
         # ------------------------------------------------------------
         if isinstance(step, SmoothSavGol):
             n_points = cube_out.shape[2]
-            w, p = _resolve_savgol_params_for_mapping(
-                n_points=n_points,
-                window_length=step.window_length,
-                polyorder=step.polyorder,
-            )
+            w, p = _resolve_savgol_params(n_points, step.window_length, step.polyorder)
 
             cube_out = savgol_filter(cube_out, window_length=w, polyorder=p, axis=2)
 
@@ -553,11 +585,7 @@ def _apply_vectorised_mapping_steps(
         # Fast path: baseline subtraction over axis=2 / whole cube
         # ------------------------------------------------------------
         if isinstance(step, BaselineSubtract):
-            spec = normalise_baseline_spec(
-                step.baseline_spec,
-                poly_degree=step.poly_degree,
-                gaussian_sigma=step.gaussian_sigma,
-            )
+            spec = step.baseline_spec  # already normalised in BaselineSubtract.__post_init__
             method, bkwargs = baseline_spec_to_runtime(spec)
             method_l = str(method).strip().lower()
 

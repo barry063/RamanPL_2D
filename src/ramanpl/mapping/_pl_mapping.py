@@ -11,6 +11,7 @@ try:
     from ..exporter import build_export_meta, write_table
     from ..peak_models import single_peak, sum_peaks
     from ..schema import (
+        baseline_spec_to_runtime,
         normalise_baseline_spec,
         normalise_coord_mode,
         normalise_peak_profile,
@@ -31,6 +32,7 @@ except Exception:  # pragma: no cover
     from ramanpl.exporter import build_export_meta, write_table
     from ramanpl.peak_models import single_peak, sum_peaks
     from ramanpl.schema import (
+        baseline_spec_to_runtime,
         normalise_baseline_spec,
         normalise_coord_mode,
         normalise_peak_profile,
@@ -1175,7 +1177,7 @@ class PL_Integration:
             baseline_method,
             poly_degree=poly_degree,
         )
-        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+        self._baseline_method, self._baseline_kwargs = baseline_spec_to_runtime(
             self.baseline_method
         )
 
@@ -1238,7 +1240,7 @@ class PL_Integration:
             baseline_method,
             poly_degree=poly_degree,
         )
-        obj._baseline_method, obj._baseline_kwargs = BaselineAPI.parse_spec(
+        obj._baseline_method, obj._baseline_kwargs = baseline_spec_to_runtime(
             obj.baseline_method
         )
 

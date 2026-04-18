@@ -131,6 +131,27 @@ def serialise_backend_provenance(outcome: Optional[Dict[str, Any]]) -> Dict[str,
     return result
 
 
+def serialize_preprocessing_provenance(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Extract the public preprocessing provenance fields from a preprocessing result meta dict.
+
+    Returns only the fields that should appear in public exports, filtering out
+    internal-only keys (e.g. _smoothed_last, _baseline_last, execution_ready).
+
+    Public fields extracted:
+        pipeline, smoothing, baseline, crop
+    """
+    if not meta:
+        return {}
+
+    PUBLIC_KEYS = ("pipeline", "smoothing", "baseline", "crop")
+    result: Dict[str, Any] = {}
+    for k in PUBLIC_KEYS:
+        if k in meta:
+            result[k] = _normalise_meta_value(meta[k])
+    return result
+
+
 def build_export_meta(
     *,
     export_kind: str,

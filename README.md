@@ -331,6 +331,37 @@ baseline_method="poly"
 
 However, pipeline-based preprocessing is recommended for new workflows.
 
+## Preprocessing & Backend Contract
+
+### Backend selection
+
+Pass `preprocessing_backend` to any fitter or mapping class:
+
+| Value | Behaviour |
+| ------------ | -------------------------------------------------------------------- |
+| `"native"` | Always uses the built-in Python/NumPy implementation |
+| `"auto"` | Uses RamanSPy when available and supported; otherwise falls back to native |
+| `"ramanspy"` | Forces RamanSPy; raises an error if unavailable or unsupported |
+
+**RamanSPy-capable workflows:** Raman (cm⁻¹) mapping only.  
+**Native-only workflows:** PL spectra (any axis), single-spectrum fits, and any pipeline step that cannot be translated to a RamanSPy operation.
+
+### Provenance fields in exports
+
+All export files include canonical provenance keys:
+
+| Key | Meaning |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| `preprocessing_backend_requested` | The backend the user requested (`"native"`, `"auto"`, or `"ramanspy"`) |
+| `preprocessing_backend_resolved` | The backend that was actually used |
+| `preprocessing_backend_fallback_reason` | Reason for fallback (only present when a fallback occurred) |
+
+`preprocessing_backend_fallback_reason` is **absent** when no fallback occurred — do not assert on its presence unless you expect a fallback.
+
+### Performance note
+
+Native preprocessing uses vectorised NumPy operations and is typically faster for large mapping cubes. RamanSPy may offer advantages for iterative baselines (airPLS/arPLS) where its internal convergence logic differs. Parity between the two backends is tolerance-verified in `tests/test_mapping_backend_parity.py`.
+
 ## Baseline specification
 
 Baseline algorithms are now configured using a dictionary specification:

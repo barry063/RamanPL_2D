@@ -7,6 +7,7 @@ try:
         apply_pipeline_to_mapping_cube,
     )
     from ..schema import (
+        baseline_spec_to_runtime,
         normalise_coord_mode,
         normalise_preprocess_backend,
     )
@@ -17,6 +18,7 @@ except Exception:  # pragma: no cover
         apply_pipeline_to_mapping_cube,
     )
     from schema import (
+        baseline_spec_to_runtime,
         normalise_coord_mode,
         normalise_preprocess_backend,
     )
@@ -167,18 +169,10 @@ class _MappingPreprocessMixin:
         except Exception:  # pragma: no cover
             from exporter import build_export_meta, serialise_backend_provenance
 
-        # Use canonical backend provenance from preprocessing result when available,
-        # falling back to instance attributes for compatibility.
+        # Use canonical backend provenance from preprocessing result.
+        # apply_pipeline_to_mapping_cube() always sets preprocessing_backend_info.
         backend_outcome = self._preprocess_meta.get("preprocessing_backend_info") if self._preprocess_meta else None
-        provenance = serialise_backend_provenance(backend_outcome) if backend_outcome else {}
-
-        if not provenance:
-            provenance = {
-                k: v for k, v in {
-                    "preprocessing_backend_requested": getattr(self, "preprocessing_backend", None),
-                    "preprocessing_backend_resolved": getattr(self, "preprocessing_backend_resolved", None),
-                }.items() if v is not None
-            }
+        provenance = serialise_backend_provenance(backend_outcome)
 
         return build_export_meta(
             export_kind="mapping_fit",
@@ -361,8 +355,8 @@ class _MappingPreprocessMixin:
         else:
             self.poly_order = None
 
-        # baseline runtime config
-        self._baseline_method, self._baseline_kwargs = BaselineAPI.parse_spec(
+        # baseline runtime config (baseline_method is already normalised above)
+        self._baseline_method, self._baseline_kwargs = baseline_spec_to_runtime(
             self.baseline_method
         )
 

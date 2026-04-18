@@ -5,7 +5,6 @@ import ramanpl.preprocessing as pre
 import ramanpl.single_fit._single_fit_core as core
 from ramanpl.single_fit._single_fit_core import (
     generate_p0_trials,
-    resolve_baseline_method_with_deprecation,
 )
 from ramanpl.single_fit.RamanFit import RamanFit
 from ramanpl.single_fit.PLfit import PLfit
@@ -87,36 +86,6 @@ def test_generate_p0_trials_jitter_is_centred_on_user_base_p0():
     assert np.all(extra >= lb)
     assert np.all(extra <= ub)
 
-
-def test_resolve_baseline_method_poly_degree_warns_with_futurewarning_and_keeps_explicit_dict_value():
-    with pytest.warns(FutureWarning, match="poly_degree is deprecated"):
-        spec = resolve_baseline_method_with_deprecation(
-            baseline_method={"method": "poly", "poly_order": 3},
-            poly_degree=4,
-        )
-
-    # explicit dict-based baseline spec should remain authoritative
-    assert spec["method"] == "poly"
-    assert spec["poly_order"] == 3
-
-
-def test_resolve_baseline_method_tuple_warns_with_futurewarning(monkeypatch):
-    def fake_normalise_baseline_spec(baseline_method, poly_degree=None, **kwargs):
-        return {
-            "method": "poly",
-            "poly_order": 3 if poly_degree is None else int(poly_degree),
-            "_raw_baseline_method": baseline_method,
-        }
-
-    monkeypatch.setattr(core, "normalise_baseline_spec", fake_normalise_baseline_spec)
-
-    with pytest.warns(FutureWarning, match="Tuple baseline_method is deprecated"):
-        spec = resolve_baseline_method_with_deprecation(
-            baseline_method=("poly", 3),
-        )
-
-    assert spec["method"] == "poly"
-    assert spec["_raw_baseline_method"] == ("poly", 3)
 
 
 def test_ramanfit_auto_promotes_to_ramanspy_when_supported(monkeypatch):

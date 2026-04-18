@@ -1,5 +1,57 @@
 # Changelog
 
+## [v0.4.7] — 2026-04-18 API cleanup and deprecation removal
+
+### Changed
+- Backend resolution and fallback-reason assembly consolidated into one canonical path in
+  `ramanspy_bridge.py`; redundant double key-set for the native branch removed.
+- Preprocessing normalisation centralised in `preprocessing.py`: added
+  `canonicalize_baseline_spec()`, `canonicalize_pipeline_steps()`, and
+  `normalize_backend_request()` as the single entry points for all callers.
+- `BaselineSubtract` now normalises its `baseline_spec` in `__post_init__` (not on every
+  `apply()` call); `_resolve_savgol_params_for_mapping` unified with `_resolve_savgol_params`.
+- `exporter.py` is now the single owner of provenance serialisation: added
+  `serialize_preprocessing_provenance()` for extracting canonical recipe fields from
+  preprocessing result metadata.
+- All five `BaselineAPI.parse_spec()` call-sites migrated to `baseline_spec_to_runtime()`
+  from `schema.py` (`_preprocess.py`, `_pl_mapping.py` ×2, `_raman_mapping.py` ×2).
+- `batch.py` provenance assembly now routes through `serialise_backend_provenance()` instead
+  of manual field extraction.
+
+### Removed
+
+- `poly_degree` parameter from `RamanFit` and `PLfit` (hard removed; callers get
+  `TypeError: unexpected keyword argument`).
+- `BaselineAPI.parse_spec()` (hard removed; was `FutureWarning`-deprecated).
+- `resolve_baseline_method_with_deprecation()` and `POLY_DEGREE_SENTINEL` from
+  `single_fit/_single_fit_core.py`.
+- `_validate_raman_axis()` from `ramanspy_adapter.py` (duplicate policy enforcement;
+  callers now call `can_use_ramanspy()` directly).
+- Local fallback provenance construction from `mapping/_preprocess.py`; bridge always
+  returns a canonical dict so the fallback path was dead code.
+
+### Fixed
+
+- `FutureWarning` no longer emitted from `make_compat_data_importer()` on default
+  `readlines`; stripped warning-only code path.
+- `poly_degree` key no longer appears in exported metadata.
+
+### Tests
+
+- Added: `tests/test_preprocessing_spec_normalization.py` (17 tests)
+- Added: `tests/test_backend_resolution_contract.py` (8 tests + 1 skipped)
+- Added: `tests/test_backend_error_messages.py` (6 tests + 1 skipped)
+- Added: `tests/test_provenance_serialization.py` (12 tests)
+- Added: `tests/test_deprecation_removals.py` (7 tests)
+- Updated: `tests/test_single_fit_regressions.py` — removed two tests for deleted functions.
+- Updated: `tests/test_export_provenance_regressions.py` — migrated two tests to use
+  canonical `_preprocess_meta` structure instead of direct attribute assignment.
+
+### Docs
+
+- `README.md`: added "Preprocessing & Backend Contract" section documenting backend
+  selection semantics, which workflows are RamanSPy-capable, and canonical provenance fields.
+
 ## [v0.4.6] — 2026-04-17 Performance profiling and baseline optimisation
 
 ### Optimised

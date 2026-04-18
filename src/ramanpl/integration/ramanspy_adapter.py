@@ -76,17 +76,6 @@ def can_use_ramanspy(*, modality: str, axis_kind: str) -> Tuple[bool, str | None
     return True, None
 
 
-def _validate_raman_axis(*, modality: str, axis_kind: str) -> Tuple[str, str]:
-    mod = normalise_modality(modality)
-    ax = normalise_axis_kind(axis_kind)
-
-    ok, reason = can_use_ramanspy(modality=mod, axis_kind=ax)
-    if not ok:
-        raise ValueError(reason)
-
-    return mod, ax
-
-
 def to_ramanspy_spectrum(
     *,
     x: np.ndarray,
@@ -108,7 +97,9 @@ def to_ramanspy_spectrum(
     axis_kind : str
         Must normalise to 'raman_shift_cm-1'.
     """
-    _validate_raman_axis(modality=modality, axis_kind=axis_kind)
+    ok, reason = can_use_ramanspy(modality=modality, axis_kind=axis_kind)
+    if not ok:
+        raise ValueError(reason)
     rp = require_ramanspy()
 
     x = np.asarray(x, dtype=float).ravel()
@@ -154,7 +145,9 @@ def to_ramanspy_image(
     explicit orientation conversion so that the rest of the codebase does not
     silently mix conventions.
     """
-    _validate_raman_axis(modality=modality, axis_kind=axis_kind)
+    ok, reason = can_use_ramanspy(modality=modality, axis_kind=axis_kind)
+    if not ok:
+        raise ValueError(reason)
     rp = require_ramanspy()
 
     x = np.asarray(x, dtype=float).ravel()

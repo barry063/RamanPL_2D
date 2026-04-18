@@ -84,7 +84,13 @@ def test_raman_mapping_fit_export_meta_includes_backend_provenance():
         preprocessing_backend="auto",
     )
 
-    obj.preprocessing_backend_resolved = "ramanspy"
+    obj._preprocess_meta = {
+        "preprocessing_backend_info": {
+            "requested_backend": "auto",
+            "resolved_backend": "ramanspy",
+            "fallback_used": False,
+        }
+    }
     obj.preprocessing_recipe = [
         {"step": "crop", "range": [105.0, 135.0]},
         {"step": "smooth", "window_length": 5, "polyorder": 2},
@@ -140,7 +146,13 @@ def test_pl_mapping_fit_export_meta_keeps_pl_identity():
         preprocessing_backend="native",
     )
 
-    obj.preprocessing_backend_resolved = "native"
+    obj._preprocess_meta = {
+        "preprocessing_backend_info": {
+            "requested_backend": "native",
+            "resolved_backend": "native",
+            "fallback_used": False,
+        }
+    }
     obj.preprocessing_recipe = [{"step": "crop", "range": [1.82, 1.98]}]
 
     meta = obj._build_mapping_fit_export_meta(
