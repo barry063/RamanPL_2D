@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.4.7] — 2026-04-18 API cleanup and deprecation removal
+## [v0.4.7] — 2026-04-18 API cleanup, deprecation removal, and fitting performance
 
 ### Changed
 - Backend resolution and fallback-reason assembly consolidated into one canonical path in
@@ -32,9 +32,35 @@
 
 ### Fixed
 
+- **Fitting performance regression (v0.4.5+):** `RamanFit.__init__()` was calling
+  `resolve_preprocessing_backend()` on every construction, which internally called
+  `has_ramanspy()`. On a cold Python session (ramanspy not yet imported), this
+  triggered a ~3.5 s ramanspy cold-import even when `preprocessing_backend='native'`.
+  Fixed in two places:
+  - `ramanspy_adapter.py`: `has_ramanspy()` now uses `@lru_cache(maxsize=1)` so the
+    result is cached after the first probe; all subsequent calls cost ~0 µs.
+  - `ramanspy_bridge.py`: `resolve_preprocessing_backend()` short-circuits immediately
+    for `backend='native'` before calling `has_ramanspy()`, eliminating the probe
+    entirely for all native-backend workflows.
+  - Affected workflows: `RamanFit`, `PLfit` (single-spectrum), `PLMapping`, and
+    `RamanMapping` with `preprocessing_backend='native'`. `PLMapping` always uses
+    native, so it is fully covered; confirmed via profiling that no ramanspy probe
+    occurs at any point in the PLMapping construction or preprocessing path.
+  - Measured improvement: `RamanFit.__init__()` drops from ~33 ms to ~1 ms
+    (warm-session, single-peak 300-point spectrum).
 - `FutureWarning` no longer emitted from `make_compat_data_importer()` on default
   `readlines`; stripped warning-only code path.
 - `poly_degree` key no longer appears in exported metadata.
+
+### Added
+
+- `peak_models.py`: `sum_peaks_jac_lorentzian()` — vectorised analytical Jacobian
+  for the Lorentzian peak sum; eliminates finite-difference derivative evaluations
+  during `scipy.optimize.curve_fit` iterations.
+- `RamanFit.fit_spectrum()` and `PLfit.fit_spectrum()`: new `maxfev` parameter
+  (default 6400, unchanged) so callers can reduce the evaluation budget for
+  well-conditioned warm-start fits (e.g. `maxfev=1600`). Lorentzian fits
+  automatically pass the analytical Jacobian via `self._jac`.
 
 ### Tests
 
