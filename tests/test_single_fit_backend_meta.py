@@ -104,3 +104,69 @@ def test_single_fit_forced_ramanspy_raises_for_unsupported_pipeline():
 
     msg = str(exc.value)
     assert "RamanSPy translation is currently implemented for" in msg or "not installed" in msg
+
+
+# ---------------------------------------------------------------------------
+# RamanSPy single-spectrum execution tests (skipped if ramanspy not installed)
+# ---------------------------------------------------------------------------
+
+def test_raman_single_fit_auto_supported_pipeline_resolves_to_ramanspy():
+    """auto backend with a fully translatable pipeline resolves to ramanspy."""
+    pytest.importorskip("ramanspy")
+    fitter = _make_raman_fitter(backend="auto")
+    outcome = fitter._backend_outcome
+    assert outcome["resolved_backend"] == "ramanspy", (
+        f"Expected ramanspy, got {outcome['resolved_backend']}. "
+        f"fallback_reason={outcome.get('fallback_reason')}"
+    )
+    assert outcome["fallback_used"] is False
+
+
+def test_raman_single_fit_forced_ramanspy_supported_pipeline_resolves_to_ramanspy():
+    """Forced ramanspy with a supported pipeline executes without error."""
+    pytest.importorskip("ramanspy")
+    fitter = _make_raman_fitter(backend="ramanspy")
+    outcome = fitter._backend_outcome
+    assert outcome["resolved_backend"] == "ramanspy"
+    assert outcome["fallback_used"] is False
+
+
+def test_raman_single_fit_auto_unsupported_pipeline_falls_back_to_native():
+    """auto backend falls back to native when pipeline contains a non-translatable step."""
+    pytest.importorskip("ramanspy")
+    import ramanpl.RamanFit as rf_mod
+
+    x = np.linspace(100, 2000, 200)
+    y = 1 / ((x - 520) ** 2 + 10 ** 2) * 1e4 + np.random.default_rng(0).normal(0, 0.01, x.size)
+    y = np.clip(y, 0, None)
+
+    pipe = Pipeline(
+        steps=[
+            CropByRange((200, 1800)),
+            BaselineSubtract({"method": "gaussian", "gaussian_sigma": 50}),
+        ],
+        backend="auto",
+    )
+
+    fitter = rf_mod.RamanFit(
+        spectra=y,
+        wavenumber=x,
+        custom_peaks={"Si": ([490.0, 1.0, 0.01], [560.0, 50.0, 1e6])},
+        preprocessing=pipe,
+    )
+    fitter.fit_spectrum()
+
+    outcome = fitter._backend_outcome
+    assert outcome["resolved_backend"] == "native"
+    assert outcome["fallback_used"] is True
+    assert outcome["fallback_reason"] is not None
+
+
+def test_single_fit_export_metadata_reports_ramanspy_when_used():
+    """Export metadata records ramanspy as the resolved backend when it was used."""
+    pytest.importorskip("ramanspy")
+    from ramanpl.single_fit._single_fit_core import build_single_fit_export_metadata
+    fitter = _make_raman_fitter(backend="auto")
+    meta = build_single_fit_export_metadata(fitter)
+    assert meta["preprocessing_backend_resolved"] == "ramanspy"
+    assert "preprocessing_backend_fallback_reason" not in meta

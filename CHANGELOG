@@ -1,5 +1,53 @@
 # Changelog
 
+## [v0.4.8] — 2026-04-19 Executable backend-behaviour documentation and verification
+
+### Added
+
+- **`tests/test_single_fit_backend_meta.py`** — four new tests verifying supported
+  Raman single-spectrum RamanSPy execution:
+  - `test_raman_single_fit_auto_supported_pipeline_resolves_to_ramanspy`
+  - `test_raman_single_fit_forced_ramanspy_supported_pipeline_resolves_to_ramanspy`
+  - `test_raman_single_fit_auto_unsupported_pipeline_falls_back_to_native`
+  - `test_single_fit_export_metadata_reports_ramanspy_when_used`
+- **`tests/test_single_fit_backend_parity.py`** (new file) — six parity tests comparing
+  native vs RamanSPy outputs on a synthetic single-spectrum for crop, SavGol, poly, asLS,
+  airPLS, and arPLS pipelines. Module skips entirely when RamanSPy is not installed.
+- **`tests/test_preprocessing_backend_resolution.py`** — four new dispatch-layer tests:
+  - `test_pipeline_apply_single_raman_supported_auto_resolves_to_ramanspy`
+  - `test_pipeline_apply_single_pl_auto_resolves_to_native`
+  - `test_pipeline_apply_single_raman_gaussian_auto_falls_back_to_native`
+  - `test_pipeline_apply_single_forced_ramanspy_calls_ramanspy_dispatch`
+- **`example-usage/Ramanfit/Raman_backend_demo.ipynb`** — canonical Raman single-spectrum
+  backend-resolution notebook: shows `native`, `auto`, and `ramanspy` on a supported pipeline
+  and prints provenance metadata.
+- **`example-usage/Mapping/Raman_mapping_backend_demo.ipynb`** — canonical Raman mapping
+  backend/provenance notebook: runs `native` and `auto`, exports TXT files, and shows the
+  `preprocessing_backend_requested/resolved` header fields.
+- **`example-usage/backend/Backend_fallback_cases.ipynb`** — canonical unsupported/fallback
+  notebook: demonstrates `auto` fallback for Gaussian baseline (unsupported step) and PL
+  workflows (unsupported modality), and shows forced `ramanspy` raising `NotImplementedError`.
+
+### Changed
+
+- **`README.md`** — `Preprocessing & Backend Contract` section rewritten:
+  - Removed incorrect claim that RamanSPy is "mapping only" / single-spectrum is
+    "native-only". The implementation has supported single-spectrum RamanSPy dispatch
+    since v0.4.1; the README was simply wrong.
+  - Added backend support matrix covering all six workflow/backend combinations.
+  - `poly_degree` deprecation note updated: the argument was hard-removed in v0.4.7.
+  - Added "Backend behaviour examples" subsection linking the three new notebooks.
+
+### Notes
+
+- No scientific behaviour change.
+- No public API expansion.
+- Core backend source files (`preprocessing.py`, `ramanspy_bridge.py`,
+  `ramanspy_translate.py`, `RamanFit.py`) unchanged — all 169 tests pass with no
+  modifications to backend logic.
+
+---
+
 ## [v0.4.7] — 2026-04-18 API cleanup, deprecation removal, and fitting performance
 
 ### Changed

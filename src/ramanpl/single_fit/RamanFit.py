@@ -258,10 +258,23 @@ class RamanFit:
         self.processed_spectra = np.asarray(ds.y, dtype=float).ravel()
 
         crop_mask = ds.meta.get("crop_mask", None)
+        raw_all = np.asarray(self.raw_spectra, dtype=float).ravel()
         if crop_mask is not None:
-            self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()[crop_mask]
+            raw_cropped = raw_all[crop_mask]
+            x_before_crop = np.asarray(ds0.x, dtype=float).ravel()[crop_mask]
         else:
-            self.raw_spectra = np.asarray(self.raw_spectra, dtype=float).ravel()
+            raw_cropped = raw_all
+            x_before_crop = np.asarray(ds0.x, dtype=float).ravel()
+
+        # If the backend (e.g. RamanSPy) sorted the x axis (descending WDF → ascending),
+        # raw_cropped is still in the original order while self.wavenumber is sorted.
+        # Reorder raw_cropped to match self.wavenumber.
+        if raw_cropped.size == self.wavenumber.size and not np.array_equal(x_before_crop, self.wavenumber):
+            x_sorted_idx = np.argsort(x_before_crop)
+            positions = np.searchsorted(x_before_crop[x_sorted_idx], self.wavenumber)
+            raw_cropped = raw_cropped[x_sorted_idx[positions]]
+
+        self.raw_spectra = raw_cropped
 
         self._smoothed_spectra = ds.meta.get("_smoothed_last", None)
         self._baseline = ds.meta.get("_baseline_last", None)
