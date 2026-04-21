@@ -86,7 +86,7 @@ For development roadmap and future plans, see the [development roadmap](#develop
 
 ---
 
-## Repository Structure
+## Source Code Structure
 
 ```text
 RamanPL_2D/
@@ -127,64 +127,11 @@ RamanPL_2D/
 │       │   ├── ramanspy_bridge.py          # Backend resolution and fallback decision logic
 │       │   └── ramanspy_translate.py       # Translation of preprocessing pipelines to RamanSPy
 │       │
-│       │   # Compatibility façades (preserve legacy import paths)
+│       # Compatibility façades (preserve legacy import paths)
 │       ├── _single_fit_core.py             # re-exports ramanpl.single_fit._single_fit_core
 │       ├── RamanFit.py                     # re-exports ramanpl.single_fit.RamanFit
 │       ├── PLfit.py                        # re-exports ramanpl.single_fit.PLfit
 │       └── Mapping.py                      # re-exports ramanpl.mapping classes
-│
-├── benchmarks/
-│   ├── benchmark_baseline_kernels.py       # Microbenchmark for native 1D baseline routines (v0.4.6)
-│   ├── benchmark_mapping_preprocessing.py  # Mapping cube preprocessing benchmark: runtime + memory
-│   └── results/
-│       └── mapping_preprocess_benchmark.csv
-│
-├── tests/
-│   ├── test_backend_error_messages.py
-│   ├── test_backend_message_consistency.py
-│   ├── test_backend_provenance_consistency.py
-│   ├── test_backend_resolution_contract.py
-│   ├── test_baseline_numerical_parity.py           # asLS/arPLS/airPLS numerical parity (v0.4.6)
-│   ├── test_baseline_operator_cache.py             # DtD cache correctness (v0.4.6)
-│   ├── test_batch_backend_regressions.py
-│   ├── test_batch_performance_path_regressions.py  # Batch regression guard post-optimisation (v0.4.6)
-│   ├── test_data_importer_regressions.py
-│   ├── test_deprecation_removals.py
-│   ├── test_export_provenance_regressions.py
-│   ├── test_mapping_backend_benchmark_smoke.py
-│   ├── test_mapping_backend_parity.py
-│   ├── test_mapping_cube_consistency.py
-│   ├── test_mapping_memory_runtime_smoke.py
-│   ├── test_preprocessing_backend_resolution.py
-│   ├── test_preprocessing_spec_normalization.py
-│   ├── test_provenance_serialization.py
-│   ├── test_single_fit_backend_meta.py
-│   ├── test_single_fit_backend_parity.py          # native vs RamanSPy parity for single-spectrum (v0.4.8)
-│   └── test_single_fit_regressions.py
-│
-├── example-usage/                          # Example notebooks and demonstrations
-│   ├── Ramanfit/
-│   │   ├── Raman_backend_demo.ipynb        # Backend-resolution demo: native / auto / ramanspy (v0.4.8)
-│   │   ├── Raman_component.ipynb
-│   │   ├── Raman_operation.ipynb
-│   │   ├── Raman_warm-start+pipeline.ipynb
-│   │   └── Raman_background-remove.ipynb
-│   ├── PLfit/
-│   │   ├── PL_component.ipynb
-│   │   ├── PL_warm-start.ipynb
-│   │   └── PL_background-remove.ipynb
-│   ├── Mapping/
-│   │   ├── Raman_mapping_backend_demo.ipynb  # Mapping backend and provenance demo (v0.4.8)
-│   │   ├── Mapping Raman Example.ipynb
-│   │   └── Mapping PL Example.ipynb
-│   ├── backend/
-│   │   └── Backend_fallback_cases.ipynb    # Unsupported/native-fallback demo (v0.4.8)
-│   └── multi-plot/
-│       └── example.ipynb
-│
-├── README.md
-├── CHANGELOG
-└── requirements*.txt
 ```
 
 ## Change log
@@ -661,7 +608,7 @@ b.export("raman_fit.txt", wide=True)  # header includes preprocessing_backend_re
 | **v0.4.6** ✅ | Performance profiling and baseline optimisation | Pre-compute `D^T D` once per `(n, diff_order)` key and cache across calls in `asLS`, `arPLS`, `airPLS` — eliminates `O(niter)` sparse matrix products per spectrum.<br>Added `benchmarks/benchmark_baseline_kernels.py` microbenchmark for native baseline methods; extended mapping benchmark with 5 cube sizes (up from 3).<br>Added parity, cache-correctness, and batch regression tests.<br>Scientific behaviour and public API unchanged. |
 | **v0.4.7** ✅ | API cleanup & deprecation removal | Finalise the preprocessing/backend contract before broader documentation and release hardening.<br>Remove deprecated parameters and legacy pathways.<br>Finalise preprocessing schema (`baseline_spec` / pipeline spec).<br>Freeze backend provenance/export field names and resolution behaviour.<br>Ensure example notebooks and release tests target the stabilised API. |
 | **v0.4.8** ✅ | Executable examples and backend demonstrations | Add user-facing notebooks that document supported backend behaviour clearly.<br>Add a supported Raman single-spectrum notebook comparing `native / auto / ramanspy`.<br>Add a supported Raman mapping notebook showing backend propagation and export provenance.<br>Add an unsupported/native-fallback notebook demonstrating clear fallback behaviour for unsupported workflows.<br>Link these notebooks from the README as the canonical backend-behaviour examples. |
-| **v0.4.9** | Native baseline optimisation | Strengthen the native preprocessing path using the results of v0.4.6 profiling.<br>Optimise the highest-cost native baseline methods first, especially iterative Whittaker-style baselines.<br>Improve mapping-scale execution efficiency where spectra share the same x-axis.<br>Preserve numerical behaviour through parity/regression tests.<br>Benchmark before/after performance to confirm real improvement. |
+| **v0.4.9** ✅ | Native baseline optimisation | Eliminated per-iteration sparse matrix allocation in asLS / arPLS / airPLS kernels: W and Z diagonal updated in-place; RHS and convergence buffers pre-allocated. Native iterative baselines promoted to the mapping cube fast path — SpectralDataset construction per pixel eliminated. Benchmark gains: 1D kernels 22–71% faster; mapping (10×12 cube) asLS ~50% faster. All parity tests pass at atol=1e-10; public API unchanged. |
 | **v0.4.10** | Release validation and packaging gates | Prepare the project for reliable pip/GitLab/GitHub-based release workflows.<br>Add CI jobs for unit tests, integration tests, and optional RamanSPy extras install.<br>Add package build/install smoke tests for clean environments.<br>Add notebook smoke execution for selected `example-usage/` workflows.<br>Add benchmark smoke runs for release validation, while keeping full performance comparisons advisory rather than strict CI gates. |
 | **v0.5.0** | Raman preprocessing milestone release | Mark supported Raman preprocessing integration as stable and release-ready.<br>Declare supported Raman preprocessing workflows complete for `native / auto / ramanspy`.<br>Freeze the supported backend contract and documentation for the milestone release.<br>Ensure provenance/export behaviour, examples, and packaging validation are all aligned.<br>Defer broader analysis extensions until after the preprocessing/backend milestone is complete. |
 

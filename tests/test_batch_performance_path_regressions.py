@@ -148,3 +148,64 @@ def test_batch_fit_provenance_field_present(tmp_path):
         assert fitter.preprocessing_backend_resolved in {"native", "auto", "ramanspy"}, (
             f"Unexpected backend value: {fitter.preprocessing_backend_resolved!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 4. Native background removal: batch fit unchanged after v0.4.9 optimisation
+# ---------------------------------------------------------------------------
+
+def _make_batch_with_baseline(tmp_path, n=3):
+    """Batch with native asLS background removal enabled."""
+    rng = np.random.default_rng(17)
+    files = []
+    for i in range(n):
+        y = _PEAK_Y + rng.normal(0, 0.3, _PEAK_Y.size)
+        p = tmp_path / f"spec_bl_{i}.txt"
+        _write_raman_txt(str(p), _X, y)
+        files.append(str(p))
+    return RamanBatch(
+        files,
+        custom_peaks=_CUSTOM_PEAKS,
+        normalize=False,
+        smoothing=False,
+        background_remove=True,
+        baseline_method="asls",
+        preprocessing_backend="native",
+    )
+
+
+def test_batch_native_background_remove_fit_reproducible(tmp_path):
+    """Fit results are deterministic when native asLS background removal is active."""
+    batch1 = _make_batch_with_baseline(tmp_path)
+    batch1.fit()
+    rows1 = batch1.rows
+
+    files = [str(p) for p in sorted(tmp_path.glob("spec_bl_*.txt"))]
+    batch2 = RamanBatch(
+        files,
+        custom_peaks=_CUSTOM_PEAKS,
+        normalize=False,
+        smoothing=False,
+        background_remove=True,
+        baseline_method="asls",
+        preprocessing_backend="native",
+    )
+    batch2.fit()
+    rows2 = batch2.rows
+
+    assert len(rows1) == len(rows2), "Row counts differ"
+    for r1, r2 in zip(rows1, rows2):
+        np.testing.assert_allclose(r1["position"], r2["position"], rtol=1e-10, atol=1e-10)
+
+
+def test_batch_native_background_remove_provenance(tmp_path):
+    """With background_remove=True and backend='native', provenance must reflect native."""
+    batch = _make_batch_with_baseline(tmp_path)
+    batch.fit()
+
+    assert len(batch.fits) > 0
+    for _, _, fitter in batch.fits:
+        assert hasattr(fitter, "preprocessing_backend_resolved")
+        assert fitter.preprocessing_backend_resolved == "native", (
+            f"Expected native, got: {fitter.preprocessing_backend_resolved!r}"
+        )

@@ -535,6 +535,52 @@ def _batched_polynomial_baseline_cube(
 
     return baseline
 
+def _apply_native_iterative_baseline_cube(
+    *,
+    x: np.ndarray,
+    cube: np.ndarray,
+    method: str,
+    bkwargs: Dict[str, Any],
+    clip_nonnegative: bool,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Apply a native iterative Whittaker baseline (asLS / arPLS / airPLS) to every
+    pixel of cube (Y, X, N) without constructing a SpectralDataset per pixel.
+
+    The D^T D operator is cached by baselineAPI per (n, diff_order), so the
+    matrix is shared across all Y*X spectra on the same axis — no extra plumbing
+    needed here.
+
+    Returns
+    -------
+    cube_out : ndarray, shape [Y, X, N]
+        Baseline-corrected cube.
+    baseline_sample : ndarray, shape [N]
+        Baseline for the first pixel [0, 0] (stored in metadata for reference).
+    """
+    Y, X, _ = cube.shape
+    cube_out = np.empty_like(cube)
+    baseline_sample: Optional[np.ndarray] = None
+
+    for iy in range(Y):
+        for ix in range(X):
+            result = BaselineAPI.subtract(
+                x,
+                cube[iy, ix, :],
+                method=method,
+                clip_nonnegative=clip_nonnegative,
+                **bkwargs,
+            )
+            cube_out[iy, ix, :] = result.y_corrected
+            if baseline_sample is None:
+                baseline_sample = result.baseline
+
+    if baseline_sample is None:
+        baseline_sample = np.zeros(cube.shape[2], dtype=float)
+
+    return cube_out, baseline_sample
+
+
 def _apply_vectorised_mapping_steps(
     *,
     x: np.ndarray,
@@ -549,6 +595,7 @@ def _apply_vectorised_mapping_steps(
     - SmoothSavGol
     - BaselineSubtract with gaussian baseline
     - BaselineSubtract with polynomial baseline
+    - BaselineSubtract with native iterative baselines (asLS / arPLS / airPLS)
 
     Returns
     -------
@@ -630,6 +677,24 @@ def _apply_vectorised_mapping_steps(
                     "kwargs": dict(bkwargs),
                 }
                 shared_meta["_baseline_last"] = np.asarray(baseline[0, 0, :], dtype=float).ravel()
+                continue
+
+            # ---- Native iterative Whittaker baselines: per-pixel, shared D^T D cache
+            if method_l in ("asls", "arpls", "airpls"):
+                cube_out, _bl_sample = _apply_native_iterative_baseline_cube(
+                    x=x,
+                    cube=cube_out,
+                    method=method_l,
+                    bkwargs=dict(bkwargs),
+                    clip_nonnegative=bool(step.clip_nonnegative),
+                )
+                shared_meta["baseline"] = {
+                    "spec": spec,
+                    "resolved_method": method,
+                    "clip_nonnegative": bool(step.clip_nonnegative),
+                    "kwargs": dict(bkwargs),
+                }
+                shared_meta["_baseline_last"] = np.asarray(_bl_sample, dtype=float).ravel()
                 continue
 
         # ------------------------------------------------------------

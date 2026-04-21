@@ -51,7 +51,7 @@ __all__ = [
     "preprocessing",
 ]
 
-__version__ = "0.4.8"
+__version__ = "0.4.9"
 
 # Attributes that should resolve to a class/object directly
 _LAZY_ATTR_MAP = {

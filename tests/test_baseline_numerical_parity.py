@@ -65,13 +65,19 @@ def _reference_asls(y, lam, p, niter, diff_order):
     return z
 
 
-def _reference_arpls(y, lam, niter, diff_order, tol):
+def _reference_arpls(y, lam, niter, diff_order, tol, mask=None):
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
     y = np.asarray(y, dtype=float).ravel()
     n = y.size
     D = _ref_diff_matrix(n, diff_order)
+    m_float = None
+    if mask is not None:
+        m = np.asarray(mask, dtype=bool).ravel()
+        m_float = m.astype(float)
     w = np.ones(n, dtype=float)
+    if m_float is not None:
+        w *= m_float
     z = np.zeros(n, dtype=float)
     eps = 1e-12
     for _ in range(niter):
@@ -86,9 +92,55 @@ def _reference_arpls(y, lam, niter, diff_order, tol):
         mu = dn.mean()
         sigma = dn.std() + eps
         w = 1.0 / (1.0 + np.exp(2.0 * (d - (2.0 * sigma - mu)) / sigma))
+        if m_float is not None:
+            w *= m_float
         denom = np.linalg.norm(w_prev) + eps
         if np.linalg.norm(w - w_prev) / denom < tol:
             break
+    return z
+
+
+def _reference_airpls(y, lam, niter, diff_order, tol, min_weight, ridge, exp_clip,
+                      mask=None):
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+    y = np.asarray(y, dtype=float).ravel()
+    n = y.size
+    D = _ref_diff_matrix(n, diff_order)
+    DtD = (D.T @ D).tocsc()
+    lam_DtD_ridge_I = lam * DtD + ridge * sparse.eye(n, format="csc")
+    m = None
+    if mask is not None:
+        m = np.asarray(mask, dtype=bool).ravel()
+    w = np.full(n, min_weight, dtype=float)
+    if m is not None:
+        w[~m] = 0.0
+    z = np.zeros(n, dtype=float)
+    eps = 1e-12
+    y_scale = np.sum(np.abs(y)) + eps
+    for i in range(1, niter + 1):
+        W = sparse.diags(w, 0, shape=(n, n), format="csc")
+        Z = W + lam_DtD_ridge_I
+        z = spsolve(Z, w * y)
+        d = y - z
+        neg_idx = d < 0
+        if m is not None:
+            neg_idx &= m
+        neg_sum = np.sum(np.abs(d[neg_idx])) + eps
+        if neg_sum < tol * y_scale:
+            break
+        w_new = np.full(n, min_weight, dtype=float)
+        if m is not None:
+            w_new[~m] = 0.0
+        if np.any(neg_idx):
+            arg = i * np.abs(d[neg_idx]) / neg_sum
+            arg = np.clip(arg, 0.0, exp_clip)
+            w_new[neg_idx] = np.exp(arg)
+        if m is None or m[0]:
+            w_new[0] = max(w_new[0], min_weight)
+        if m is None or m[-1]:
+            w_new[-1] = max(w_new[-1], min_weight)
+        w = w_new
     return z
 
 
@@ -175,3 +227,49 @@ def test_airpls_high_iterations():
                                   clip_nonnegative=False)
     assert result.baseline.shape == (_N,)
     assert np.all(np.isfinite(result.baseline))
+
+
+def test_airpls_parity_no_mask():
+    """airPLS must match the reference (no-cache, no in-place) implementation exactly."""
+    result = BaselineAPI.subtract(_x, _y, method="airpls", lam=1e5, niter=20,
+                                  clip_nonnegative=False)
+    ref = _reference_airpls(
+        _y, lam=1e5, niter=20, diff_order=2, tol=1e-6,
+        min_weight=1e-6, ridge=1e-12, exp_clip=50.0,
+    )
+    np.testing.assert_allclose(result.baseline, ref, atol=_ATOL,
+                               err_msg="airPLS baseline differs from reference (no mask)")
+
+
+def test_airpls_parity_masked():
+    """airPLS with mask must match the reference implementation exactly."""
+    mask = np.ones(_N, dtype=bool)
+    mask[40:60] = False
+    result = BaselineAPI.subtract(_x, _y, method="airpls", lam=1e5, niter=15,
+                                  mask=mask, clip_nonnegative=False)
+    ref = _reference_airpls(
+        _y, lam=1e5, niter=15, diff_order=2, tol=1e-6,
+        min_weight=1e-6, ridge=1e-12, exp_clip=50.0, mask=mask,
+    )
+    np.testing.assert_allclose(result.baseline, ref, atol=_ATOL,
+                               err_msg="airPLS baseline differs from reference (masked)")
+
+
+def test_arpls_masked():
+    """arPLS with mask must match the reference implementation exactly."""
+    mask = np.ones(_N, dtype=bool)
+    mask[70:90] = False
+    result = BaselineAPI.subtract(_x, _y, method="arpls", lam=1e5, niter=15,
+                                  mask=mask, clip_nonnegative=False)
+    ref = _reference_arpls(_y, lam=1e5, niter=15, diff_order=2, tol=1e-6, mask=mask)
+    np.testing.assert_allclose(result.baseline, ref, atol=_ATOL,
+                               err_msg="arPLS baseline differs from reference (masked)")
+
+
+def test_arpls_diff_order_1():
+    """arPLS diff_order=1 must match the reference implementation."""
+    result = BaselineAPI.subtract(_x, _y, method="arpls", diff_order=1, niter=10,
+                                  clip_nonnegative=False)
+    ref = _reference_arpls(_y, lam=1e6, niter=10, diff_order=1, tol=1e-6)
+    np.testing.assert_allclose(result.baseline, ref, atol=_ATOL,
+                               err_msg="arPLS diff_order=1 differs from reference")

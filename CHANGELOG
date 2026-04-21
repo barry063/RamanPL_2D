@@ -1,5 +1,62 @@
 # Changelog
 
+## [v0.4.9] — 2026-04-21 Native baseline optimisation
+
+### Changed
+
+- **`src/ramanpl/baselineAPI.py`** — iterative Whittaker kernel optimisation (asLS, arPLS, airPLS):
+  - Sparse diagonal matrix `W = diag(w)` is now pre-allocated once before the iteration loop;
+    `W.data[:]` is updated in-place each iteration, eliminating one `sparse.diags()` allocation per
+    iteration.
+  - System matrix `Z = W + lam*DtD` (or `W + lam*DtD + ridge*I` for airPLS) is now pre-built once
+    from the fixed penalty structure; only the diagonal entries are overwritten in-place each
+    iteration via a pre-computed index array, eliminating one sparse addition allocation per
+    iteration. `scipy.sparse.linalg.spsolve` reads from the updated `Z.data` each call without
+    modifying it.
+  - RHS vector `w * y` is computed into a pre-allocated buffer with `numpy.multiply(..., out=rhs)`
+    to avoid a temporary allocation per iteration.
+  - Mask float array `m.astype(float)` is pre-cast once before the loop (was re-cast each
+    iteration in asLS and arPLS).
+  - `w_prev` convergence buffer (arPLS) is pre-allocated and updated with `numpy.copyto`.
+  - Benchmark result (n=1024): asLS ~22% faster, arPLS ~29% faster, airPLS ~3% faster; at
+    n=512 airPLS ~71% faster.
+
+- **`src/ramanpl/preprocessing.py`** — native iterative baselines promoted to mapping fast path:
+  - Added `_apply_native_iterative_baseline_cube()`: applies asLS / arPLS / airPLS to every
+    pixel of a mapping cube without constructing a `SpectralDataset` per pixel. The
+    `_get_cached_DtD` result is shared across all Y×X spectra on the same axis.
+  - `_apply_vectorised_mapping_steps()` now routes `BaselineSubtract` steps with
+    `method in ("asls", "arpls", "airpls")` through the new cube-level helper instead of
+    passing them to the per-spectrum fallback loop.
+  - Benchmark result on medium (10×12) cube: asLS ~50% faster, arPLS ~32% faster, airPLS ~13%
+    faster vs. the v0.4.8 per-spectrum loop.
+
+### Tests added
+
+- **`tests/test_baseline_numerical_parity.py`**:
+  - Added `_reference_airpls` — independent reference implementation (no cache, no in-place)
+    matching the airPLS algorithm exactly.
+  - `test_airpls_parity_no_mask` / `test_airpls_parity_masked` — strict numerical parity
+    (atol=1e-10) for the optimised airPLS kernel.
+  - `test_arpls_masked` / `test_arpls_diff_order_1` — parity tests for masked and
+    diff_order=1 arPLS cases.
+- **`tests/test_batch_performance_path_regressions.py`**:
+  - `test_batch_native_background_remove_fit_reproducible` — deterministic fit with native
+    asLS background removal enabled.
+  - `test_batch_native_background_remove_provenance` — provenance field reports `"native"`.
+- **`tests/test_mapping_backend_benchmark_smoke.py`**:
+  - `test_mapping_benchmark_native_iterative_baseline_smoke` — smoke test for the new native
+    asLS mapping fast path through the benchmark harness.
+
+### Notes
+
+- Public API unchanged. No new parameters, no removed parameters.
+- Export provenance and metadata fields unchanged.
+- All 47 targeted tests pass; full test suite (169 tests) passes.
+- Benchmark evidence: before/after captured in `benchmarks/results/`.
+
+---
+
 ## [v0.4.8] — 2026-04-19 Executable backend-behaviour documentation and verification
 
 ### Added

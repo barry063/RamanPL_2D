@@ -231,23 +231,45 @@ class BaselineAPI:
 
         # Initial weights
         w = np.ones(n, dtype=float)
+        m_float = None
         if mask is not None:
             m = np.asarray(mask, dtype=bool).ravel()
             if m.shape != y.shape:
                 raise ValueError(f"mask must match y shape. Got {m.shape} vs {y.shape}.")
-            w *= m.astype(float)
+            m_float = m.astype(float)  # pre-cast once; reused every iteration
+            w *= m_float
+
+        # Pre-build sparse system Z = W + lam_DtD once; only the diagonal changes each
+        # iteration (because W = diag(w)). Update Z.data in-place to avoid per-iteration
+        # sparse matrix allocation and addition.
+        # Initialise W with ones so scipy stores all n diagonal slots as structural
+        # nonzeros (sparse.diags drops explicit zeros, so we can't init from w directly
+        # when the mask makes some entries zero).
+        lam_DtD_diag = np.asarray(lam_DtD.diagonal())
+        W = sparse.diags(np.ones(n), 0, shape=(n, n), format="csc")
+        W.data[:] = w   # write actual initial weights (may include zeros for masked pixels)
+        Z = (W + lam_DtD).tocsc()
+        Z.sort_indices()
+        _diag_idx = np.array(
+            [Z.indptr[j] + int(np.searchsorted(Z.indices[Z.indptr[j]:Z.indptr[j+1]], j))
+             for j in range(n)],
+            dtype=np.intp,
+        )
+        rhs = np.empty(n, dtype=float)
 
         z = np.zeros(n, dtype=float)
 
         for _ in range(niter):
-            W = sparse.diags(w, 0, shape=(n, n), format="csc")
-            Z = W + lam_DtD
-            z = spsolve(Z, w * y)
+            # Update W diagonal and Z diagonal in-place — avoids allocating new sparse matrices.
+            W.data[:] = w
+            Z.data[_diag_idx] = lam_DtD_diag + w
+            np.multiply(w, y, out=rhs)
+            z = spsolve(Z, rhs)
 
             # Asymmetric weights: penalise points above baseline more strongly
             w = p * (y > z) + (1 - p) * (y < z)
-            if mask is not None:
-                w *= m.astype(float)
+            if m_float is not None:
+                w *= m_float
 
         return np.asarray(z, dtype=float)
 
@@ -307,21 +329,42 @@ class BaselineAPI:
 
         # Initial weights
         w = np.ones(n, dtype=float)
+        m_float = None
         if mask is not None:
             m = np.asarray(mask, dtype=bool).ravel()
             if m.shape != y.shape:
                 raise ValueError(f"mask must match y shape. Got {m.shape} vs {y.shape}.")
-            w *= m.astype(float)
+            m_float = m.astype(float)  # pre-cast once; reused every iteration
+            w *= m_float
+
+        # Pre-build sparse system Z = W + lam_DtD once; only the diagonal changes each
+        # iteration (because W = diag(w)). Update Z.data in-place to avoid per-iteration
+        # sparse matrix allocation and addition.
+        # Initialise W with ones so scipy stores all n diagonal slots as structural nonzeros.
+        lam_DtD_diag = np.asarray(lam_DtD.diagonal())
+        W = sparse.diags(np.ones(n), 0, shape=(n, n), format="csc")
+        W.data[:] = w   # write actual initial weights
+        Z = (W + lam_DtD).tocsc()
+        Z.sort_indices()
+        _diag_idx = np.array(
+            [Z.indptr[j] + int(np.searchsorted(Z.indices[Z.indptr[j]:Z.indptr[j+1]], j))
+             for j in range(n)],
+            dtype=np.intp,
+        )
+        rhs = np.empty(n, dtype=float)
+        w_prev = np.empty(n, dtype=float)
 
         z = np.zeros(n, dtype=float)
         eps = 1e-12
 
         for _ in range(niter):
-            w_prev = w.copy()
+            np.copyto(w_prev, w)
 
-            W = sparse.diags(w, 0, shape=(n, n), format="csc")
-            Z = W + lam_DtD
-            z = spsolve(Z, w * y)
+            # Update W diagonal and Z diagonal in-place — avoids allocating new sparse matrices.
+            W.data[:] = w
+            Z.data[_diag_idx] = lam_DtD_diag + w
+            np.multiply(w, y, out=rhs)
+            z = spsolve(Z, rhs)
 
             d = y - z
             dn = d[d < 0]
@@ -335,8 +378,8 @@ class BaselineAPI:
             # Logistic reweighting (downweight positive residuals / peaks)
             w = 1.0 / (1.0 + np.exp(2.0 * (d - (2.0 * sigma - mu)) / sigma))
 
-            if mask is not None:
-                w *= m.astype(float)
+            if m_float is not None:
+                w *= m_float
 
             # Convergence check
             denom = np.linalg.norm(w_prev) + eps
@@ -433,15 +476,33 @@ class BaselineAPI:
         if m is not None:
             w[~m] = 0.0
 
+        # Pre-build sparse system Z = W + lam_DtD_ridge_I once; only the diagonal changes
+        # each iteration (because W = diag(w)). Update Z.data in-place to avoid per-iteration
+        # sparse matrix allocation and addition.
+        # Initialise W with ones so scipy stores all n diagonal slots as structural nonzeros.
+        lam_DtD_ridge_I_diag = np.asarray(lam_DtD_ridge_I.diagonal())
+        W = sparse.diags(np.ones(n), 0, shape=(n, n), format="csc")
+        W.data[:] = w   # write actual initial weights (may include zeros for masked pixels)
+        Z = (W + lam_DtD_ridge_I).tocsc()
+        Z.sort_indices()
+        _diag_idx = np.array(
+            [Z.indptr[j] + int(np.searchsorted(Z.indices[Z.indptr[j]:Z.indptr[j+1]], j))
+             for j in range(n)],
+            dtype=np.intp,
+        )
+        rhs = np.empty(n, dtype=float)
+
         z = np.zeros(n, dtype=float)
         eps = 1e-12
         y_scale = np.sum(np.abs(y)) + eps
 
         for i in range(1, niter + 1):
             # Solve (W + lam*DtD + ridge*I) z = W y
-            W = sparse.diags(w, 0, shape=(n, n), format="csc")
-            Z = W + lam_DtD_ridge_I
-            z = spsolve(Z, w * y)
+            # Update W diagonal and Z diagonal in-place — avoids allocating new sparse matrices.
+            W.data[:] = w
+            Z.data[_diag_idx] = lam_DtD_ridge_I_diag + w
+            np.multiply(w, y, out=rhs)
+            z = spsolve(Z, rhs)
 
             d = y - z
             neg_idx = d < 0

@@ -26,6 +26,7 @@ from benchmark_mapping_preprocessing import (
     _RESULT_FIELDS,
 )
 from ramanpl.integration.ramanspy_adapter import has_ramanspy
+from ramanpl.preprocessing import make_benchmark_pipeline_asls_baseline
 
 # ---------------------------------------------------------------------------
 # Tiny 2×2 fixture
@@ -87,3 +88,22 @@ def test_mapping_benchmark_auto_backend_records_resolved_backend():
     assert result["backend_resolved"] in ("native", "ramanspy"), (
         f"Unexpected resolved backend: {result['backend_resolved']!r}"
     )
+
+
+def test_mapping_benchmark_native_iterative_baseline_smoke():
+    """Native iterative baseline (asLS) benchmark case must run and record required fields."""
+    pipe = make_benchmark_pipeline_asls_baseline()
+    # Use a longer axis so crop step inside the pipeline has enough range to keep ≥3 points
+    x = np.linspace(200.0, 1800.0, 150)
+    cube = np.ones((2, 2, 150), dtype=float) + 0.1 * np.arange(150)
+    result = run_mapping_preprocess_case(
+        x=x, cube=cube, pipeline=pipe,
+        backend="native", dataset_name="smoke_native_asls",
+    )
+    assert isinstance(result, dict)
+    required = set(_RESULT_FIELDS)
+    assert required.issubset(set(result.keys())), (
+        f"Missing fields: {required - set(result.keys())}"
+    )
+    assert result["backend_resolved"] == "native"
+    assert result["runtime_s"] >= 0.0
