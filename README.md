@@ -579,6 +579,66 @@ b.export("raman_fit.txt", wide=True)  # header includes preprocessing_backend_re
 
 ---
 
+---
+
+## Release validation
+
+The following commands reproduce the full release-validation path from a clean checkout.
+
+### Base editable install
+
+```bash
+pip install -e ./src
+```
+
+### RamanSPy extras install
+
+```bash
+pip install -e "./src[ramanspy]"
+```
+
+### Package build (wheel + sdist)
+
+```bash
+pip install build
+python -m build ./src --outdir dist/
+```
+
+### Clean-install smoke
+
+Install the built wheel into a fresh environment, then run the packaging smoke tests:
+
+```bash
+pip install dist/RamanPL_2D-*.whl
+pytest tests/test_packaging_smoke.py -v
+```
+
+### Notebook smoke
+
+Execute the three canonical backend-behaviour notebooks headlessly:
+
+```bash
+pip install nbformat nbconvert ipykernel
+python -m ipykernel install --user --name python3
+pytest tests/test_notebook_smoke.py -v
+```
+
+### Benchmark smoke
+
+Validate that both benchmark harnesses run and emit structurally valid output (no timing thresholds enforced):
+
+```bash
+pytest tests/test_release_benchmark_smoke.py -v
+```
+
+> **Note:** Full before/after performance comparisons remain advisory and are not enforced in CI. Run the full benchmark scripts manually for performance studies:
+> ```bash
+> python benchmarks/benchmark_baseline_kernels.py
+> python benchmarks/benchmark_mapping_preprocessing.py
+> ```
+
+---
+
 # TO-DO
 
 # TO-DO

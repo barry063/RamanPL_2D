@@ -1,0 +1,66 @@
+image: python:3.11
+
+stages:
+  - test
+  - build
+  - smoke
+
+# -----------------------------------------------------------------------
+# Base tests — no RamanSPy required
+# -----------------------------------------------------------------------
+base-tests:
+  stage: test
+  script:
+    - pip install -e ./src
+    - pip install pytest
+    - pytest tests/
+        --ignore=tests/test_mapping_backend_parity.py
+        --ignore=tests/test_preprocessing_backend_resolution.py
+        -v
+
+# -----------------------------------------------------------------------
+# Package build
+# -----------------------------------------------------------------------
+package-build:
+  stage: build
+  script:
+    - pip install build
+    - python -m build ./src --outdir dist/
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 hour
+
+# -----------------------------------------------------------------------
+# Clean-install smoke
+# -----------------------------------------------------------------------
+clean-install-smoke:
+  stage: smoke
+  needs: [package-build]
+  script:
+    - pip install dist/*.whl
+    - pip install pytest
+    - pytest tests/test_packaging_smoke.py -v
+
+# -----------------------------------------------------------------------
+# Benchmark smoke
+# -----------------------------------------------------------------------
+benchmark-smoke:
+  stage: smoke
+  script:
+    - pip install -e ./src
+    - pip install pytest
+    - pytest tests/test_release_benchmark_smoke.py -v
+
+# -----------------------------------------------------------------------
+# RamanSPy extras smoke (optional; allowed to fail if ramanspy unavailable)
+# -----------------------------------------------------------------------
+extras-smoke:
+  stage: smoke
+  allow_failure: true
+  script:
+    - pip install -e "./src[ramanspy]"
+    - pip install pytest
+    - pytest tests/test_mapping_backend_parity.py
+             tests/test_preprocessing_backend_resolution.py
+             -v

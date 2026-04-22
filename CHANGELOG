@@ -1,5 +1,63 @@
 # Changelog
 
+## [v0.4.10] — 2026-04-22 Release validation and packaging gates
+
+### Added
+
+- **`src/pyproject.toml`** — PEP 517/518 build-system declaration (`setuptools` + `wheel`);
+  enables `python -m build` from the `src/` directory in clean environments.
+- **`MANIFEST.in`** — explicit sdist manifest ensuring `README.md`, `LICENSE`, and
+  `raman_materials.json` are always present in source distributions.
+- **`.github/workflows/ci.yml`** — GitHub Actions CI matrix (Python 3.9–3.11) with six jobs:
+  - `base-tests`: install base package, run pytest suite without RamanSPy.
+  - `extras-tests`: install `.[ramanspy]`, run backend-parity and resolution tests.
+  - `package-build`: build wheel and sdist via `python -m build`.
+  - `clean-install-smoke`: install built wheel into a fresh environment, run packaging smoke tests.
+  - `notebook-smoke`: execute the three canonical backend-behaviour notebooks headlessly.
+  - `benchmark-smoke`: validate benchmark harness execution and output structure.
+- **`.gitlab-ci.yml`** — lightweight GitLab CI mirror covering base tests, package build,
+  clean-install smoke, benchmark smoke, and optional RamanSPy extras smoke (`allow_failure: true`).
+- **`tests/test_packaging_smoke.py`** — five packaging smoke tests:
+  - `test_import_top_level_package` — confirms `ramanpl.__version__` after install.
+  - `test_import_public_entry_points` — confirms all `__all__` names resolve without error.
+  - `test_package_data_materials_json_present` — confirms `raman_materials.json` is discoverable
+    at runtime via `importlib.resources`.
+  - `test_base_install_does_not_require_ramanspy` — confirms `has_ramanspy()` returns a bool
+    without raising when RamanSPy is absent.
+  - `test_optional_ramanspy_import_path_is_guarded_cleanly` — confirms integration submodules
+    import without `ImportError` in a base-only install.
+- **`tests/test_notebook_smoke.py`** — parametrised smoke execution of the three canonical
+  backend notebooks using `nbconvert`; skipped automatically when `nbconvert` is absent.
+- **`tests/test_release_benchmark_smoke.py`** — seven smoke tests validating that the baseline
+  kernel and mapping preprocessing benchmark harnesses run, return records, and emit
+  structurally valid fields; no runtime thresholds are enforced.
+
+### Changed
+
+- **`src/setup.py`** — version bumped to `0.4.10`.
+- **`src/ramanpl/__init__.py`** — `__version__` bumped to `0.4.10`.
+- **`README.md`** — added **Release validation** section documenting the canonical commands
+  for base install, extras install, wheel/sdist build, clean-install smoke, notebook smoke,
+  and benchmark smoke; clarifies that full performance comparisons remain advisory.
+
+### Tests
+
+- New packaging smoke coverage (`test_packaging_smoke.py`): import integrity, data-file
+  presence, optional-dependency boundary.
+- New notebook smoke coverage (`test_notebook_smoke.py`): headless execution of
+  `Raman_backend_demo.ipynb`, `Raman_mapping_backend_demo.ipynb`, `Backend_fallback_cases.ipynb`.
+- New benchmark smoke coverage (`test_release_benchmark_smoke.py`): harness health for
+  both baseline-kernel and mapping-preprocessing benchmarks.
+
+### Notes
+
+- Public API unchanged. No scientific algorithm changes introduced.
+- Export provenance and metadata fields unchanged.
+- Benchmark smoke tests assert structural validity only; full performance comparisons
+  remain advisory and are run manually outside CI.
+
+---
+
 ## [v0.4.9] — 2026-04-21 Native baseline optimisation
 
 ### Changed

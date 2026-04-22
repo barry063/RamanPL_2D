@@ -6,7 +6,7 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="RamanPL_2D",
-    version="0.4.9",
+    version="0.4.10",
     packages=find_packages(),
     install_requires=[
         "numpy>=1.24.4",
