@@ -579,8 +579,6 @@ b.export("raman_fit.txt", wide=True)  # header includes preprocessing_backend_re
 
 ---
 
----
-
 ## Release validation
 
 The following commands reproduce the full release-validation path from a clean checkout.
@@ -637,9 +635,6 @@ pytest tests/test_release_benchmark_smoke.py -v
 > python benchmarks/benchmark_mapping_preprocessing.py
 > ```
 
----
-
-# TO-DO
 
 # TO-DO
 
@@ -669,9 +664,15 @@ pytest tests/test_release_benchmark_smoke.py -v
 | **v0.4.7** ✅ | API cleanup & deprecation removal | Finalise the preprocessing/backend contract before broader documentation and release hardening.<br>Remove deprecated parameters and legacy pathways.<br>Finalise preprocessing schema (`baseline_spec` / pipeline spec).<br>Freeze backend provenance/export field names and resolution behaviour.<br>Ensure example notebooks and release tests target the stabilised API. |
 | **v0.4.8** ✅ | Executable examples and backend demonstrations | Add user-facing notebooks that document supported backend behaviour clearly.<br>Add a supported Raman single-spectrum notebook comparing `native / auto / ramanspy`.<br>Add a supported Raman mapping notebook showing backend propagation and export provenance.<br>Add an unsupported/native-fallback notebook demonstrating clear fallback behaviour for unsupported workflows.<br>Link these notebooks from the README as the canonical backend-behaviour examples. |
 | **v0.4.9** ✅ | Native baseline optimisation | Eliminated per-iteration sparse matrix allocation in asLS / arPLS / airPLS kernels: W and Z diagonal updated in-place; RHS and convergence buffers pre-allocated. Native iterative baselines promoted to the mapping cube fast path — SpectralDataset construction per pixel eliminated. Benchmark gains: 1D kernels 22–71% faster; mapping (10×12 cube) asLS ~50% faster. All parity tests pass at atol=1e-10; public API unchanged. |
-| **v0.4.10** | Release validation and packaging gates | Prepare the project for reliable pip/GitLab/GitHub-based release workflows.<br>Add CI jobs for unit tests, integration tests, and optional RamanSPy extras install.<br>Add package build/install smoke tests for clean environments.<br>Add notebook smoke execution for selected `example-usage/` workflows.<br>Add benchmark smoke runs for release validation, while keeping full performance comparisons advisory rather than strict CI gates. |
-| **v0.5.0** | Raman preprocessing milestone release | Mark supported Raman preprocessing integration as stable and release-ready.<br>Declare supported Raman preprocessing workflows complete for `native / auto / ramanspy`.<br>Freeze the supported backend contract and documentation for the milestone release.<br>Ensure provenance/export behaviour, examples, and packaging validation are all aligned.<br>Defer broader analysis extensions until after the preprocessing/backend milestone is complete. |
 
+### v0.4.10+ — repository hardening, docs scaffold, and stable public milestone
+
+| Version | Scope | Details |
+|--------|------|--------|
+| **v0.4.10** ✅ | Release validation and packaging gates | Prepare the project for reliable pip/GitLab/GitHub-based release workflows.<br>Add CI jobs for unit tests, integration tests, and optional RamanSPy extras install.<br>Add package build/install smoke tests for clean environments.<br>Add notebook smoke execution for selected `example-usage/` workflows.<br>Add benchmark smoke runs for release validation, while keeping full performance comparisons advisory rather than strict CI gates. |
+| **v0.4.11** | Repository hardening and milestone freeze | - Add core repository-governance files: `SECURITY.md`, `CONTRIBUTING.md`, and `CODEOWNERS`  <br> - Consolidate packaging metadata into `pyproject.toml` and reduce `setup.py` to a thin compatibility layer, if still needed  <br> - Clean the source tree so `src/` contains only package/build-related content  <br> - Audit example data, notebook outputs, benchmark artefacts, and tracked fixtures for leakage/confusion risk  <br> - Tighten `.gitignore` and remove stray release/build artefacts from version control  <br> - Define an explicit milestone-freeze checklist: import stability, wheel/sdist install, notebook smoke, benchmark smoke, metadata consistency, changelog completeness  <br> - Keep scope non-scientific: no new algorithms, no backend-contract changes, no new peak models |
+| **v0.4.12** | Documentation scaffold and hosted docs preparation | - Introduce a dedicated documentation structure using Sphinx  <br> - Apply the Furo theme and create a clean top-level documentation navigation  <br> - Migrate canonical installation, quickstart, backend-behaviour, and examples guidance out of scattered notebooks/README prose into structured docs pages  <br> - Prepare Read the Docs configuration and confirm docs build reproducibly in CI  <br> - Keep documentation aligned with the already-frozen supported behaviour rather than expanding scientific scope  <br> - Use only the canonical notebooks/examples needed to prove supported workflows |
+| **v0.5.0** | Stable public milestone | - Declare the supported Raman preprocessing contract stable for public use  <br> - Freeze public install, import, preprocessing-backend, and provenance/export expectations  <br> - Publish the first stable release with validated packaging, release notes, and tagged release procedure  <br> - Ensure repository structure, governance files, tests, examples, and hosted documentation are all coherent and externally understandable  <br> - Keep unsupported or deferred areas explicitly documented rather than partially implemented  <br> - Treat new scientific features and larger workflow expansion as post-`v0.5.0` work |
 ---
 
 ### Notes
