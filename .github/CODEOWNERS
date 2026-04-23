@@ -1,0 +1,18 @@
+# Default owner for all files
+* @barry063
+
+# Core package source
+src/ @barry063
+
+# Tests
+tests/ @barry063
+
+# Benchmarks
+benchmarks/ @barry063
+
+# CI/CD workflows
+.github/workflows/ @barry063
+
+# Top-level documentation
+README.md @barry063
+CHANGELOG @barry063

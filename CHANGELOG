@@ -1,5 +1,53 @@
 # Changelog
 
+## [v0.4.11] — 2026-04-23 Repository hardening and milestone freeze
+
+### Added
+
+- **`SECURITY.md`** — vulnerability reporting policy: supported versions, private disclosure
+  route, and response expectations.
+- **`CONTRIBUTING.md`** — contribution guidelines: fork/branch/test/PR/changelog flow,
+  scientific-behaviour preservation rule, issue vs feature-request distinction.
+- **`.github/CODEOWNERS`** — review ownership for `src/`, `tests/`, `benchmarks/`,
+  `.github/workflows/`, `README.md`, and `CHANGELOG`.
+- **`CITATION.cff`** — CFF 1.2.0 citation metadata for the package as research software.
+- **`RELEASE.md`** — milestone-freeze checklist: the operational gate used to validate
+  a release candidate before tagging; serves as the bridge toward v0.5.0.
+
+### Changed
+
+- **`src/pyproject.toml`** — promoted from minimal build-system stub to main packaging
+  metadata source: full `[project]` table (`name`, `version`, `description`, `requires-python`,
+  `license`, `authors`, `classifiers`, `dependencies`, `[project.optional-dependencies]`,
+  `[project.urls]`), `[tool.setuptools.dynamic]` readme (resolved from `../README.md`),
+  `[tool.setuptools.packages.find]`, and `[tool.setuptools.package-data]`.
+  Build-system requirement updated to `setuptools>=61`.
+- **`src/setup.py`** — reduced to a two-line shim (`from setuptools import setup; setup()`);
+  all metadata now lives in `pyproject.toml`.
+- **`README.md`** — Source Code Structure tree updated (`install.ipynb` removed, `pyproject.toml`
+  added); installation section updated to remove the `install.ipynb` option; Option 3 renumbered
+  to Option 2.
+- **`.gitignore`** — extended to cover standard local/build/release artefacts: `build/`,
+  `dist/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `.coverage`, `coverage.xml`,
+  `coverage.lcov`, and `benchmarks/results/*.csv`.
+
+### Removed
+
+- **`src/install.ipynb`** — installation notebook removed from the source tree; `src/` now
+  contains only package and build content. Installation instructions remain available in
+  `README.md`.
+
+### Notes
+
+- No new scientific or algorithmic features are introduced in this release.
+- No public API or backend behaviour changes.
+- This release serves as milestone freeze preparation for v0.5.0.
+- `benchmarks/results/mapping_preprocess_benchmark.csv` is a pre-existing tracked generated
+  file; the new `.gitignore` rule prevents future regenerations from being committed.
+  Run `git rm --cached benchmarks/results/mapping_preprocess_benchmark.csv` to untrack it.
+
+---
+
 ## [v0.4.10] — 2026-04-22 Release validation and packaging gates
 
 ### Added

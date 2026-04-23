@@ -91,8 +91,8 @@ For development roadmap and future plans, see the [development roadmap](#develop
 ```text
 RamanPL_2D/
 ├── src/
+│   ├── pyproject.toml
 │   ├── setup.py
-│   ├── install.ipynb
 │   └── ramanpl/
 │       ├── __init__.py
 │       ├── baselineAPI.py                  # Baseline subtraction kernels (asLS/arPLS/airPLS/poly/gaussian); shared DtD cache
@@ -210,14 +210,9 @@ from ramanpl import RamanFit
 from ramanpl import PLfit
 ```
 
-#### Option 2: Run `install.ipynb` for installation
+**Important**: all the `.ipynb` in the example usage folders assume you have installed the package. Install the package before running them.
 
-Go to the `src` folder, click open the `install.ipynb` jupyter-notebook file. **DON'T** move the `install.ipynb` out of the `src` folder!
-Simply run all the codes in the `install.ipynb` to run the installation in the jupyter-notebook
-
-**Important**: all the `.ipynb` in the example usage folders assume you have installed the package. So if you couldn't run the example nicely, maybe install the packages first.
-
-#### Option 3: Add Folder to PYTHONPATH or sys.path (Manual)
+#### Option 2: Add Folder to PYTHONPATH or sys.path (Manual)
 
 If you prefer not to install the package, you can manually add the source folder to your Python path.
 
@@ -670,7 +665,7 @@ pytest tests/test_release_benchmark_smoke.py -v
 | Version | Scope | Details |
 |--------|------|--------|
 | **v0.4.10** ✅ | Release validation and packaging gates | Prepare the project for reliable pip/GitLab/GitHub-based release workflows.<br>Add CI jobs for unit tests, integration tests, and optional RamanSPy extras install.<br>Add package build/install smoke tests for clean environments.<br>Add notebook smoke execution for selected `example-usage/` workflows.<br>Add benchmark smoke runs for release validation, while keeping full performance comparisons advisory rather than strict CI gates. |
-| **v0.4.11** | Repository hardening and milestone freeze | - Add core repository-governance files: `SECURITY.md`, `CONTRIBUTING.md`, and `CODEOWNERS`  <br> - Consolidate packaging metadata into `pyproject.toml` and reduce `setup.py` to a thin compatibility layer, if still needed  <br> - Clean the source tree so `src/` contains only package/build-related content  <br> - Audit example data, notebook outputs, benchmark artefacts, and tracked fixtures for leakage/confusion risk  <br> - Tighten `.gitignore` and remove stray release/build artefacts from version control  <br> - Define an explicit milestone-freeze checklist: import stability, wheel/sdist install, notebook smoke, benchmark smoke, metadata consistency, changelog completeness  <br> - Keep scope non-scientific: no new algorithms, no backend-contract changes, no new peak models |
+| **v0.4.11**✅ | Repository hardening and milestone freeze | - Add core repository-governance files: `SECURITY.md`, `CONTRIBUTING.md`, and `CODEOWNERS`  <br> - Consolidate packaging metadata into `pyproject.toml` and reduce `setup.py` to a thin compatibility layer, if still needed  <br> - Clean the source tree so `src/` contains only package/build-related content  <br> - Audit example data, notebook outputs, benchmark artefacts, and tracked fixtures for leakage/confusion risk  <br> - Tighten `.gitignore` and remove stray release/build artefacts from version control  <br> - Define an explicit milestone-freeze checklist: import stability, wheel/sdist install, notebook smoke, benchmark smoke, metadata consistency, changelog completeness  <br> - Keep scope non-scientific: no new algorithms, no backend-contract changes, no new peak models |
 | **v0.4.12** | Documentation scaffold and hosted docs preparation | - Introduce a dedicated documentation structure using Sphinx  <br> - Apply the Furo theme and create a clean top-level documentation navigation  <br> - Migrate canonical installation, quickstart, backend-behaviour, and examples guidance out of scattered notebooks/README prose into structured docs pages  <br> - Prepare Read the Docs configuration and confirm docs build reproducibly in CI  <br> - Keep documentation aligned with the already-frozen supported behaviour rather than expanding scientific scope  <br> - Use only the canonical notebooks/examples needed to prove supported workflows |
 | **v0.5.0** | Stable public milestone | - Declare the supported Raman preprocessing contract stable for public use  <br> - Freeze public install, import, preprocessing-backend, and provenance/export expectations  <br> - Publish the first stable release with validated packaging, release notes, and tagged release procedure  <br> - Ensure repository structure, governance files, tests, examples, and hosted documentation are all coherent and externally understandable  <br> - Keep unsupported or deferred areas explicitly documented rather than partially implemented  <br> - Treat new scientific features and larger workflow expansion as post-`v0.5.0` work |
 ---

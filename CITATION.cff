@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: RamanPL_2D
+abstract: >
+  Python toolkit for Raman and photoluminescence spectroscopy analysis
+  in two-dimensional materials. Provides single-spectrum fitting, batch
+  analysis, spectral mapping, and preprocessing pipelines.
+authors:
+  - family-names: Yu
+    given-names: Hao
+    email: hy377@cam.ac.uk
+version: 0.4.11
+date-released: "2026-04-23"
+license: BSD-3-Clause
+repository-code: https://github.com/barry063/RamanPL_2D
