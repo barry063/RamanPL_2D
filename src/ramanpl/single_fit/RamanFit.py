@@ -8,6 +8,8 @@ Classes:
     RamanFit: Main class for processing, fitting, and visualizing Raman spectra.
     DataImporter: Class for importing Raman data from .wdf and .txt files (single spectrum only)
 """
+from __future__ import annotations
+
 import numpy as np
 import matplotlib.pyplot as plt
 import json
