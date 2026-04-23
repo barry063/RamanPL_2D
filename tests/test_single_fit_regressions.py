@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 import ramanpl.preprocessing as pre
+import ramanpl.integration.ramanspy_bridge as bridge_mod
 import ramanpl.single_fit._single_fit_core as core
 from ramanpl.single_fit._single_fit_core import (
     generate_p0_trials,
@@ -106,7 +107,7 @@ def test_ramanfit_auto_promotes_to_ramanspy_when_supported(monkeypatch):
     def fake_translation_support(pipeline):
         return True, []
 
-    monkeypatch.setattr(pre, "resolve_preprocessing_backend", fake_bridge)
+    monkeypatch.setattr(bridge_mod, "resolve_preprocessing_backend", fake_bridge)
     monkeypatch.setattr(pre, "pipeline_supports_ramanspy_translation", fake_translation_support)
 
     x = np.linspace(350.0, 430.0, 201)
@@ -190,7 +191,7 @@ def test_plfit_forced_ramanspy_raises_when_input_is_not_supported(monkeypatch):
     def fake_translation_support(pipeline):
         return True, []
 
-    monkeypatch.setattr(pre, "resolve_preprocessing_backend", fake_bridge)
+    monkeypatch.setattr(bridge_mod, "resolve_preprocessing_backend", fake_bridge)
     monkeypatch.setattr(pre, "pipeline_supports_ramanspy_translation", fake_translation_support)
 
     x = np.linspace(1.75, 2.05, 201)

@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 import ramanpl.preprocessing as pre
+import ramanpl.integration.ramanspy_bridge as bridge_mod
 from ramanpl.batch import RamanBatch
 
 
@@ -96,7 +97,7 @@ def test_raman_batch_auto_supported_pipeline_resolves_ramanspy(tmp_path, monkeyp
     def fake_translation_support(pipeline):
         return True, []
 
-    monkeypatch.setattr(pre, "resolve_preprocessing_backend", fake_bridge)
+    monkeypatch.setattr(bridge_mod, "resolve_preprocessing_backend", fake_bridge)
     monkeypatch.setattr(pre, "pipeline_supports_ramanspy_translation", fake_translation_support)
 
     batch = _make_batch(tmp_path, n=2, preprocessing_backend="auto")
