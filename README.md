@@ -86,6 +86,30 @@ For development roadmap and future plans, see the [development roadmap](#develop
 
 ---
 
+## Documentation
+
+Full documentation is available on Read the Docs (link will be added once the hosted site is live).
+
+For a local documentation build:
+
+```bash
+pip install -r docs/requirements.txt
+pip install -e ./src
+sphinx-build -b html docs/source docs/build/html
+```
+
+Open `docs/build/html/index.html` in a browser.
+
+Key documentation pages:
+
+- [Installation](docs/source/installation.md)
+- [Quickstart](docs/source/quickstart.md)
+- [Backend behaviour](docs/source/user-guide/backend-behaviour.md)
+- [API reference](docs/source/api/index.rst)
+- [Canonical notebook examples](docs/source/examples/canonical-notebooks.md)
+
+---
+
 ## Source Code Structure
 
 ```text

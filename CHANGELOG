@@ -1,5 +1,45 @@
 # Changelog
 
+## [v0.4.12] — 2026-04-24 Documentation scaffold and hosted docs preparation
+
+### Added
+
+- **`docs/`** — in-repository Sphinx documentation scaffold with `docs/source/` and
+  `docs/requirements.txt`.
+- **Furo theme** — configured via `html_theme = "furo"` in `docs/source/conf.py`.
+- **MyST Markdown support** — `myst-parser` extension enabled; all user-guide and
+  reference pages are written in Markdown.
+- **User-guide pages** — `installation.md`, `quickstart.md`,
+  `user-guide/preprocessing.md`, `user-guide/backend-behaviour.md`,
+  `user-guide/single-spectrum.md`, `user-guide/mapping.md`,
+  `user-guide/batch.md`, `user-guide/export-provenance.md`.
+- **Examples index** — `examples/canonical-notebooks.md` linking the three canonical
+  backend-behaviour notebooks and additional example notebooks.
+- **API reference** — `docs/source/api/index.rst` covering stable public modules:
+  `ramanpl.single_fit`, `ramanpl.mapping`, `ramanpl.batch`, `ramanpl.preprocessing`,
+  `ramanpl.baselineAPI`, `ramanpl.exporter`, `ramanpl.dataImporter`.
+- **`.readthedocs.yaml`** — Read the Docs build configuration at repository root;
+  targets Python 3.11, ubuntu-24.04, installs from `docs/requirements.txt` and `./src`.
+- **CI docs-build job** — smoke build added to `.github/workflows/ci.yml`; fails CI if
+  Sphinx cannot build the documentation.
+
+### Changed
+
+- **`README.md`** — added `Documentation` section with local build instructions and
+  links to key documentation pages; detailed usage guidance now lives in `docs/`.
+- **`.gitignore`** — added `docs/build/` and `docs/source/_build/` to prevent
+  generated HTML from being committed.
+
+### Notes
+
+- No scientific behaviour changes.
+- No fitting, preprocessing, backend, or export API changes.
+- Documentation lives in the main `RamanPL_2D` repository (no separate docs repo).
+- `fail_on_warning: false` in `.readthedocs.yaml` — to be tightened in a later build
+  once API cross-references are stable.
+
+---
+
 ## [v0.4.11] — 2026-04-23 Repository hardening and milestone freeze
 
 ### Added

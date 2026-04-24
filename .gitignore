@@ -43,3 +43,7 @@ coverage.lcov
 
 # Generated benchmark result dumps
 benchmarks/results/*.csv
+
+# Documentation build output (do not commit generated HTML)
+docs/build/
+docs/source/_build/
