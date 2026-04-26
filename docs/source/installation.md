@@ -12,7 +12,7 @@ Clone the repository and install in editable mode from the `src/` directory:
 ```bash
 git clone https://github.com/barry063/RamanPL_2D.git
 cd RamanPL_2D
-pip install -e ./src
+pip install -e .
 ```
 
 An editable install means changes to the source are reflected immediately without reinstalling.
@@ -22,7 +22,7 @@ An editable install means changes to the source are reflected immediately withou
 RamanSPy is an optional preprocessing backend for supported Raman workflows. It is not needed for PL workflows or native preprocessing.
 
 ```bash
-pip install -e "./src[ramanspy]"
+pip install -e ".[ramanspy]"
 ```
 
 If RamanSPy is not installed, `preprocessing_backend="auto"` silently falls back to native.
@@ -31,7 +31,7 @@ If RamanSPy is not installed, `preprocessing_backend="auto"` silently falls back
 
 ```bash
 pip install -r docs/requirements.txt
-pip install -e ./src
+pip install -e .
 sphinx-build -b html docs/source docs/build/html
 ```
 

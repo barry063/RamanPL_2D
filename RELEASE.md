@@ -16,7 +16,7 @@ This is the operational gate for v0.5.0 and all subsequent releases.
 ```bash
 # Build wheel and sdist
 pip install build
-python -m build ./src --outdir dist/
+python -m build . --outdir dist/
 ```
 
 - [ ] Wheel builds without error
@@ -38,7 +38,7 @@ python -c "import ramanpl; print(ramanpl.__version__)"
 ## Test suite
 
 ```bash
-pip install -e ./src
+pip install -e .
 pip install pytest
 pytest tests/ --ignore=tests/test_mapping_backend_parity.py \
               --ignore=tests/test_preprocessing_backend_resolution.py -v
