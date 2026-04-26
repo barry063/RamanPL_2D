@@ -80,6 +80,7 @@ def _mock_bridge_result(requested_backend, modality, axis_kind, *, ramanspy_avai
 # ---------------------------------------------------------------------------
 
 def test_raman_batch_auto_supported_pipeline_resolves_ramanspy(tmp_path, monkeypatch):
+    pytest.importorskip("ramanspy")
     def fake_bridge(**kwargs):
         supported = (
             kwargs["modality"] == "Raman"
