@@ -7,9 +7,15 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   ramanpl.integration
    ramanpl.mapping
    ramanpl.single_fit
+
+Internal integration modules
+----------------------------
+
+The ``ramanpl.integration`` subpackage is used internally to support optional
+RamanSPy-backed preprocessing. It is intentionally excluded from the stable
+public API reference and may change without deprecation.
 
 Submodules
 ----------

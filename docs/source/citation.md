@@ -9,7 +9,7 @@ A `CITATION.cff` file is provided in the repository root in [Citation File Forma
 ```text
 Software: RamanPL_2D
 Author:   Hao Yu
-Version:  0.4.12
+Version:  0.5.0
 Repository: https://github.com/barry063/RamanPL_2D
 ```
 
@@ -19,7 +19,7 @@ Repository: https://github.com/barry063/RamanPL_2D
 @software{yu_ramanpl2d,
   author    = {Hao Yu},
   title     = {RamanPL\_2D},
-  version   = {0.4.12},
+  version   = {0.5.0},
   url       = {https://github.com/barry063/RamanPL_2D},
 }
 ```

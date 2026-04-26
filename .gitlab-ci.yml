@@ -16,6 +16,7 @@ base-tests:
     - pytest tests/
         --ignore=tests/test_mapping_backend_parity.py
         --ignore=tests/test_preprocessing_backend_resolution.py
+        --ignore=tests/test_single_fit_backend_parity.py
         -v
 
 # -----------------------------------------------------------------------
@@ -63,4 +64,5 @@ extras-smoke:
     - pip install pytest
     - pytest tests/test_mapping_backend_parity.py
              tests/test_preprocessing_backend_resolution.py
+             tests/test_single_fit_backend_parity.py
              -v

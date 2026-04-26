@@ -6,7 +6,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 project = "RamanPL_2D"
 author = "Hao Yu"
-release = "0.4.12"
+release = "0.5.0"
 
 extensions = [
     "myst_parser",
