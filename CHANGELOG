@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.5.0 — Stable public milestone
+
+### Added
+
+- Stable public milestone release for RamanPL_2D.
+- Finalised documentation, release validation, and public repository presentation.
+- Read the Docs documentation configuration linked from README once hosted site is live.
+
+### Changed
+
+- Synchronised package version metadata across `pyproject.toml`, `__init__.py`, documentation config, and citation metadata.
+- Clarified public API and internal API boundaries in generated documentation.
+- Simplified README into a package landing page.
+- Fixed packaging metadata: README is now declared statically in `pyproject.toml` (`readme = {file = ...}`) rather than via `dynamic = ["readme"]`.
+
+### CI
+
+- Fixed base CI: `test_batch_backend_regressions.py` and `test_single_fit_regressions.py` now run in base CI (no longer silently ignored).
+- Fixed extras CI: `test_single_fit_backend_parity.py` now runs in the RamanSPy extras job.
+- Fixed notebook-smoke CI: installs `./src[ramanspy]` so the RamanSPy-backed path is actually exercised.
+- Aligned GitLab CI test categorisation with GitHub Actions.
+
+### Notes
+
+- No new fitting, baseline, preprocessing, or backend algorithms are introduced.
+- Public preprocessing/backend behaviour is frozen for the supported Raman workflows.
+- PL workflows and Gaussian baseline remain native-only.
+
+---
+
 ## [v0.4.12] — 2026-04-24 Documentation scaffold and hosted docs preparation
 
 ### Added

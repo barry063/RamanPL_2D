@@ -2,7 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 .code-workspace
-*.gitignore
 *.egg-info
 CLAUDE.md
 .claude/
@@ -10,9 +9,7 @@ htmlcov/
 
 
 # Generated mapping outputs (too large for GitHub)
-example-usage/Mapping/*_subtracted.txt
 example-usage/Mapping/*.txt
-example-usage/Mapping/*_subtracted.txt
 
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
