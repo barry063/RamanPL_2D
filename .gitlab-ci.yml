@@ -11,7 +11,7 @@ stages:
 base-tests:
   stage: test
   script:
-    - pip install -e ./src
+    - pip install -e .
     - pip install pytest
     - pytest tests/
         --ignore=tests/test_mapping_backend_parity.py
@@ -26,7 +26,7 @@ package-build:
   stage: build
   script:
     - pip install build
-    - python -m build ./src --outdir dist/
+    - python -m build . --outdir dist/
   artifacts:
     paths:
       - dist/
@@ -49,7 +49,7 @@ clean-install-smoke:
 benchmark-smoke:
   stage: smoke
   script:
-    - pip install -e ./src
+    - pip install -e .
     - pip install pytest
     - pytest tests/test_release_benchmark_smoke.py -v
 
@@ -60,7 +60,7 @@ extras-smoke:
   stage: smoke
   allow_failure: true
   script:
-    - pip install -e "./src[ramanspy]"
+    - pip install -e ".[ramanspy]"
     - pip install pytest
     - pytest tests/test_mapping_backend_parity.py
              tests/test_preprocessing_backend_resolution.py

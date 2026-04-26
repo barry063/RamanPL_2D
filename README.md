@@ -20,13 +20,13 @@
 Base install (no optional dependencies):
 
 ```bash
-pip install -e "./src"
+pip install -e .
 ```
 
 With optional RamanSPy preprocessing backend:
 
 ```bash
-pip install -e "./src[ramanspy]"
+pip install -e ".[ramanspy]"
 ```
 
 Requires Python ≥ 3.9.
@@ -61,7 +61,7 @@ For local documentation build:
 
 ```bash
 pip install -r docs/requirements.txt
-pip install -e ./src
+pip install -e .
 sphinx-build -b html docs/source docs/build/html
 ```
 

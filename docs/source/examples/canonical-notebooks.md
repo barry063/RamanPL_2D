@@ -1,6 +1,6 @@
 # Canonical notebook examples
 
-The notebooks below are the primary executable examples for RamanPL_2D. They are located in the `example-usage/` directory of the repository and should be run after installing the package (`pip install -e ./src`).
+The notebooks below are the primary executable examples for RamanPL_2D. They are located in the `example-usage/` directory of the repository and should be run after installing the package (`pip install -e .`).
 
 These notebooks are treated as executable examples, not the API reference. For API details, see {doc}`../api/index`.
 
