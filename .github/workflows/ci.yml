@@ -29,15 +29,15 @@ jobs:
       - name: Install package (base)
         run: pip install -e .
 
-      - name: Run base test suite
-        # Exclude only tests that require real RamanSPy execution
+      - name: Run extras test suite
         run: |
           pip install pytest
-          pytest tests/ \
-            --ignore=tests/test_mapping_backend_parity.py \
-            --ignore=tests/test_preprocessing_backend_resolution.py \
-            --ignore=tests/test_single_fit_backend_parity.py \
-            -v
+          pytest tests/test_mapping_backend_parity.py \
+                 tests/test_preprocessing_backend_resolution.py \
+                 tests/test_single_fit_backend_parity.py \
+                 tests/test_batch_backend_regressions.py \
+                 tests/test_single_fit_regressions.py \
+                 -v
 
   # -----------------------------------------------------------------------
   # Job 2: RamanSPy extras tests
