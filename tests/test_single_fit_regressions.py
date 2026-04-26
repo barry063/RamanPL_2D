@@ -90,6 +90,7 @@ def test_generate_p0_trials_jitter_is_centred_on_user_base_p0():
 
 
 def test_ramanfit_auto_promotes_to_ramanspy_when_supported(monkeypatch):
+    pytest.importorskip("ramanspy")
     def fake_bridge(**kwargs):
         supported = (
             kwargs["modality"] == "Raman"
