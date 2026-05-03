@@ -6,12 +6,12 @@
 
 ## Key features
 
-- Single-spectrum and batch fitting (Lorentzian, pseudo-Voigt)
-- Spectral mapping with heatmaps and derived maps (peak separation, intensity ratios)
-- Modular preprocessing pipelines with `native`, `auto`, and `ramanspy` backend modes
-- Import from `.wdf` (Renishaw WiRE) and `.txt`
-- Export to `.csv` / `.txt` with full provenance metadata
-- CI-validated packaging, documented public API, and canonical example notebooks
+* Single-spectrum and batch fitting (Lorentzian, pseudo-Voigt)
+* Spectral mapping with heatmaps and derived maps (peak separation, intensity ratios)
+* Modular preprocessing pipelines with `native`, `auto`, and `ramanspy` backend modes
+* Import from `.wdf` (Renishaw WiRE) and `.txt`
+* Export to `.csv` / `.txt` with full provenance metadata
+* CI-validated packaging, documented public API, and canonical example notebooks
 
 ---
 
@@ -19,13 +19,13 @@
 
 Base install (no optional dependencies):
 
-```bash
+```
 pip install -e .
 ```
 
 With optional RamanSPy preprocessing backend:
 
-```bash
+```
 pip install -e ".[ramanspy]"
 ```
 
@@ -35,7 +35,7 @@ Requires Python ≥ 3.9.
 
 ## Quickstart
 
-```python
+```
 from ramanpl import RamanFit
 
 raman_fit = RamanFit.RamanFit(
@@ -51,7 +51,7 @@ raman_fit.fit()
 raman_fit.export("results.txt")
 ```
 
-See [`example-usage/`](example-usage/) for full notebooks.
+See [`example-usage/`](example-usage) for full notebooks.
 
 ---
 
@@ -59,7 +59,7 @@ See [`example-usage/`](example-usage/) for full notebooks.
 
 For local documentation build:
 
-```bash
+```
 pip install -r docs/requirements.txt
 pip install -e .
 sphinx-build -b html docs/source docs/build/html
@@ -69,18 +69,18 @@ Open `docs/build/html/index.html` in a browser.
 
 Key pages:
 
-- [Installation](docs/source/installation.md)
-- [Quickstart](docs/source/quickstart.md)
-- [Backend behaviour](docs/source/user-guide/backend-behaviour.md)
-- [API reference](docs/source/api/index.rst)
-- [Canonical notebook examples](docs/source/examples/canonical-notebooks.md)
+* [Installation](docs/source/installation.md)
+* [Quickstart](docs/source/quickstart.md)
+* [Backend behaviour](docs/source/user-guide/backend-behaviour.md)
+* [API reference](docs/source/api/index.rst)
+* [Canonical notebook examples](docs/source/examples/canonical-notebooks.md)
 
 ---
 
 ## Backend support summary
 
 | Workflow | `native` | `auto` | `ramanspy` |
-| -------- | -------- | ------ | ---------- |
+| --- | --- | --- | --- |
 | Raman + supported pipeline | native | ramanspy (if installed) | ramanspy |
 | Raman + unsupported step | native | native (fallback) | raises error |
 | PL (any pipeline) | native | native | native |
@@ -106,24 +106,19 @@ CI runs on GitHub Actions (`.github/workflows/ci.yml`) and GitLab (`.gitlab-ci.y
 
 ---
 
-### v0.5.x–v0.6.0 — Interpretable ML-assisted analysis roadmap
+### v0.5.x–v0.6.0 — Interpretable analysis and ML-assisted workflows roadmap
 
-> Post-v0.5.0 development focuses on lightweight, interpretable machine-learning-assisted workflows.
-> The priority is to improve fitting efficiency and mapping-scale analysis while preserving physically interpretable peak fitting, explicit preprocessing provenance, and stable export behaviour.
-> ML components should assist peak proposal, feature extraction, clustering, and workflow triage; final scientific quantities should remain traceable to deterministic fitting wherever possible.
+> Post-v0.5.0 development focuses on improving fitting efficiency and mapping-scale analysis while preserving physically interpretable peak fitting, explicit preprocessing provenance, and stable export behaviour.
+> Earlier builds (v0.5.1–v0.5.3) extend existing deterministic infrastructure: per-pixel quality columns in mapping exports, generalised peak descriptors, and classical signal-processing aids for failed-fit recovery. Machine-learning components appear only from v0.5.4 onwards, as an optional `[ml]` extra, and are confined to unsupervised analysis of fitted descriptors. Final scientific quantities remain traceable to deterministic fitting wherever possible.
 
 | Version | Scope | Details |
 |---|---|---|
-| **v0.5.1** | ML-ready spectral feature tables | - Add a lightweight `ramanpl.ml.features` module. <br> - Convert single-fit, batch, and mapping outputs into structured descriptor tables. <br> - Include interpretable descriptors: peak position, FWHM, peak height, peak ratios, peak separations, residual/RMSE, fit success, bound-sticking flags, backend/provenance fields. <br> - Support CSV export of feature tables for external analysis. <br> - Add deterministic tests using synthetic spectra and fitted mock outputs. <br> - No trained ML model yet; this build prepares the data foundation. |
-| **v0.5.2** | Peak proposal and fitting initialisation | - Add lightweight peak proposal utilities for estimating candidate peak centres, widths, and presence/absence before curve fitting. <br> - Use signal-processing and classical methods first, e.g. local maxima, prominence, derivative/curvature cues, and optional `scikit-learn`-based helpers. <br> - Feed proposed peaks into existing Lorentzian/pseudo-Voigt fitting as improved initial guesses. <br> - Preserve deterministic fitting as the final source of peak parameters. <br> - Benchmark against current warm-start/adaptive fitting on single-spectrum and mapping workflows. <br> - Acceptance criterion: faster fitting or fewer failed fits without systematic drift in fitted peak position/FWHM/height. |
-| **v0.5.3** | Mapping-level clustering and region discovery | - Add unsupervised analysis of fitted feature tables for Raman/PL maps. <br> - Support PCA and lightweight clustering on fitted descriptors rather than raw black-box spectra. <br> - Generate interpretable region labels, cluster maps, outlier maps, and per-cluster summary statistics. <br> - Keep clustering optional and dependency-light through an `ml` extra. <br> - Provide one notebook showing domain discovery on fitted mapping descriptors. <br> - Avoid claiming automatic material identification at this stage. |
-| **v0.5.4** | ML-assisted fitting benchmark and validation | - Consolidate benchmark tests for baseline/current fitting, peak-proposal-assisted fitting, and mapping-level workflows. <br> - Measure runtime, fit success rate, residual/RMSE, peak-position stability, FWHM stability, and peak-height stability. <br> - Add regression tests to ensure ML-assisted proposals do not change final scientific behaviour unexpectedly. <br> - Add failure-mode analysis: weak peaks, overlapping peaks, noisy spectra, broad background, and low-SNR spectra. <br> - Keep benchmark thresholds advisory rather than strict CI timing gates. |
-| **v0.5.5** | API cleanup and ML module stabilisation | - Review the `ramanpl.ml` public API after v0.5.1–v0.5.4. <br> - Consolidate feature-table schema, naming conventions, export fields, and optional dependency handling. <br> - Remove duplicated helper logic between fitting, mapping, and ML modules. <br> - Improve error messages for missing optional ML dependencies. <br> - Freeze the first stable ML-assisted workflow contract. <br> - No new algorithms unless required to stabilise existing behaviour. |
-| **v0.5.6** | Interpretable quality metrics and fit triage | - Add quality scoring for spectra and fitted pixels using interpretable metrics. <br> - Include flags for low SNR, high residual, failed fit, suspicious FWHM, peak overlap, boundary-hitting parameters, and poor baseline correction. <br> - Use these metrics to triage mapping pixels before or after fitting. <br> - Provide quality maps and summary tables for mapping workflows. <br> - Keep the scoring transparent and rule-based first; any learned score should be optional and explainable. |
-| **v0.5.7** | Lightweight model persistence and reproducibility | - Add optional support for saving/loading lightweight fitted preprocessing or ML-assist configurations. <br> - Store model/config metadata: package version, feature schema version, preprocessing provenance, training data description, and dependency versions. <br> - Support simple serialisation for classical models only, e.g. `joblib` for `scikit-learn` models. <br> - Avoid large neural-network dependencies by default. <br> - Add tests that saved configurations reproduce the same predictions or proposals. |
-| **v0.5.8** | Supervised classification pilot, experimental | - Add an experimental supervised-learning interface only after feature-table and validation infrastructure is stable. <br> - Target narrow tasks first, e.g. layer-number class, material family label, or map-region class, depending on available labelled data. <br> - Require explicit labels, train/test split, and validation metrics. <br> - Report confusion matrix and class-wise performance, not only accuracy. <br> - Clearly mark the interface as experimental and dataset-dependent. <br> - Do not present this as universal material identification. |
-| **v0.5.9** | Pre-v0.6 review, documentation, and examples | - Review all ML-assisted workflows for scientific validity, API consistency, and documentation clarity. <br> - Clean notebooks and examples so they demonstrate supported workflows only. <br> - Add documentation pages for feature extraction, peak proposal, clustering, quality metrics, and supervised-classification limitations. <br> - Re-check optional dependency boundaries: base install should not require ML dependencies. <br> - Update README, docs, and changelog to distinguish stable, optional, and experimental ML features. |
-| **v0.6.0** | Interpretable ML-assisted analysis milestone | - Declare the first stable ML-assisted analysis milestone. <br> - Stable components: feature tables, peak proposal for fitting initialisation, mapping clustering, quality metrics, and reproducible lightweight model/config handling. <br> - Experimental components may remain clearly marked, especially supervised material classification. <br> - Maintain deterministic physical fitting as the final authority for reported peak parameters. <br> - Provide full validation examples showing speed, robustness, and scientific parity against non-ML workflows. |
+| **v0.5.1** | Mapping-fit benchmark and per-pixel QA columns | - Add `benchmarks/benchmark_mapping_fit.py` measuring `fit_spectra()` runtime across cube sizes, `n_starts` settings, and warm-start on/off. <br> - Establish a recorded "before" performance baseline ahead of any efficiency work. <br> - Extend the per-pixel mapping export row to include `rmse`, `ok`, `n_starts`, and `n_params_at_bounds` columns (data already collected in `residual_map` and `fit_diagnostics_map`). <br> - Add an optional `long=True` flag to `export_fit_map` producing one-row-per-pixel-per-peak format for downstream pandas/scikit-learn workflows. <br> - No changes to fitting algorithms or scientific output values. |
+| **v0.5.2** | Generalised peak descriptors and feature-table accessor | - Generalise the existing Raman A1g/E2g ratio and separation logic into a peak-pair-agnostic descriptor builder usable by both `RamanMapping` and `PLMapping`. <br> - Add `Mapping.feature_table()` returning a `pandas.DataFrame` of per-pixel descriptors (peak position, FWHM, peak height, configurable ratios and separations, plus the QA columns added in v0.5.1). <br> - Mirror the same accessor for batch and single-fit outputs for API consistency. <br> - No new optional dependencies; pandas is already a base dependency. |
+| **v0.5.3** | Classical peak-proposal aid for failed-fit recovery | - Add `single_fit/initialisation.py` providing peak-proposal helpers based on `scipy.signal.find_peaks` (prominence, width, derivative cues). <br> - Wire proposals into `mapping/_fit_utils.py` as an additional fallback path used **only** when the existing adaptive multistart and warm-start paths have failed. <br> - This is classical signal processing, not machine learning; the module name reflects that. <br> - Acceptance criterion: lower failed-fit count on hard pixels (overlapping peaks, weak peaks, broad backgrounds) without systematic drift in fitted peak position, FWHM, or peak height on previously successful pixels. <br> - Benchmarked against the v0.5.1 baseline. |
+| **v0.5.4** | Optional `[ml]` extra: unsupervised mapping clustering | - Introduce `ramanpl.ml.clustering` providing PCA and k-means on feature tables produced by v0.5.2. <br> - Add `[ml]` optional dependency on `scikit-learn`; base install remains unaffected. <br> - Operate on fitted descriptors, not on raw spectra, to keep clustering interpretable and avoid learning instrument or substrate artefacts. <br> - Provide one notebook demonstrating domain discovery on a representative mapping dataset. <br> - No claims of automatic material identification. |
+| **v0.5.5** | Consolidation pause: API freeze, docs, dependency hygiene | - Review the public surface introduced in v0.5.1–v0.5.4 and freeze the feature-table schema, descriptor naming, and `[ml]` extra boundary. <br> - Update API reference, user-guide pages, and changelog to reflect the new exports and accessor. <br> - Confirm base install still functions without `scikit-learn` and that `ramanpl.ml` raises a clear error when the extra is missing. <br> - No new algorithms in this build. |
+| **v0.6.0** | Stable interpretable-analysis milestone | - Declare the first stable interpretable-analysis milestone built on v0.5.1–v0.5.5. <br> - Stable components: per-pixel QA-augmented mapping export, generalised peak descriptors, `feature_table()` accessors, classical peak-proposal aid for failed-fit recovery, and optional unsupervised clustering on fitted descriptors. <br> - Maintain deterministic physical fitting as the final authority for all reported peak parameters. <br> - Provide validation examples comparing fit quality, runtime, and failure-mode behaviour against the v0.5.0 baseline. <br> - Supervised classification (e.g. layer-number labels) remains deferred to a later v0.7.x cycle, conditional on the availability of curated, labelled, multi-instrument datasets. |
 
 ---
 
@@ -141,5 +136,5 @@ BSD-3-Clause. See [`LICENSE`](LICENSE) for details.
 
 ## Contact
 
-Hao Yu — <yuhao19980603@gmail.com>  
+Hao Yu — <hy377@cam.ac.uk>  
 Issues and pull requests: <https://github.com/barry063/RamanPL_2D/issues>
