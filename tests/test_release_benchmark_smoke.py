@@ -99,3 +99,63 @@ def test_mapping_benchmark_smoke_run_native():
         f"Unexpected backend_resolved: {row['backend_resolved']}"
     )
     assert row["axis_match"] is True, "Axis length mismatch after preprocessing"
+
+
+# ---------------------------------------------------------------------------
+# Mapping fit benchmark smoke
+# ---------------------------------------------------------------------------
+
+_FIT_REQUIRED_FIELDS = {
+    "dataset_name", "cube_shape", "warm_start", "n_starts", "random_state",
+    "runtime_s", "n_curve_fit_calls", "success_rate", "mean_rmse_finite",
+    "n_failed_pixels",
+}
+
+
+def test_mapping_fit_benchmark_builds_cases():
+    from benchmark_mapping_fit import build_mapping_fit_benchmark_cases
+    cases = build_mapping_fit_benchmark_cases()
+    assert isinstance(cases, list)
+    assert len(cases) > 0
+    name, x, cube = cases[0]
+    assert isinstance(name, str)
+    assert cube.ndim == 3
+    assert x.shape[0] == cube.shape[2]
+
+
+def test_mapping_fit_benchmark_smoke_run():
+    from benchmark_mapping_fit import (
+        build_mapping_fit_benchmark_cases,
+        build_fit_kwargs_variants,
+        run_mapping_fit_case,
+    )
+    cases = build_mapping_fit_benchmark_cases()
+    variants = build_fit_kwargs_variants()
+    name, x, cube = cases[0]   # "small_3x4"
+    fit_kwargs = variants[0]   # warm_start=False, n_starts=1
+
+    row = run_mapping_fit_case(x=x, cube=cube, fit_kwargs=fit_kwargs, dataset_name=name)
+
+    missing = _FIT_REQUIRED_FIELDS - row.keys()
+    assert not missing, f"Fit benchmark row missing fields: {missing}"
+
+
+def test_mapping_fit_benchmark_record_structure():
+    from benchmark_mapping_fit import (
+        build_mapping_fit_benchmark_cases,
+        build_fit_kwargs_variants,
+        run_mapping_fit_case,
+    )
+    cases = build_mapping_fit_benchmark_cases()
+    variants = build_fit_kwargs_variants()
+    name, x, cube = cases[0]
+    fit_kwargs = variants[0]
+
+    row = run_mapping_fit_case(x=x, cube=cube, fit_kwargs=fit_kwargs, dataset_name=name)
+
+    assert isinstance(row["n_curve_fit_calls"], int), (
+        f"n_curve_fit_calls must be int, got {type(row['n_curve_fit_calls'])}"
+    )
+    assert row["n_curve_fit_calls"] >= 0
+    assert 0.0 <= row["success_rate"] <= 1.0
+    assert row["runtime_s"] >= 0.0

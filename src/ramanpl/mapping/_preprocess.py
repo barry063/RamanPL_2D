@@ -282,6 +282,44 @@ class _MappingPreprocessMixin:
         self.residual_map = np.full((self.Y, self.X), np.nan, dtype=float)
         self.norm_scale_map = np.full((self.Y, self.X), np.nan, dtype=float)
 
+    def _qa_columns_for_pixel(self, j: int, i: int, n_peaks: int) -> dict:
+        """
+        Return per-pixel QA columns for export.
+
+        Always returns the same four keys regardless of fit success or
+        diagnostics mode: rmse, ok, n_starts, n_params_at_bounds.
+
+        Failed pixels return rmse=NaN, ok=False, n_starts=NaN,
+        n_params_at_bounds=NaN.  When fit_diagnostics_map is None
+        (diagnostics='none'), n_starts and n_params_at_bounds are NaN
+        but rmse and ok still resolve from residual_map.
+        """
+        _nan = float("nan")
+
+        rmse = float(self.residual_map[j, i])
+        ok = bool(np.isfinite(rmse))
+
+        diag = None
+        if getattr(self, "fit_diagnostics_map", None) is not None:
+            diag = self.fit_diagnostics_map[j, i]
+
+        if diag is not None and isinstance(diag, dict):
+            n_starts = diag.get("n_starts", _nan)
+            n_at_bounds = (
+                diag.get("n_params_at_lower_bounds", 0)
+                + diag.get("n_params_at_upper_bounds", 0)
+            )
+        else:
+            n_starts = _nan
+            n_at_bounds = _nan
+
+        return {
+            "rmse": rmse,
+            "ok": ok,
+            "n_starts": n_starts,
+            "n_params_at_bounds": n_at_bounds,
+        }
+
     def _initialise_mapping_fit_common(
         self,
         *,
