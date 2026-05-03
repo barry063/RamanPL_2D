@@ -22,7 +22,7 @@ example-usage/Mapping/*.txt
 
 # Ignore vibe coding plans
 checklist.md
-claude_plan.md
+actionplan.md
 
 # Build and distribution artefacts
 build/
