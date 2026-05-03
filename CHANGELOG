@@ -1,6 +1,70 @@
 # Changelog
 
-## v0.5.0 — Stable public milestone
+## [v0.5.1] — 2026-05-03 Mapping-fit benchmark and per-pixel QA columns
+
+### Added
+- `benchmarks/benchmark_mapping_fit.py` (new): mapping-fit performance benchmark mirroring the
+  structure of `benchmark_mapping_preprocessing.py`. Sweeps synthetic cubes across `warm_start`
+  on/off and `n_starts ∈ {1, 4}` with fixed `random_state=42`. Records per-case `runtime_s`,
+  `n_curve_fit_calls`, `success_rate`, `mean_rmse_finite`, and `n_failed_pixels` to
+  `benchmarks/results/mapping_fit_benchmark.csv`. Module docstring records the runtime-fluctuation
+  caveats: wall-clock is advisory because curve_fit iteration count, warm-start state propagation,
+  and adaptive-multistart retries introduce structural variability that is not noise.
+  `n_curve_fit_calls` (counted via local `unittest.mock.patch` on `scipy.optimize.curve_fit`) is
+  the hardware-independent primary metric; future builds claiming a speed-up must show a reduction
+  in this count, not only in `runtime_s`.
+- `_qa_columns_for_pixel()` helper on `_MappingPreprocessMixin` returning a fixed-schema dict with
+  `rmse`, `ok`, `n_starts`, `n_params_at_bounds` for any pixel, regardless of fit success.
+  Resolves `rmse`/`ok` from `residual_map` and the diagnostic counts from `fit_diagnostics_map`,
+  with NaN fall-back when `diagnostics='none'` was used.
+- Per-pixel QA columns (`rmse`, `ok`, `n_starts`, `n_params_at_bounds`) appended to every row of
+  `export_fit_map` in both `RamanMapping` and `PLMapping`. Failed pixels now emit a fully-populated
+  row with NaN-valued parameter columns and `ok=False`, replacing the previous `{x, y}`-only
+  rows for failed pixels. This makes the export a fixed-schema, machine-readable table.
+- `long=True` keyword-only argument on `export_fit_map` in both mapping classes. Produces
+  one-row-per-(pixel, peak) output with schema
+  `x, y, peak, centre, fwhm, peak_height, peak_height_norm, amp, scale[, eta], rmse, ok, n_starts, n_params_at_bounds`.
+  The metadata header records `export_format: "long"` to distinguish from the default wide format.
+- `tests/test_export_fit_map_qa_columns.py` (new): 5 tests covering header content, value parity
+  with `residual_map`, failed-pixel row emission, fall-back when `fit_diagnostics_map=None`, and
+  byte-level parity of pre-existing per-peak columns against a v0.5.0 reference snapshot.
+- `tests/test_export_fit_map_long_format.py` (new): 5 tests covering row count, column schema,
+  pixel-peak round-trip via `pivot_parameters`, failed-pixel row count, and `export_format`
+  metadata field.
+- `tests/test_release_benchmark_smoke.py`: 3 new smoke tests confirming `benchmark_mapping_fit.py`
+  builds cases, runs the smallest case, and produces records with the expected fields.
+
+### Changed
+- `pyproject.toml`: added `pytest.ini_options.pythonpath = ["src"]` so tests resolve `ramanpl`
+  imports without an editable install. Test command unchanged for users.
+
+### Notes
+- **No scientific changes.** Fitting algorithms, baseline algorithms, preprocessing, and all
+  scientific output values are unchanged. Parity was verified against a v0.5.0 reference snapshot:
+  `fitted_params`, `residual_map`, `fit_diagnostics_map`, and the pre-existing per-peak columns of
+  the wide-format export are bit-identical to v0.5.0 on the same synthetic cube.
+- **Backward compatible.** Existing wide-format column names and ordering are preserved. The four
+  QA columns are appended at the end. Default behaviour with `long=False` (the default) reads
+  identically to v0.5.0 except for the appended QA columns and the new fully-populated rows for
+  failed pixels.
+- **Failed-pixel row format change.** In v0.5.0, failed pixels emitted rows containing only `x`
+  and `y` (other columns blank). In v0.5.1, failed pixels emit a complete row with NaN-valued
+  parameter and QA columns and `ok=False`. Downstream readers that depended on blank cells as the
+  failure indicator should switch to checking `ok` or `np.isnan(rmse)` instead.
+- **Heatmap plotting unaffected.** `plot_heatmap`, `plot_residual_map`, `plot_ratio_heatmap`, and
+  `inspect_residuals` read directly from in-memory arrays (`fitted_params`, `residual_map`,
+  `peak_intensities`), not from the export file. The export-row change is decoupled from the
+  rendering path.
+- **Test suite:** 198 passed, 5 skipped, 0 failures (full local run). 13 new tests across the
+  three test files listed above.
+- **Out of scope, deferred to later builds:** generalised peak ratios and separations and
+  `Mapping.feature_table()` accessor are deferred to v0.5.2; classical peak-proposal aid for
+  failed-fit recovery is deferred to v0.5.3; any `ramanpl.ml` namespace and `[ml]` extra are
+  deferred to v0.5.4 (see roadmap in `README.md`).
+
+--------
+
+## [v0.5.0] — 2026-04-26 — Stable public milestone
 
 ### Added
 
