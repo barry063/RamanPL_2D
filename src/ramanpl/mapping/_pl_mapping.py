@@ -1049,7 +1049,7 @@ class PLMapping(_MappingPreprocessMixin):
         plt.tight_layout()
         plt.show()
 
-    ### Updated in v0.3.8
+    ### Updated in v0.5.1
     def export_fit_map(
         self,
         out_path: str,
@@ -1059,10 +1059,17 @@ class PLMapping(_MappingPreprocessMixin):
         headers: bool = True,
         include_header: bool = True,
         delimiter: str | None = None,
+        long: bool = False,
     ) -> str:
         """
-        Export fit results for every pixel in wide format:
-        x, y, then per-peak parameters on the same row.
+        Export fit results for every pixel.
+
+        Default (long=False): wide format — x, y, then per-peak parameters
+        on the same row, followed by QA columns rmse, ok, n_starts,
+        n_params_at_bounds.
+
+        long=True: one row per (pixel, peak) — x, y, peak, then per-peak
+        parameters, followed by the same QA columns.
         """
         if not hasattr(self, "fitted_params") or self.fitted_params is None:
             raise ValueError("No fitted_params found. Run fit_spectra() first.")
@@ -1070,53 +1077,99 @@ class PLMapping(_MappingPreprocessMixin):
         coord_mode = normalise_coord_mode(coord_mode)
 
         peak_labels = list(self.peak_params)
-        fields = ["x", "y"]
 
         per_peak_fields = ["centre", "fwhm", "peak_height", "peak_height_norm", "amp", "scale"]
         if self.peak_profile == "pvoigt":
             per_peak_fields.append("eta")
 
-        for p in peak_labels:
-            for f in per_peak_fields:
-                fields.append(f"{p}_{f}")
+        _qa_fields = ["rmse", "ok", "n_starts", "n_params_at_bounds"]
+
+        if long:
+            fields = ["x", "y", "peak"] + per_peak_fields + _qa_fields
+        else:
+            fields = ["x", "y"]
+            for p in peak_labels:
+                for f in per_peak_fields:
+                    fields.append(f"{p}_{f}")
+            fields.extend(_qa_fields)
 
         rows = []
-        for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
-            params = np.asarray(self.fitted_params[j, i, :], dtype=float)
-            if np.any(np.isnan(params)):
-                rows.append({"x": x, "y": y})
-                continue
 
-            intensity_scale = 1.0
-            if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
-                intensity_scale = float(self.norm_scale_map[j, i])
+        if long:
+            for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
+                params = np.asarray(self.fitted_params[j, i, :], dtype=float)
+                qa = self._qa_columns_for_pixel(j, i, len(peak_labels))
+                failed = np.any(np.isnan(params))
 
-            per_peak = self._params_to_export_dict(
-                self.xdata,
-                peak_labels,
-                params,
-                intensity_scale=intensity_scale,
-            )
+                intensity_scale = 1.0
+                if (not failed) and scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
+                    intensity_scale = float(self.norm_scale_map[j, i])
 
-            r = {"x": x, "y": y}
-            for name in peak_labels:
-                d = per_peak[name]
-                r[f"{name}_centre"] = d["centre"]
-                r[f"{name}_fwhm"] = d["fwhm"]
-                r[f"{name}_peak_height"] = d["peak_height"]
-                r[f"{name}_peak_height_norm"] = d["peak_height_norm"]
-                r[f"{name}_amp"] = d["amp"]
-                r[f"{name}_scale"] = d["scale"]
-                if self.peak_profile == "pvoigt":
-                    r[f"{name}_eta"] = d["eta"]
+                if not failed:
+                    per_peak = self._params_to_export_dict(
+                        self.xdata, peak_labels, params, intensity_scale=intensity_scale,
+                    )
 
-            rows.append(r)
+                for name in peak_labels:
+                    r = {"x": x, "y": y, "peak": name}
+                    if failed:
+                        for f in per_peak_fields:
+                            r[f] = float("nan")
+                    else:
+                        d = per_peak[name]
+                        r["centre"] = d["centre"]
+                        r["fwhm"] = d["fwhm"]
+                        r["peak_height"] = d["peak_height"]
+                        r["peak_height_norm"] = d["peak_height_norm"]
+                        r["amp"] = d["amp"]
+                        r["scale"] = d["scale"]
+                        if self.peak_profile == "pvoigt":
+                            r["eta"] = d["eta"]
+                    r.update(qa)
+                    rows.append(r)
 
+        else:
+            for x, y, j, i in self._iter_coords(coord_mode=coord_mode):
+                params = np.asarray(self.fitted_params[j, i, :], dtype=float)
+                qa = self._qa_columns_for_pixel(j, i, len(peak_labels))
+                if np.any(np.isnan(params)):
+                    r = {"x": x, "y": y}
+                    r.update(qa)
+                    rows.append(r)
+                    continue
+
+                intensity_scale = 1.0
+                if scaled and hasattr(self, "norm_scale_map") and np.isfinite(self.norm_scale_map[j, i]):
+                    intensity_scale = float(self.norm_scale_map[j, i])
+
+                per_peak = self._params_to_export_dict(
+                    self.xdata,
+                    peak_labels,
+                    params,
+                    intensity_scale=intensity_scale,
+                )
+
+                r = {"x": x, "y": y}
+                for name in peak_labels:
+                    d = per_peak[name]
+                    r[f"{name}_centre"] = d["centre"]
+                    r[f"{name}_fwhm"] = d["fwhm"]
+                    r[f"{name}_peak_height"] = d["peak_height"]
+                    r[f"{name}_peak_height_norm"] = d["peak_height_norm"]
+                    r[f"{name}_amp"] = d["amp"]
+                    r[f"{name}_scale"] = d["scale"]
+                    if self.peak_profile == "pvoigt":
+                        r[f"{name}_eta"] = d["eta"]
+                r.update(qa)
+                rows.append(r)
+
+        export_format = "long" if long else "wide"
         meta = self._build_mapping_fit_export_meta(
             coord_mode=coord_mode,
             scaled=scaled,
             peak_labels=peak_labels,
         )
+        meta["export_format"] = export_format
 
         return write_table(
             rows,
