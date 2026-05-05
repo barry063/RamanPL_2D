@@ -33,6 +33,7 @@
 - User-guide "Feature tables" subsections in `docs/source/user-guide/mapping.md`,
   `docs/source/user-guide/batch.md`, and `docs/source/user-guide/single-spectrum.md`.
 - `ramanpl.descriptors` module added to `docs/source/api/ramanpl.rst` API reference.
+- `examples/Mapping/Feature_Table_Example.ipynb` (new): example usage of `Mapping.feature_table()` to build a DataFrame with peak positions, heights, ratios, and separations; pivoted into 2-D maps for visualisation.
 
 ### Notes
 - **No scientific changes.** Fitting algorithms, baseline algorithms, preprocessing, and all
