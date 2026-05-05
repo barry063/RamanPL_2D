@@ -35,6 +35,19 @@ df = batch.table()
 
 Returns a DataFrame with one row per spectrum and columns for each fitted peak parameter (position, FWHM, intensity/peak height).
 
+## Feature tables
+
+`feature_table()` returns a wide-format `pandas.DataFrame` — one row per source file — with per-peak descriptors and QA columns.
+
+```python
+df = batch.feature_table(
+    separations=[("A1g", "E2g")],
+    ratios=[("A1g", "E2g")],
+)
+# Columns: source, A1g_position, A1g_fwhm, …, A1g_E2g_separation, A1g_E2g_ratio,
+#          rmse, ok, n_starts, n_params_at_bounds
+```
+
 ## Export
 
 **Wide format** (one row per spectrum, all peaks as columns):

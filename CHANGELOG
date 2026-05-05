@@ -1,5 +1,58 @@
 # Changelog
 
+## [v0.5.2] — 2026-05-05 — Generalised peak descriptors and feature-table accessor
+
+### Added
+- `src/ramanpl/descriptors.py` (new): pure-numpy module with two public functions:
+  `build_feature_row(per_peak_dict, qa_dict, peak_labels, *, ratios, separations)` constructs a
+  flat feature dict for one pixel/spectrum (per-peak columns `{name}_position`, `{name}_fwhm`,
+  `{name}_peak_height`, `{name}_peak_height_norm`; optional `{P1}_{P2}_separation` and
+  `{P1}_{P2}_ratio` derived columns; QA passthrough); `validate_peak_pairs(pairs, peak_labels)`
+  raises `ValueError` naming the unknown label when a pair references an undefined peak.
+  Module imports only `numpy` — no pandas, no internal coupling.
+- `feature_table(*, coord_mode, scaled, ratios, separations)` method on `_MappingPreprocessMixin`
+  in `src/ramanpl/mapping/_preprocess.py`. Inherited by both `RamanMapping` and `PLMapping`.
+  Returns a wide-format `pandas.DataFrame` (one row per pixel). Failed pixels emit a full row with
+  `ok=False` and NaN per-peak/derived fields. Pandas imported lazily inside the method.
+- `feature_table(*, ratios, separations)` method on `_BaseBatch` in `src/ramanpl/batch.py`.
+  Returns one row per source file with a leading `source` column. Requires
+  `.fit(return_fitters=True)` (same requirement as `summary_by_peak()`).
+- `feature_table(*, ratios, separations)` method on `RamanFit` in
+  `src/ramanpl/single_fit/RamanFit.py`: single-row DataFrame.
+- `feature_table(*, ratios, separations)` method on `PLfit` in
+  `src/ramanpl/single_fit/PLfit.py`: single-row DataFrame.
+- `tests/test_descriptors_unit.py` (new): 5 unit tests for the descriptor builder (two-peak
+  hand calculation, pVoigt eta silently ignored, NaN propagation, zero-denominator ratio → NaN,
+  `validate_peak_pairs` error message names offending label).
+- `tests/test_feature_table_mapping.py` (new): 9 tests covering DataFrame shape, column schema,
+  ratio/separation values, failed-pixel NaN row, invalid-pair ValueError, PLMapping parity,
+  peak-height vs `peak_intensities` array agreement, no-pairs column absence, no-fit guard.
+- `tests/test_feature_table_batch_and_single.py` (new): 6 tests covering RamanBatch and PLBatch
+  one-row-per-source, RamanFit and PLfit single-row, separation-vs-summary numerical agreement,
+  and QA column name consistency across all three class families.
+- User-guide "Feature tables" subsections in `docs/source/user-guide/mapping.md`,
+  `docs/source/user-guide/batch.md`, and `docs/source/user-guide/single-spectrum.md`.
+- `ramanpl.descriptors` module added to `docs/source/api/ramanpl.rst` API reference.
+
+### Notes
+- **No scientific changes.** Fitting algorithms, baseline algorithms, preprocessing, and all
+  scientific output values are unchanged. Parity verified against the v0.5.0 reference snapshot via
+  `benchmarks/_step4_parity.py`: `fitted_params`, `residual_map`, and pre-existing per-peak export
+  columns are bit-identical.
+- **v0.5.1 export schema unchanged.** `export_fit_map` output (wide and long formats) is
+  unmodified. `_raman_mapping.py` and `_pl_mapping.py` are untouched.
+- **No new dependencies.** `pandas` is already a base dependency. `ramanpl.descriptors` imports
+  only `numpy`.
+- **Additive API only.** `feature_table()` is the only new public method per class. No existing
+  methods were renamed or removed.
+- **Test suite:** 218 passed, 5 skipped, 0 failures (198 v0.5.1 baseline + 20 new tests).
+- **Out of scope, deferred to later builds:** vectorising `_params_to_export_dict()`,
+  caching `feature_table()` output, long-format `feature_table()` (use `.melt()` instead),
+  refactoring `plot_map`/`plot_ratio_heatmap` to share code with the descriptor builder
+  (deferred to v0.5.3+), peak proposals (v0.5.3), ML extras (v0.5.4).
+
+--------
+
 ## [v0.5.1] — 2026-05-03 Mapping-fit benchmark and per-pixel QA columns
 
 ### Added

@@ -1510,6 +1510,63 @@ class _BaseBatch:
 
         return stats_df
 
+    def feature_table(self, *, ratios=None, separations=None):
+        """
+        Return a wide-format DataFrame of per-spectrum peak descriptors and QA columns.
+
+        One row per source file, with a leading ``source`` column.
+        Requires ``.fit(return_fitters=True)`` to have been called first.
+
+        Parameters
+        ----------
+        ratios : list of (str, str) or None
+            Each ``(P1, P2)`` adds ``{P1}_{P2}_ratio`` (peak_height[P1] / peak_height[P2]).
+        separations : list of (str, str) or None
+            Each ``(P1, P2)`` adds ``{P1}_{P2}_separation`` (position[P1] − position[P2]).
+
+        Returns
+        -------
+        pandas.DataFrame
+        """
+        if self.fits is None:
+            raise RuntimeError("No fits cached. Run .fit(return_fitters=True) first.")
+
+        import pandas as pd
+        from ramanpl import descriptors
+
+        _, _, first_fitter = self.fits[0]
+        peak_labels = list(first_fitter.peak_labels)
+        descriptors.validate_peak_pairs(
+            list(ratios or []) + list(separations or []), peak_labels
+        )
+
+        rows = []
+        for raw_s, _fit_s, fitter in self.fits:
+            fitted = fitter.get_fitted_parameters()
+            per_peak = {
+                name: {
+                    "centre": d["position"],
+                    "fwhm": d["fwhm"],
+                    "peak_height": d["peak_height"],
+                    "peak_height_norm": d["height_norm"],
+                }
+                for name, d in fitted.items()
+            }
+            diag = getattr(fitter, "fit_diagnostics", None) or {}
+            rmse_val = float(diag.get("rmse", float("nan")))
+            qa = {
+                "rmse": rmse_val,
+                "ok": bool(np.isfinite(rmse_val)),
+                "n_starts": float(diag.get("n_starts", float("nan"))),
+                "n_params_at_bounds": float(diag.get("n_params_at_bounds", float("nan"))),
+            }
+            feat = descriptors.build_feature_row(
+                per_peak, qa, peak_labels, ratios=ratios, separations=separations
+            )
+            rows.append({"source": raw_s.source, **feat})
+
+        return pd.DataFrame.from_records(rows)
+
     def _print_peak_blocks(
         self,
         stats_df,

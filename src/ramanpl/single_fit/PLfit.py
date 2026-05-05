@@ -229,6 +229,56 @@ class PLfit:
         self.params_cov = None
 
 
+    def feature_table(self, *, ratios=None, separations=None):
+        """
+        Return fitted peak descriptors as a single-row DataFrame.
+
+        Parameters
+        ----------
+        ratios : list of (str, str) or None
+            Each ``(P1, P2)`` adds ``{P1}_{P2}_ratio``.
+        separations : list of (str, str) or None
+            Each ``(P1, P2)`` adds ``{P1}_{P2}_separation``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row with per-peak, derived, and QA columns.
+        """
+        if not hasattr(self, "params_fit") or self.params_fit is None:
+            raise RuntimeError("No fitted parameters. Run fit_spectrum() first.")
+
+        import pandas as pd
+        from ramanpl import descriptors
+
+        peak_labels = list(self.peak_labels)
+        descriptors.validate_peak_pairs(
+            list(ratios or []) + list(separations or []), peak_labels
+        )
+
+        fitted = self.get_fitted_parameters()
+        per_peak = {
+            name: {
+                "centre": d["position"],
+                "fwhm": d["fwhm"],
+                "peak_height": d["peak_height"],
+                "peak_height_norm": d["height_norm"],
+            }
+            for name, d in fitted.items()
+        }
+        diag = getattr(self, "fit_diagnostics", None) or {}
+        rmse_val = float(diag.get("rmse", float("nan")))
+        qa = {
+            "rmse": rmse_val,
+            "ok": bool(np.isfinite(rmse_val)),
+            "n_starts": float(diag.get("n_starts", float("nan"))),
+            "n_params_at_bounds": float(diag.get("n_params_at_bounds", float("nan"))),
+        }
+        feat = descriptors.build_feature_row(
+            per_peak, qa, peak_labels, ratios=ratios, separations=separations
+        )
+        return pd.DataFrame.from_records([feat])
+
     ### UPDATED METHOD in v0.3.3 ###
     def update_bounds(self, **kwargs):
         """Update fitting constraints for specific peaks.

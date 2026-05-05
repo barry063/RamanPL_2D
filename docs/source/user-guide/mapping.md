@@ -90,6 +90,22 @@ raman_map.plot_map("A1g_E2g_separation")  # A1g − E2g peak separation
 raman_map.plot_map("E2g_A1g_ratio")       # E2g / A1g intensity ratio
 ```
 
+## Feature tables
+
+`feature_table()` returns a wide-format `pandas.DataFrame` — one row per pixel — with per-peak descriptors and QA columns. Optional `ratios` and `separations` arguments add derived columns.
+
+```python
+df = raman_map.feature_table(
+    ratios=[("A1g", "E2g")],
+    separations=[("A1g", "E2g")],
+)
+# Columns: x, y, A1g_position, A1g_fwhm, A1g_peak_height, A1g_peak_height_norm,
+#          E2g_*, A1g_E2g_separation, A1g_E2g_ratio,
+#          rmse, ok, n_starts, n_params_at_bounds
+```
+
+The same method is available on `PLMapping`. Failed pixels emit a full row with `ok=False` and NaN per-peak fields.
+
 ## Residual maps
 
 ```python

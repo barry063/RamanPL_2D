@@ -68,6 +68,14 @@ ramanpl.dataImporter module
    :undoc-members:
    :show-inheritance:
 
+ramanpl.descriptors module
+--------------------------
+
+.. automodule:: ramanpl.descriptors
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 ramanpl.exporter module
 -----------------------
 

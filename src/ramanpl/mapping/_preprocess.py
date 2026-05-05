@@ -320,6 +320,92 @@ class _MappingPreprocessMixin:
             "n_params_at_bounds": n_at_bounds,
         }
 
+    def feature_table(self, *, coord_mode="pixel", scaled=True, ratios=None, separations=None):
+        """
+        Return a wide-format DataFrame of per-pixel peak descriptors and QA columns.
+
+        Parameters
+        ----------
+        coord_mode : {'pixel', 'real'}
+            Coordinate convention for ``x``/``y`` columns.
+        scaled : bool
+            If True, peak heights are in physical intensity units (scaled by the
+            per-pixel normalisation factor). If False, normalised-space heights.
+        ratios : list of (str, str) or None
+            Each ``(P1, P2)`` adds a ``{P1}_{P2}_ratio`` column
+            (peak_height[P1] / peak_height[P2]; zero denominator → NaN).
+        separations : list of (str, str) or None
+            Each ``(P1, P2)`` adds a ``{P1}_{P2}_separation`` column
+            (position[P1] − position[P2]).
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per pixel; columns: x, y, per-peak descriptors, derived
+            columns (if requested), rmse, ok, n_starts, n_params_at_bounds.
+
+        Raises
+        ------
+        ValueError
+            If no fit has been run, or if a pair references an unknown peak label.
+        """
+        if not hasattr(self, "fitted_params") or self.fitted_params is None:
+            raise ValueError("No fitted_params; run fit_spectra() first.")
+
+        try:
+            from .. import descriptors
+        except Exception:  # pragma: no cover
+            import descriptors
+
+        import pandas as pd
+
+        peak_labels = list(self.peak_params)
+        descriptors.validate_peak_pairs(
+            list(ratios or []) + list(separations or []), peak_labels
+        )
+
+        xaxis = np.asarray(getattr(self, self._schema_x_attr()), dtype=float).ravel()
+
+        rows = []
+        for x, y_coord, j, i in self._iter_coords(coord_mode=coord_mode):
+            params = np.asarray(self.fitted_params[j, i, :], dtype=float)
+            qa = self._qa_columns_for_pixel(j, i, len(peak_labels))
+            failed = bool(np.any(np.isnan(params)))
+
+            if failed:
+                row = {"x": x, "y": y_coord}
+                for name in peak_labels:
+                    row[f"{name}_position"] = float("nan")
+                    row[f"{name}_fwhm"] = float("nan")
+                    row[f"{name}_peak_height"] = float("nan")
+                    row[f"{name}_peak_height_norm"] = float("nan")
+                for p1, p2 in (separations or []):
+                    row[f"{p1}_{p2}_separation"] = float("nan")
+                for p1, p2 in (ratios or []):
+                    row[f"{p1}_{p2}_ratio"] = float("nan")
+                row.update(qa)
+            else:
+                intensity_scale = 1.0
+                if (
+                    scaled
+                    and hasattr(self, "norm_scale_map")
+                    and np.isfinite(self.norm_scale_map[j, i])
+                ):
+                    intensity_scale = float(self.norm_scale_map[j, i])
+
+                per_peak = self._params_to_export_dict(
+                    xaxis, peak_labels, params, intensity_scale=intensity_scale
+                )
+                feat = descriptors.build_feature_row(
+                    per_peak, qa, peak_labels,
+                    ratios=ratios, separations=separations,
+                )
+                row = {"x": x, "y": y_coord, **feat}
+
+            rows.append(row)
+
+        return pd.DataFrame.from_records(rows)
+
     def _initialise_mapping_fit_common(
         self,
         *,

@@ -78,6 +78,22 @@ fit.plot()
 fit.export("result.txt")
 ```
 
+### Feature tables
+
+`feature_table()` returns a single-row `pandas.DataFrame` of peak descriptors and QA columns after fitting.
+
+```python
+df = fit.feature_table(
+    separations=[("A1g", "E2g")],
+    ratios=[("A1g", "E2g")],
+)
+# Columns: A1g_position, A1g_fwhm, A1g_peak_height, A1g_peak_height_norm,
+#          E2g_*, A1g_E2g_separation, A1g_E2g_ratio,
+#          rmse, ok, n_starts, n_params_at_bounds
+```
+
+The same method is available on `PLfit`.
+
 ## PLfit
 
 `PLfit` follows the same interface as `RamanFit`. PL workflows always use the native backend regardless of `preprocessing_backend`.
