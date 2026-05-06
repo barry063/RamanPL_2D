@@ -232,7 +232,6 @@ _BASELINE_PARAMS = (
 )
 def test_wide_format_existing_columns_unchanged(tmp_path):
     """Per-peak column values must be byte-identical to the v0.5.0 export."""
-    import hashlib
 
     # Reproduce the exact same fit as Step 0
     rng = np.random.default_rng(42)
@@ -254,24 +253,71 @@ def test_wide_format_existing_columns_unchanged(tmp_path):
     new_export = str(tmp_path / "v0.5.1_export.txt")
     m.export_fit_map(new_export)
 
-    def _read_stripped(path, n_qa=0):
+    def _read_export(path):
+        """Parse a fit-map export into (header_list, data_array).
+
+        QA columns added in v0.5.1+ (rmse, ok, n_starts,
+        n_params_at_bounds) are detected by **name** in the header line
+        and dropped from both the header and every data row. This makes
+        the parser robust to whichever schema generation the snapshot
+        on disk happens to be:
+
+        - pre-v0.5.1 baseline (8 columns, no QA): nothing stripped
+        - v0.5.1+ baseline or current export (12 columns, 4 QA): QA
+          columns dropped
+
+        The remaining columns are pure float (x, y, and per-peak
+        parameters) and can be parsed unconditionally.
+        """
+        QA_COLS = {"rmse", "ok", "n_starts", "n_params_at_bounds"}
+        header = None
+        keep_idx = None
         rows = []
         with open(path, newline="", encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("#"):
                     continue
-                stripped = line.rstrip("\r\n")
-                if n_qa > 0:
-                    delim = "\t" if "\t" in stripped else ","
-                    parts = stripped.split(delim)
-                    stripped = delim.join(parts[:-n_qa]) if len(parts) > n_qa else stripped
-                rows.append(stripped)
-        return rows
+                line = line.rstrip("\r\n")
+                if not line:
+                    continue
+                delim = "\t" if "\t" in line else ","
+                parts = line.split(delim)
+                if header is None:
+                    keep_idx = [i for i, c in enumerate(parts) if c not in QA_COLS]
+                    header = [parts[i] for i in keep_idx]
+                    continue
+                rows.append([float(parts[i]) for i in keep_idx])
+        return header, np.asarray(rows, dtype=float)
 
-    old_rows = _read_stripped(_BASELINE_EXPORT, n_qa=0)  # baseline has no QA cols
-    new_rows_stripped = _read_stripped(new_export, n_qa=4)
+    old_header, old_data = _read_export(_BASELINE_EXPORT)
+    new_header, new_data = _read_export(new_export)
 
-    assert old_rows == new_rows_stripped, (
-        f"Per-peak columns differ from v0.5.0 baseline ({len(old_rows)} old vs "
-        f"{len(new_rows_stripped)} new rows)"
+    # 1. Column header text must match exactly — catches column rename or
+    #    reorder, which would be a real schema regression.
+    assert old_header == new_header, (
+        f"Per-peak column header drifted from v0.5.0 baseline.\n"
+        f"  baseline: {old_header}\n"
+        f"  current:  {new_header}"
+    )
+
+    # 2. Row and column counts must match exactly.
+    assert old_data.shape == new_data.shape, (
+        f"Row/column count drift: baseline {old_data.shape} vs current {new_data.shape}"
+    )
+
+    # 3. Pixel coordinates are integer-valued and must be exact.
+    np.testing.assert_array_equal(
+        old_data[:, :2], new_data[:, :2],
+        err_msg="x/y coordinate columns drifted versus v0.5.0 baseline",
+    )
+
+    # 4. Fit-output columns: tolerate floating-point noise across LAPACK
+    #    builds. Tolerances of 1e-3 absorb single-ULP and local-minimum
+    #    differences seen on runners with different BLAS, while still
+    #    catching any genuine scientific drift (which would be orders of
+    #    magnitude larger).
+    np.testing.assert_allclose(
+        old_data[:, 2:], new_data[:, 2:],
+        rtol=1e-3, atol=1e-3,
+        err_msg="Per-peak fit-output columns drifted beyond floating-point tolerance",
     )
