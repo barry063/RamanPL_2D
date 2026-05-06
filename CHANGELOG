@@ -35,6 +35,20 @@
 - `ramanpl.descriptors` module added to `docs/source/api/ramanpl.rst` API reference.
 - `examples/Mapping/Feature_Table_Example.ipynb` (new): example usage of `Mapping.feature_table()` to build a DataFrame with peak positions, heights, ratios, and separations; pivoted into 2-D maps for visualisation.
 
+### Fixed (post-merge cleanup)
+
+- Untracked benchmarks/results/v0.5.0_baseline/ — these snapshot files
+  were inadvertently committed in the initial v0.5.2 commit and are not
+  portable across LAPACK/scipy builds. .gitignore extended to prevent
+  re-committal. Restores v0.5.1's CI behaviour where the byte-parity
+  trip-wire test is skipped on runners and runs locally for developers
+  who have regenerated the snapshot.
+- tests/test_export_fit_map_qa_columns.py::
+  test_wide_format_existing_columns_unchanged — relaxed from byte-level
+  string equality to numerical tolerance (rtol=atol=1e-3). The test
+  still catches genuine scientific drift but no longer fails on FP
+  noise across LAPACK builds.
+
 ### Notes
 - **No scientific changes.** Fitting algorithms, baseline algorithms, preprocessing, and all
   scientific output values are unchanged. Parity verified against the v0.5.0 reference snapshot via
