@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import optimize
+from ..single_fit.initialisation import propose_peaks, p0_from_proposals
 
 
 def _mapping_rng(random_state=None):
@@ -183,6 +184,7 @@ def _run_mapping_curve_fit_trials(
     score_tie_tol=1e-6,
     peak_profile="lorentzian",
     stride=3,
+    use_peak_proposals=True,
 ):
     """
     Run one curve-fit stage for mapping data and return the best result from
@@ -267,6 +269,27 @@ def _run_mapping_curve_fit_trials(
                 best_score = score
                 best_hits = hits
                 best_p0 = p0_try
+
+    # v0.5.3: one extra attempt when all normal starts fail
+    if use_peak_proposals and best_params is None:
+        _proposals = propose_peaks(y, x, lb.size // stride)
+        if _proposals:
+            p0_prop = p0_from_proposals(_proposals, peak_profile, p0_current, (lb, ub))
+            try:
+                params, _ = optimize.curve_fit(
+                    model_fn, x, y, p0=p0_prop, bounds=(lb, ub),
+                    maxfev=max(maxfev, 6400),
+                )
+                y_hat = model_fn(x, *params)
+                best_rmse = float(np.sqrt(np.mean((y - y_hat) ** 2)))
+                best_score = best_rmse
+                best_hits = int(np.count_nonzero(
+                    _params_at_bounds(params, lb, ub, which="both", rtol=1e-6)
+                ))
+                best_params = params
+                best_p0 = p0_prop
+            except Exception:
+                pass
 
     return {
         "ok": best_params is not None,

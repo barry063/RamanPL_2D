@@ -1,5 +1,50 @@
 # Changelog
 
+## [v0.5.3] — 2026-05-06 — Classical peak-proposal aid for failed-fit recovery
+
+### Added
+
+- `src/ramanpl/single_fit/initialisation.py` (new): classical peak-proposal helpers
+  based on `scipy.signal.find_peaks`. Two public functions:
+  `propose_peaks(spectrum, wavenumber, n_peaks, prominence_rel, width_min_pts)` returns
+  a list of candidate peak dicts (centre, width/FWHM, height) sorted by height; returns
+  an empty list when no peaks meet the prominence threshold.
+  `p0_from_proposals(proposals, peak_profile, current_p0, bounds)` substitutes proposal
+  centres and widths into a parameter vector where they lie within bounds, using greedy
+  nearest-neighbour matching so each proposal is used at most once.
+  Module imports only `numpy` and `scipy.signal` — no ramanpl internal coupling.
+- `use_peak_proposals=True` keyword argument on `_run_mapping_curve_fit_trials` in
+  `src/ramanpl/mapping/_fit_utils.py`. When `True` (default) and all normal multistart
+  trials have failed, one additional curve-fit attempt is made from a proposal-corrected
+  starting point using `max(maxfev, 6400)` evaluations.
+- `tests/test_peak_proposal.py` (new): 9 unit tests for `propose_peaks` and
+  `p0_from_proposals` (single/two-peak detection, n_peaks limit, flat-spectrum guard,
+  width estimate tolerance, centre replacement, out-of-bounds fallback, empty-proposals
+  fallback, amplitude/eta preservation for lorentzian and pvoigt).
+- `tests/test_peak_proposal_integration.py` (new): 8 integration tests exercising the
+  wired fallback path in `_fit_utils.py` (overlapping-pixel rescue, weak-pixel rescue,
+  easy-pixel Lorentzian parity, easy-pixel pvoigt parity, disabled-flag guard,
+  position-drift tolerance, FWHM-drift tolerance, hard-cube failure-count decrease).
+
+### Changed
+
+- `src/ramanpl/mapping/_fit_utils.py`: one new import (`propose_peaks`,
+  `p0_from_proposals` from `ramanpl.single_fit.initialisation`), one new `use_peak_proposals`
+  keyword in `_run_mapping_curve_fit_trials`, and a ≤ 16-line proposal fallback block
+  inserted after the normal multistart loop. All other lines unchanged.
+
+### Notes
+
+- No changes to fitting algorithms, preprocessing, backend resolution, or export schemas.
+- All pixels that succeed via the existing multistart path produce bit-identical output
+  to v0.5.2 (verified by parity tests `test_no_change_on_easy_pixel` and
+  `test_no_change_on_easy_pixel_pvoigt`).
+- No new dependencies — `scipy.signal` is already a base dependency.
+- Benchmark evidence (hard-pixel cube, 16 pixels, maxfev=1 normal trial): 16/16 fail
+  without proposals, 0/16 fail with proposals. Easy-cube (8×8 standard cube):
+  n_curve_fit_calls unchanged, mean_rmse unchanged (proposal path not entered).
+- `ramanpl.ml` namespace and unsupervised clustering deferred to v0.5.4 per roadmap.
+
 ## [v0.5.2] — 2026-05-05 — Generalised peak descriptors and feature-table accessor
 
 ### Added

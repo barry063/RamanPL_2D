@@ -10,7 +10,7 @@ authors:
   - family-names: Yu
     given-names: Hao
     email: hy377@cam.ac.uk
-version: 0.5.2
+version: 0.5.3
 date-released: "2026-05-05"
 license: BSD-3-Clause
 repository-code: https://github.com/barry063/RamanPL_2D

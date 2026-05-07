@@ -15,7 +15,7 @@ import sys
 
 def test_import_top_level_package():
     import ramanpl
-    assert ramanpl.__version__ == "0.5.2"
+    assert ramanpl.__version__ == "0.5.3"
 
 
 def test_import_public_entry_points():
