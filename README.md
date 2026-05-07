@@ -91,6 +91,24 @@ See [backend behaviour docs](docs/source/user-guide/backend-behaviour.md) for fu
 
 ---
 
+## Peak proposal for failed-fit recovery
+
+| Function / option | Role | Typical call site |
+|---|---|---|
+| `propose_peaks(spectrum, wavenumber, n_peaks, ...)` | Detect candidate centres and FWHM from a 1-D preprocessed spectrum via `scipy.signal.find_peaks` | Diagnostic; standalone inspection |
+| `p0_from_proposals(proposals, peak_profile, current_p0, bounds)` | Convert proposals to a revised p0; bounds-checked, falls back to `current_p0` for any missing or out-of-bounds proposal | Same as above |
+| `fit_spectrum_kwargs=dict(use_peak_proposals=True)` | Enable the automatic fallback (v0.5.3 default) — invoked only when all existing retries have failed | Normal mapping runs — no action needed |
+| `fit_spectrum_kwargs=dict(use_peak_proposals=False)` | Disable the fallback — reproduces v0.5.2 behaviour exactly | Regression comparisons; debugging |
+
+> **Scientific note:** The proposal fallback does not change the fitting model or the
+> optimisation algorithm. It provides a better starting point (`p0`) for
+> `scipy.optimize.curve_fit` on pixels that would otherwise be marked failed.
+> All reported peak parameters remain the output of deterministic Lorentzian or
+> pseudo-Voigt least-squares fitting — traceable to the same physical model as all
+> prior builds.
+
+More details and examples in the [peak proposal demo notebook](example-usage/Mapping/Peak_Proposal_Demo.ipynb).
+
 ## Development and validation
 
 Release validation commands and pre-tag checklist are in [`RELEASE.md`](RELEASE.md).

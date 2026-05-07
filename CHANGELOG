@@ -25,6 +25,16 @@
   wired fallback path in `_fit_utils.py` (overlapping-pixel rescue, weak-pixel rescue,
   easy-pixel Lorentzian parity, easy-pixel pvoigt parity, disabled-flag guard,
   position-drift tolerance, FWHM-drift tolerance, hard-cube failure-count decrease).
+- `example-usage/Mapping/Peak_Proposal_Demo.ipynb` (new): end-to-end notebook
+  demonstrating the peak-proposal fallback on a synthetic Raman mapping dataset —
+  covers `propose_peaks` / `p0_from_proposals` directly, the wired fallback via
+  `fit_spectra()`, and residual-map comparison before and after enabling proposals.
+- `docs/source/user-guide/low_snr_advisory.md` (new): seven-step advisory guide for
+  lower-SNR or more challenging datasets — seed-pixel selection, single-spectrum
+  bounds validation, preprocessing comparison, bound tightening, Lorentzian vs
+  pseudo-Voigt choice, multistart tuning, and `prominence_rel` / `width_min_pts`
+  sweep for the proposal fallback. Wired into the Sphinx User guide toctree in
+  `docs/source/index.md`.
 
 ### Changed
 
