@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    ramanpl.mapping
+   ramanpl.ml
    ramanpl.single_fit
 
 Internal integration modules

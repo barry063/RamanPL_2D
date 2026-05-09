@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "RamanPL_2D"
-version = "0.5.3"
+version = "0.5.4"
 description = "Python toolkit for Raman and photoluminescence spectroscopy analysis in 2D materials."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -33,6 +33,9 @@ dependencies = [
 [project.optional-dependencies]
 ramanspy = [
     "ramanspy>=0.2.10",
+]
+ml = [
+    "scikit-learn>=1.2",
 ]
 
 [project.urls]

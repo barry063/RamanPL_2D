@@ -30,13 +30,14 @@ jobs:
         run: pip install -e .
 
       - name: Run base test suite
-        # Exclude only tests that require real RamanSPy execution
+        # Exclude tests that require optional extras
         run: |
           pip install pytest
           pytest tests/ \
             --ignore=tests/test_mapping_backend_parity.py \
             --ignore=tests/test_preprocessing_backend_resolution.py \
             --ignore=tests/test_single_fit_backend_parity.py \
+            --ignore=tests/test_ml_clustering.py \
             -v
 
   # -----------------------------------------------------------------------
@@ -70,7 +71,34 @@ jobs:
                  -v
 
   # -----------------------------------------------------------------------
-  # Job 3: Package build (wheel + sdist)
+  # Job 3: ML extras tests
+  # -----------------------------------------------------------------------
+  ml-extras-tests:
+    name: ML extras tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with ml extras
+        run: pip install -e ".[ml]"
+
+      - name: Run ml extras test suite
+        run: |
+          pip install pytest
+          pytest tests/test_ml_clustering.py -v
+
+  # -----------------------------------------------------------------------
+  # Job 4: Package build (wheel + sdist)
   # -----------------------------------------------------------------------
   package-build:
     name: Package build
@@ -97,7 +125,7 @@ jobs:
           path: dist/
 
   # -----------------------------------------------------------------------
-  # Job 4: Clean-install smoke (install built wheel into a fresh environment)
+  # Job 5: Clean-install smoke (install built wheel into a fresh environment)
   # -----------------------------------------------------------------------
   clean-install-smoke:
     name: Clean install smoke
@@ -127,7 +155,7 @@ jobs:
           pytest tests/test_packaging_smoke.py -v
 
   # -----------------------------------------------------------------------
-  # Job 5: Notebook smoke execution
+  # Job 6: Notebook smoke execution
   # -----------------------------------------------------------------------
   notebook-smoke:
     name: Notebook smoke
@@ -151,7 +179,7 @@ jobs:
         run: pytest tests/test_notebook_smoke.py -v
 
   # -----------------------------------------------------------------------
-  # Job 6: Benchmark smoke (harness health only — no timing assertions)
+  # Job 7: Benchmark smoke (harness health only — no timing assertions)
   # -----------------------------------------------------------------------
   benchmark-smoke:
     name: Benchmark smoke
@@ -174,7 +202,7 @@ jobs:
           pytest tests/test_release_benchmark_smoke.py -v
 
   # -----------------------------------------------------------------------
-  # Job 7: Documentation build smoke
+  # Job 8: Documentation build smoke
   # -----------------------------------------------------------------------
   docs-build:
     name: Documentation build smoke

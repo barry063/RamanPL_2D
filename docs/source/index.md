@@ -21,6 +21,7 @@ user-guide/mapping
 user-guide/low_snr_advisory
 user-guide/batch
 user-guide/export-provenance
+user-guide/clustering
 ```
 
 ```{toctree}
