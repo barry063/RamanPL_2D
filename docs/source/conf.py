@@ -6,7 +6,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 project = "RamanPL_2D"
 author = "Hao Yu"
-release = "0.5.2"
+release = "0.5.4"
 
 extensions = [
     "myst_parser",
@@ -25,4 +25,4 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # Mock optional dependencies so autodoc works in clean environments
-autodoc_mock_imports = ["ramanspy", "renishawWiRE"]
+autodoc_mock_imports = ["ramanspy", "renishawWiRE", "sklearn"]

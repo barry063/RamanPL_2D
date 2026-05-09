@@ -10,12 +10,13 @@ missing data files, broken import paths, or editable-install assumptions.
 """
 
 import importlib
+import importlib.util
 import sys
-
+import pytest  # noqa: E402
 
 def test_import_top_level_package():
     import ramanpl
-    assert ramanpl.__version__ == "0.5.3"
+    assert ramanpl.__version__ == "0.5.4"
 
 
 def test_import_public_entry_points():
@@ -63,3 +64,27 @@ def test_optional_ramanspy_import_path_is_guarded_cleanly():
         raise AssertionError(
             f"ramanpl.integration submodule raised ImportError without ramanspy: {exc}"
         ) from exc
+
+
+def test_ml_namespace_importable_in_base_install():
+    import ramanpl.ml
+    import ramanpl.ml.clustering
+    assert callable(getattr(ramanpl.ml, "pca_reduce"))
+    assert callable(getattr(ramanpl.ml, "kmeans_cluster"))
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("sklearn") is not None,
+    reason="scikit-learn is installed; test only runs in base install",
+)
+def test_ml_functions_raise_clean_error_without_sklearn():
+    import pandas as pd
+    from ramanpl.ml.clustering import kmeans_cluster, pca_reduce
+
+    df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [4.0, 5.0, 6.0]})
+
+    with pytest.raises(ImportError, match=r"\[ml\]"):
+        pca_reduce(df, n_components=1)
+
+    with pytest.raises(ImportError, match=r"\[ml\]"):
+        kmeans_cluster(df, n_clusters=2)

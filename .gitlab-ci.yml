@@ -17,6 +17,7 @@ base-tests:
         --ignore=tests/test_mapping_backend_parity.py
         --ignore=tests/test_preprocessing_backend_resolution.py
         --ignore=tests/test_single_fit_backend_parity.py
+        --ignore=tests/test_ml_clustering.py
         -v
 
 # -----------------------------------------------------------------------
@@ -52,6 +53,17 @@ benchmark-smoke:
     - pip install -e .
     - pip install pytest
     - pytest tests/test_release_benchmark_smoke.py -v
+
+# -----------------------------------------------------------------------
+# ML extras smoke (optional; allowed to fail if scikit-learn unavailable)
+# -----------------------------------------------------------------------
+ml-extras-smoke:
+  stage: smoke
+  allow_failure: true
+  script:
+    - pip install -e ".[ml]"
+    - pip install pytest
+    - pytest tests/test_ml_clustering.py -v
 
 # -----------------------------------------------------------------------
 # RamanSPy extras smoke (optional; allowed to fail if ramanspy unavailable)

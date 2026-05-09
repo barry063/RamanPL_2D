@@ -1,5 +1,62 @@
 # Changelog
 
+## [v0.5.4] — 2026-05-09 — Optional [ml] extra: unsupervised clustering on feature tables
+
+### Added
+
+- `src/ramanpl/ml/__init__.py` and `src/ramanpl/ml/clustering.py`: new optional
+  subpackage. Two composable public functions:
+  - `pca_reduce(df, n_components, *, feature_columns=None, scale=True)` — appends
+    `pc1`…`pck` columns; explained variance attached to
+    `df.attrs["explained_variance_ratio_"]` and feature columns used to
+    `df.attrs["pca_feature_columns"]`.
+  - `kmeans_cluster(df, n_clusters, *, feature_columns=None, scale=True,
+    random_state=None)` — appends a `cluster` column (nullable `Int64`).
+  Both functions consume any wide DataFrame with numeric columns (canonically
+  `feature_table()` output from v0.5.2). Failed-fit rows (NaN features) are
+  dropped internally and re-injected with NaN labels, preserving the input
+  index. Both lazy-import scikit-learn; raise a clean `ImportError` mentioning
+  the `[ml]` extra when scikit-learn is absent. Importing `ramanpl.ml` and
+  `ramanpl.ml.clustering` without scikit-learn installed is safe.
+- `pyproject.toml`: new `[ml]` optional dependency on `scikit-learn>=1.2`.
+  Base install is unaffected.
+- `tests/test_ml_clustering.py`: 14 unit tests covering returned columns,
+  index alignment, NaN reinjection, recovery of known cluster structure
+  (`adjusted_rand_score >= 0.99`), determinism under `random_state`, validation
+  errors, and a chained `pca_reduce` → `kmeans_cluster` composition test.
+- `tests/test_packaging_smoke.py`: extended with `test_ml_namespace_importable_in_base_install`
+  and `test_ml_functions_raise_clean_error_without_sklearn`.
+- `example-usage/Mapping/Clustering_Demo.ipynb`: end-to-end notebook
+  demonstrating `feature_table` → `pca_reduce` → `kmeans_cluster` → 2-D
+  cluster map and PC scatter plot on the Mapping Raman Sample dataset.
+- `docs/source/user-guide/clustering.md`: user guide page covering
+  installation, `pca_reduce` usage, chained `pca_reduce` → `kmeans_cluster`
+  usage, and the `df.attrs["explained_variance_ratio_"]` accessor.
+- `docs/source/api/ramanpl.ml.rst`: API reference for `ramanpl.ml` and
+  `ramanpl.ml.clustering` via `automodule`.
+- `.github/workflows/ci.yml` and `.gitlab-ci.yml`: new `ml-extras-tests` /
+  `ml-extras-smoke` CI jobs mirroring the `[ramanspy]` extras pattern.
+
+### Changed
+
+- `pyproject.toml`: version `0.5.3` → `0.5.4`.
+- `src/ramanpl/__init__.py`: `__version__` `0.5.3` → `0.5.4`.
+- `CITATION.cff`: version `0.5.3` → `0.5.4`; date-released updated.
+- `docs/source/conf.py`: release `0.5.2` → `0.5.4` (corrects drift from the
+  v0.5.3 cycle); `"sklearn"` added to `autodoc_mock_imports`.
+- `.github/workflows/ci.yml` `base-tests` and `.gitlab-ci.yml` `base-tests`:
+  added `--ignore=tests/test_ml_clustering.py` so base CI does not require
+  scikit-learn.
+
+### Notes
+
+- No changes to fitting, preprocessing, backend resolution, export schemas, or
+  `feature_table()` output. v0.5.4 is purely additive.
+- `ramanpl.ml.clustering` operates on fitted peak descriptors, not on raw
+  spectra. No claim of automatic material identification is made; clustering
+  is for exploratory domain discovery only.
+- Test suite: PASS=213, SKIP=6, FAIL=0 (base); PASS=13, SKIP=0, FAIL=0 (ml-extras).
+
 ## [v0.5.3] — 2026-05-06 — Classical peak-proposal aid for failed-fit recovery
 
 ### Added
