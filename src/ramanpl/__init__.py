@@ -49,9 +49,10 @@ __all__ = [
     "batch",
     "peak_models",
     "preprocessing",
+    "descriptors",
 ]
 
-__version__ = "0.5.4"
+__version__ = "0.5.5"
 
 # Attributes that should resolve to a class/object directly
 _LAZY_ATTR_MAP = {
@@ -85,6 +86,7 @@ _MODULE_EXPORTS = {
     "peak_models": "ramanpl.peak_models",
     "preprocessing": "ramanpl.preprocessing",
     "integration": "ramanpl.integration",
+    "descriptors": "ramanpl.descriptors",
 }
 
 

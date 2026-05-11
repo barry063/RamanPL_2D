@@ -27,6 +27,17 @@ pip install -e ".[ramanspy]"
 
 If RamanSPy is not installed, `preprocessing_backend="auto"` silently falls back to native.
 
+## Optional ML extra
+
+```bash
+pip install -e ".[ml]"
+```
+
+The base install does not require scikit-learn.
+Importing `ramanpl.ml` and `ramanpl.ml.clustering` is safe in a base install;
+the `ImportError` is raised only when a public function (`pca_reduce`,
+`kmeans_cluster`) is called without scikit-learn present.
+
 ## Building the documentation locally
 
 ```bash

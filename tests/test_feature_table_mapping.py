@@ -252,3 +252,25 @@ def test_feature_table_raises_when_no_fit_run():
     del m.fitted_params   # simulate missing fit state (triggers the guard)
     with pytest.raises(ValueError, match="fitted_params"):
         m.feature_table()
+
+
+def test_feature_table_pl_mapping_ratios_and_separations():
+    """PLMapping feature_table with both ratios and separations returns correct derived columns."""
+    m = _make_pl_mapping()
+    _inject_fit(m, _GOOD_PARAMS_PL)
+
+    df = m.feature_table(
+        ratios=[("Exciton", "Trion")],
+        separations=[("Exciton", "Trion")],
+    )
+
+    assert "Exciton_Trion_separation" in df.columns
+    assert "Exciton_Trion_ratio" in df.columns
+    assert len(df) == _Y_MAP * _X_MAP
+
+    row = df[(df["x"] == 0) & (df["y"] == 0)].iloc[0]
+    expected_sep = row["Exciton_position"] - row["Trion_position"]
+    assert row["Exciton_Trion_separation"] == pytest.approx(expected_sep, rel=1e-9)
+
+    expected_ratio = row["Exciton_peak_height"] / row["Trion_peak_height"]
+    assert row["Exciton_Trion_ratio"] == pytest.approx(expected_ratio, rel=1e-9)

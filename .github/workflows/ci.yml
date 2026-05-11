@@ -171,7 +171,7 @@ jobs:
 
       - name: Install package and notebook dependencies
         run: |
-          pip install -e ".[ramanspy]"
+          pip install -e ".[ramanspy,ml]"
           pip install pytest nbformat nbconvert ipykernel
           python -m ipykernel install --user --name python3
 

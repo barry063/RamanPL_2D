@@ -60,6 +60,17 @@ fit.plot()
 fit.export("pl_result.txt")
 ```
 
+## Feature tables
+
+Every fitter class (`RamanFit`, `PLfit`, `RamanMapping`, `PLMapping`,
+`RamanBatch`, `PLBatch`) exposes a `feature_table()` method that returns a
+wide-format `pandas.DataFrame` — one row per spectrum — with per-peak
+descriptors and QA columns:
+
+```python
+df = fit.feature_table(ratios=[("A1g", "E2g")], separations=[("A1g", "E2g")])
+```
+
 ## Where to go next
 
 - {doc}`user-guide/preprocessing` — pipeline construction and supported steps

@@ -1,5 +1,15 @@
 # Unsupervised clustering on feature tables
 
+## Where the feature table comes from
+
+The `feature_table()` method is available on all fitter classes:
+{doc}`single-spectrum`, {doc}`mapping`, and {doc}`batch`.
+
+The feature-table column schema and the `[ml]` clustering tools apply
+uniformly to `RamanMapping` and `PLMapping`. The examples below use
+Raman peak labels; replace them with PL peak labels (e.g. `Trion`,
+`Exciton`) without changing any column-naming convention.
+
 **Interpretability note.** `ramanpl.ml.clustering` operates on fitted peak
 descriptors (positions, widths, intensities, ratios) produced by
 `feature_table()` — not on raw spectra.  It is a tool for exploratory domain

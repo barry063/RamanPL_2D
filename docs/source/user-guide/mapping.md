@@ -106,6 +106,20 @@ df = raman_map.feature_table(
 
 The same method is available on `PLMapping`. Failed pixels emit a full row with `ok=False` and NaN per-peak fields.
 
+**Order convention.** For `ratios=[(P1, P2)]`, the emitted column is
+`{P1}_{P2}_ratio = peak_height[P1] / peak_height[P2]`. For
+`separations=[(P1, P2)]`, the emitted column is
+`{P1}_{P2}_separation = position[P1] − position[P2]`. Swapping the
+order produces the reciprocal ratio (with a different column name) or
+the negated separation. Zero denominator → NaN.
+
+The feature-table column schema and the `[ml]` clustering tools apply
+uniformly to `RamanMapping` and `PLMapping`. The example above uses
+Raman peak labels; replace them with PL peak labels (e.g. `Trion`,
+`Exciton`) without changing any column-naming convention.
+
+For unsupervised analysis on the resulting DataFrame, see {doc}`clustering`.
+
 ## Residual maps
 
 ```python

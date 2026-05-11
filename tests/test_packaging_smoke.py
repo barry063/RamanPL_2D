@@ -16,7 +16,7 @@ import pytest  # noqa: E402
 
 def test_import_top_level_package():
     import ramanpl
-    assert ramanpl.__version__ == "0.5.4"
+    assert ramanpl.__version__ == "0.5.5"
 
 
 def test_import_public_entry_points():
@@ -88,3 +88,9 @@ def test_ml_functions_raise_clean_error_without_sklearn():
 
     with pytest.raises(ImportError, match=r"\[ml\]"):
         kmeans_cluster(df, n_clusters=2)
+
+
+def test_descriptors_top_level_import_works():
+    from ramanpl import descriptors
+    assert callable(descriptors.build_feature_row)
+    assert callable(descriptors.validate_peak_pairs)

@@ -1,5 +1,72 @@
 # Changelog
 
+## [v0.5.5] — 2026-05-10 — Consolidation pause: API freeze, docs, dependency hygiene
+
+### Added
+
+- `docs/source/api-stability.md`: written, citable freeze contract for the
+  public surface introduced in v0.5.1–v0.5.4. Pins suffix vocabulary
+  (`_position`, `_fwhm`, `_peak_height`, `_peak_height_norm`, `_separation`,
+  `_ratio`), QA column names (`rmse`, `ok`, `n_starts`, `n_params_at_bounds`),
+  all six `feature_table()` methods, `build_feature_row`, `validate_peak_pairs`,
+  `pca_reduce`, `kmeans_cluster`, and the `[ml]` extra boundary.
+- `tests/test_api_stability.py` (new, 8 tests): enforces the additive-only
+  column rule, frozen suffix vocabulary, and frozen QA/ML/descriptor public
+  surfaces as regression tests. Uses the same synthetic mapping fixtures as
+  `test_feature_table_mapping.py`.
+- Three new tests in `tests/test_descriptors_unit.py`: ratio/separation order
+  convention — `test_ratio_order_swap_yields_reciprocal_when_both_finite_nonzero`,
+  `test_separation_order_swap_yields_negation`,
+  `test_ratio_zero_denominator_asymmetry`.
+- One new test in `tests/test_feature_table_mapping.py`:
+  `test_feature_table_pl_mapping_ratios_and_separations` — PL mapping with
+  both ratios and separations, values verified against hand calculation.
+- One new test in `tests/test_packaging_smoke.py`:
+  `test_descriptors_top_level_import_works` — verifies the new top-level
+  `from ramanpl import descriptors` import path.
+- `docs/source/installation.md`: "Optional ML extra" section with explicit
+  base-install guarantee (safe import, `ImportError` only on call).
+- `docs/source/quickstart.md`: `feature_table()` mention with one-line
+  code example.
+- User-guide cross-links: `mapping.md`, `batch.md`, `single-spectrum.md`
+  each link to `clustering`; `clustering.md` gains a "Where the feature
+  table comes from" subsection linking back to all three sources.
+- PL-parity paragraphs added to `mapping.md` and `clustering.md`.
+- Order-convention paragraphs added to `mapping.md`, `batch.md`, and
+  `single-spectrum.md`.
+- Three new notebooks added to `tests/test_notebook_smoke.py`:
+  `Feature_Table_Example.ipynb`, `Peak_Proposal_Demo.ipynb`,
+  `Clustering_Demo.ipynb` (the last guarded by a scikit-learn skipif).
+  `Integration Raman Example.ipynb` changed to `Area Integration Example.ipynb` to reflect the integration under a peak of both PL and Raman mapped spectrum.
+
+### Changed
+
+- `src/ramanpl/__init__.py`: `"descriptors"` added to `__all__` and
+  `_MODULE_EXPORTS`; `from ramanpl import descriptors` now works.
+- `src/ramanpl/__init__.py`: `__version__` `0.5.4` → `0.5.5`.
+- `pyproject.toml`: version `0.5.4` → `0.5.5`.
+- `CITATION.cff`: version `0.5.4` → `0.5.5`; `date-released` → `2026-05-10`.
+- `docs/source/conf.py`: release `0.5.4` → `0.5.5`.
+- `README.md`: `[ml]` install option added to Installation section; v0.5.5
+  roadmap row updated to reflect shipped items.
+- `tests/test_packaging_smoke.py`: version assertion updated to `0.5.5`.
+- `.github/workflows/ci.yml` `notebook-smoke`: install extended from
+  `.[ramanspy]` to `.[ramanspy,ml]`.
+
+### Notes
+
+- No changes to fitting algorithms, preprocessing, backend resolution, or
+  export schemas. v0.5.5 is a freeze build.
+- `ramanpl.descriptors` was already present in the API reference (since
+  v0.5.2); this release adds it to `__all__` and `_MODULE_EXPORTS` to
+  match its documented status.
+- Notebook smoke timeout raised from 120 s to 600 s per cell to accommodate
+  the three new notebooks, which execute real map fits on WDF datasets.
+- Test delta: +13 tests over v0.5.4 baseline (226 base, 14 ml-extras).
+  Base suite: PASS=226, SKIP=9, FAIL=0. ML extras: PASS=14, SKIP=0, FAIL=0.
+  Notebook smoke: 6 notebooks executed, 0 failures. Sphinx docs: 0 new
+  warnings (43 pre-existing autodoc warnings unchanged).
+
 ## [v0.5.4] — 2026-05-09 — Optional [ml] extra: unsupervised clustering on feature tables
 
 ### Added

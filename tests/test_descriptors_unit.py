@@ -143,3 +143,44 @@ def test_validate_peak_pairs_raises_on_unknown_label():
     peak_labels = ["A1g", "E2g"]
     with pytest.raises(ValueError, match="Xbad"):
         validate_peak_pairs([("A1g", "Xbad")], peak_labels)
+
+
+# ---------------------------------------------------------------------------
+# Order-convention tests (v0.5.5 freeze)
+# ---------------------------------------------------------------------------
+
+def test_ratio_order_swap_yields_reciprocal_when_both_finite_nonzero():
+    """Swapping (A,B) → (B,A) yields the reciprocal ratio for finite nonzero heights."""
+    per_peak = {
+        "A": _lorentzian_peak_dict(520.0, 5.0, 10.0),
+        "B": _lorentzian_peak_dict(500.0, 3.0, 6.0),
+    }
+    qa = _qa()
+    row_ab = build_feature_row(per_peak, qa, ["A", "B"], ratios=[("A", "B")])
+    row_ba = build_feature_row(per_peak, qa, ["A", "B"], ratios=[("B", "A")])
+    assert row_ab["A_B_ratio"] * row_ba["B_A_ratio"] == pytest.approx(1.0, rel=1e-12)
+
+
+def test_separation_order_swap_yields_negation():
+    """Swapping (A,B) → (B,A) yields the negated separation."""
+    per_peak = {
+        "A": _lorentzian_peak_dict(520.0, 5.0, 10.0),
+        "B": _lorentzian_peak_dict(500.0, 3.0, 6.0),
+    }
+    qa = _qa()
+    row_ab = build_feature_row(per_peak, qa, ["A", "B"], separations=[("A", "B")])
+    row_ba = build_feature_row(per_peak, qa, ["A", "B"], separations=[("B", "A")])
+    assert row_ab["A_B_separation"] == pytest.approx(-row_ba["B_A_separation"])
+
+
+def test_ratio_zero_denominator_asymmetry():
+    """(A,B) with h_B=0 → NaN; (B,A) with h_A>0 → 0.0 exactly."""
+    per_peak = {
+        "A": _lorentzian_peak_dict(520.0, 5.0, 10.0),
+        "B": {"centre": 500.0, "fwhm": 6.0, "peak_height": 0.0, "peak_height_norm": 0.0},
+    }
+    qa = _qa()
+    row_ab = build_feature_row(per_peak, qa, ["A", "B"], ratios=[("A", "B")])
+    row_ba = build_feature_row(per_peak, qa, ["A", "B"], ratios=[("B", "A")])
+    assert math.isnan(row_ab["A_B_ratio"])
+    assert row_ba["B_A_ratio"] == pytest.approx(0.0)

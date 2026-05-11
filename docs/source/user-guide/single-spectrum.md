@@ -94,6 +94,15 @@ df = fit.feature_table(
 
 The same method is available on `PLfit`.
 
+**Order convention.** For `ratios=[(P1, P2)]`, the emitted column is
+`{P1}_{P2}_ratio = peak_height[P1] / peak_height[P2]`. For
+`separations=[(P1, P2)]`, the emitted column is
+`{P1}_{P2}_separation = position[P1] − position[P2]`. Swapping the
+order produces the reciprocal ratio (with a different column name) or
+the negated separation. Zero denominator → NaN.
+
+For unsupervised analysis on the resulting DataFrame, see {doc}`clustering`.
+
 ## PLfit
 
 `PLfit` follows the same interface as `RamanFit`. PL workflows always use the native backend regardless of `preprocessing_backend`.

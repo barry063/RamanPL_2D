@@ -36,6 +36,7 @@ examples/canonical-notebooks
 :caption: Reference
 
 api/index
+api-stability
 changelog
 citation
 ```

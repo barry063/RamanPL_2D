@@ -13,6 +13,7 @@ These tests are intentionally skipped when nbconvert is not available so
 that the base pytest suite can still run without a full Jupyter environment.
 """
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -26,10 +27,17 @@ CANONICAL_NOTEBOOKS = [
     REPO_ROOT / "example-usage" / "Ramanfit" / "Raman_backend_demo.ipynb",
     REPO_ROOT / "example-usage" / "Mapping" / "Raman_mapping_backend_demo.ipynb",
     REPO_ROOT / "example-usage" / "backend" / "Backend_fallback_cases.ipynb",
+    REPO_ROOT / "example-usage" / "Mapping" / "Feature_Table_Example.ipynb",
+    REPO_ROOT / "example-usage" / "Mapping" / "Peak_Proposal_Demo.ipynb",
+    REPO_ROOT / "example-usage" / "Mapping" / "Clustering_Demo.ipynb",
 ]
 
-# Seconds allowed per notebook before the test fails with a timeout error.
-NOTEBOOK_TIMEOUT = 120
+# Notebooks that require the [ml] extra (scikit-learn)
+_ML_NOTEBOOKS = {"Clustering_Demo.ipynb"}
+
+# Seconds allowed per cell before the test fails with a timeout error.
+# Set to 600 to accommodate notebooks that run real map fits on WDF datasets.
+NOTEBOOK_TIMEOUT = 600
 
 try:
     import nbformat
@@ -52,6 +60,8 @@ def _execute_notebook(notebook_path: Path, timeout: int = NOTEBOOK_TIMEOUT) -> N
 @pytest.mark.skipif(not _NBCONVERT_AVAILABLE, reason="nbformat/nbconvert not installed")
 @pytest.mark.parametrize("notebook", CANONICAL_NOTEBOOKS, ids=[p.name for p in CANONICAL_NOTEBOOKS])
 def test_notebook_executes_without_error(notebook):
+    if notebook.name in _ML_NOTEBOOKS and importlib.util.find_spec("sklearn") is None:
+        pytest.skip(f"{notebook.name} requires [ml] extra (scikit-learn not installed)")
     assert notebook.exists(), f"Canonical notebook not found: {notebook}"
     try:
         _execute_notebook(notebook)
