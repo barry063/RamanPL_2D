@@ -389,36 +389,26 @@ def run():
             n_st = fit_kwargs["fit_spectrum_kwargs"].get("n_starts", 1)
             if dataset_name == "extended_15x15" and n_st > _LARGE_CUBE_MAX_N_STARTS:
                 continue
-            try:
-                row = _run_standard_case(dataset_name, x, cube, fit_kwargs)
-                all_rows.append(row)
-                print(
-                    f"[std] {dataset_name:<20} warm={row['warm_start']} "
-                    f"n_starts={row['n_starts']}  "
-                    f"ok={row['success_rate']*100:.0f}%  "
-                    f"calls={row['n_curve_fit_calls']}"
-                )
-            except Exception as exc:
-                warnings.warn(
-                    f"Standard case failed: {dataset_name} / "
-                    f"warm_start={fit_kwargs['warm_start']}: {exc}",
-                    stacklevel=1,
-                )
+            row = _run_standard_case(dataset_name, x, cube, fit_kwargs)
+            all_rows.append(row)
+            print(
+                f"[std] {dataset_name:<20} warm={row['warm_start']} "
+                f"n_starts={row['n_starts']}  "
+                f"ok={row['success_rate']*100:.0f}%  "
+                f"calls={row['n_curve_fit_calls']}"
+            )
 
     # -----------------------------------------------------------------------
     # Hard cube: 2 rows (use_peak_proposals=False then True)
     # -----------------------------------------------------------------------
     for use_pp in (False, True):
-        try:
-            row = _run_hard_case(use_peak_proposals=use_pp)
-            all_rows.append(row)
-            print(
-                f"[hard] use_peak_proposals={use_pp!s:<5}  "
-                f"failed={row['n_failed_pixels']}  "
-                f"calls={row['n_curve_fit_calls']}"
-            )
-        except Exception as exc:
-            warnings.warn(f"Hard case failed (use_peak_proposals={use_pp}): {exc}", stacklevel=1)
+        row = _run_hard_case(use_peak_proposals=use_pp)
+        all_rows.append(row)
+        print(
+            f"[hard] use_peak_proposals={use_pp!s:<5}  "
+            f"failed={row['n_failed_pixels']}  "
+            f"calls={row['n_curve_fit_calls']}"
+        )
 
     # -----------------------------------------------------------------------
     # Write CSV

@@ -14,7 +14,6 @@ that the base pytest suite can still run without a full Jupyter environment.
 """
 
 import importlib.util
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +21,31 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+_VALIDATION_CSV = REPO_ROOT / "benchmarks" / "results" / "v0.6.0_validation.csv"
+_VALIDATION_SCRIPT = REPO_ROOT / "benchmarks" / "validation_v0.6.0_vs_v0.5.0.py"
+
+
+@pytest.fixture(scope="session", autouse=False)
+def validation_csv(tmp_path_factory):
+    """Ensure the validation CSV exists before any notebook that needs it runs.
+
+    Generates the CSV by running the validation script if it is absent.
+    The script writes to benchmarks/results/ (gitignored), so this makes
+    the smoke test self-contained in fresh checkouts.
+    """
+    if not _VALIDATION_CSV.exists():
+        result = subprocess.run(
+            [sys.executable, str(_VALIDATION_SCRIPT)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            pytest.fail(
+                f"Failed to pre-generate validation CSV:\n{result.stderr}"
+            )
+
 
 CANONICAL_NOTEBOOKS = [
     REPO_ROOT / "example-usage" / "Ramanfit" / "Raman_backend_demo.ipynb",
@@ -68,7 +92,7 @@ def _execute_notebook(notebook_path: Path, timeout: int = NOTEBOOK_TIMEOUT) -> N
 
 @pytest.mark.skipif(not _NBCONVERT_AVAILABLE, reason="nbformat/nbconvert not installed")
 @pytest.mark.parametrize("notebook", CANONICAL_NOTEBOOKS, ids=[p.name for p in CANONICAL_NOTEBOOKS])
-def test_notebook_executes_without_error(notebook):
+def test_notebook_executes_without_error(notebook, validation_csv):
     if notebook.name in _ML_NOTEBOOKS and importlib.util.find_spec("sklearn") is None:
         pytest.skip(f"{notebook.name} requires [ml] extra (scikit-learn not installed)")
     assert notebook.exists(), f"Canonical notebook not found: {notebook}"
