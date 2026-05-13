@@ -37,6 +37,7 @@ examples/canonical-notebooks
 
 api/index
 api-stability
+validation/v0.6.0
 changelog
 citation
 ```

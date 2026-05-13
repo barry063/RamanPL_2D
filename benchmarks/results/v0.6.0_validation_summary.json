@@ -1,0 +1,16 @@
+{
+  "fit_quality": {
+    "export_sha256_v0_5_0": "ee894af8490a2d7c19ea94c6ae13a94dbc1ac3e3243ae21de43d7cee192b1d82",
+    "export_sha256_current": "ee894af8490a2d7c19ea94c6ae13a94dbc1ac3e3243ae21de43d7cee192b1d82",
+    "parity": true
+  },
+  "runtime": {
+    "v0_5_0_baseline_median_s": 0.826715,
+    "current_median_s": 0.68276,
+    "ratio": 0.8259
+  },
+  "failure_mode": {
+    "hard_cube_failed_pixels_without_proposals": 0,
+    "hard_cube_failed_pixels_with_proposals": 0
+  }
+}

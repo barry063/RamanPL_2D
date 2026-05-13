@@ -72,6 +72,20 @@ pytest tests/test_release_benchmark_smoke.py -v
 
 - [ ] Benchmark harness runs and emits structurally valid output
 
+## Validation report
+
+```bash
+ls docs/source/validation/
+ls benchmarks/results/v0.5.0_baseline/
+python benchmarks/validation_v0.6.0_vs_v0.5.0.py
+```
+
+- [ ] `docs/source/validation/v<X.Y>.md` exists for the release
+- [ ] `benchmarks/results/v0.5.0_baseline/v0.5.0_baseline.json` and
+      `checksums.txt` are tracked
+- [ ] Validation harness exits 0 and the summary JSON reports
+      `fit_quality.parity == true`
+
 ## Repository state
 
 - [ ] `src/` contains only package and build content (no stray notebooks or data files)
