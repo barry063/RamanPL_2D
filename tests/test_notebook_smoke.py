@@ -44,6 +44,9 @@ _ML_NOTEBOOKS = {"Clustering_Demo.ipynb"}
 # Seconds allowed per cell before the test fails with a timeout error.
 # Set to 600 to accommodate notebooks that run real map fits on WDF datasets.
 NOTEBOOK_TIMEOUT = 600
+# Slow notebooks (pytest -m slow) run full map fits on real WDF data and need
+# a longer per-cell budget.
+_SLOW_NOTEBOOK_TIMEOUT = 1800
 
 try:
     import nbformat
@@ -83,6 +86,6 @@ def test_slow_notebook_executes_without_error(notebook):
         pytest.skip(f"{notebook.name} requires [ml] extra (scikit-learn not installed)")
     assert notebook.exists(), f"Slow notebook not found: {notebook}"
     try:
-        _execute_notebook(notebook)
+        _execute_notebook(notebook, timeout=_SLOW_NOTEBOOK_TIMEOUT)
     except Exception as exc:
         pytest.fail(f"Notebook execution failed — {notebook.name}: {exc}")
