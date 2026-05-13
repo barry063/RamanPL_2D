@@ -16,13 +16,13 @@ These three notebooks are the canonical references for the preprocessing backend
 
 ## Interpretable-analysis notebooks
 
-These notebooks cover the stable interpretable-analysis components introduced in v0.5.1–v0.6.0. All four are included in the CI notebook smoke test (`tests/test_notebook_smoke.py`).
+These notebooks cover the stable interpretable-analysis components introduced in v0.5.1–v0.6.0. Three are included in the standard CI notebook smoke test (`tests/test_notebook_smoke.py`); `Clustering_Demo.ipynb` is in the slow suite (`pytest -m slow`) due to its runtime on real WDF data.
 
 | Notebook | What it demonstrates |
 |----------|----------------------|
 | [`example-usage/Mapping/Feature_Table_Example.ipynb`](https://github.com/barry063/RamanPL_2D/blob/main/example-usage/Mapping/Feature_Table_Example.ipynb) | `feature_table()` accessor on Raman mapping: per-pixel peak descriptors and QA columns |
 | [`example-usage/Mapping/Peak_Proposal_Demo.ipynb`](https://github.com/barry063/RamanPL_2D/blob/main/example-usage/Mapping/Peak_Proposal_Demo.ipynb) | Classical peak-proposal fallback for failed-fit recovery (v0.5.3) |
-| [`example-usage/Mapping/Clustering_Demo.ipynb`](https://github.com/barry063/RamanPL_2D/blob/main/example-usage/Mapping/Clustering_Demo.ipynb) | PCA + k-means on feature tables using the `[ml]` extra (v0.5.4) |
+| [`example-usage/Mapping/Clustering_Demo.ipynb`](https://github.com/barry063/RamanPL_2D/blob/main/example-usage/Mapping/Clustering_Demo.ipynb) | PCA + k-means on feature tables using the `[ml]` extra (v0.5.4) — slow suite only |
 | [`example-usage/Validation/Validation_v0.6.0_vs_v0.5.0.ipynb`](https://github.com/barry063/RamanPL_2D/blob/main/example-usage/Validation/Validation_v0.6.0_vs_v0.5.0.ipynb) | v0.6.0 vs v0.5.0 validation report: fit-quality parity, runtime comparison, failure-mode comparison |
 
 ## Additional examples

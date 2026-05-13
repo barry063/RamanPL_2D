@@ -29,8 +29,13 @@ CANONICAL_NOTEBOOKS = [
     REPO_ROOT / "example-usage" / "backend" / "Backend_fallback_cases.ipynb",
     REPO_ROOT / "example-usage" / "Mapping" / "Feature_Table_Example.ipynb",
     REPO_ROOT / "example-usage" / "Mapping" / "Peak_Proposal_Demo.ipynb",
-    REPO_ROOT / "example-usage" / "Mapping" / "Clustering_Demo.ipynb",
     REPO_ROOT / "example-usage" / "Validation" / "Validation_v0.6.0_vs_v0.5.0.ipynb",
+]
+
+# Notebooks excluded from standard CI smoke: runtime exceeds 600 s/cell on typical hardware.
+# Run with: pytest -m slow
+_SLOW_NOTEBOOKS = [
+    REPO_ROOT / "example-usage" / "Mapping" / "Clustering_Demo.ipynb",
 ]
 
 # Notebooks that require the [ml] extra (scikit-learn)
@@ -64,6 +69,19 @@ def test_notebook_executes_without_error(notebook):
     if notebook.name in _ML_NOTEBOOKS and importlib.util.find_spec("sklearn") is None:
         pytest.skip(f"{notebook.name} requires [ml] extra (scikit-learn not installed)")
     assert notebook.exists(), f"Canonical notebook not found: {notebook}"
+    try:
+        _execute_notebook(notebook)
+    except Exception as exc:
+        pytest.fail(f"Notebook execution failed — {notebook.name}: {exc}")
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not _NBCONVERT_AVAILABLE, reason="nbformat/nbconvert not installed")
+@pytest.mark.parametrize("notebook", _SLOW_NOTEBOOKS, ids=[p.name for p in _SLOW_NOTEBOOKS])
+def test_slow_notebook_executes_without_error(notebook):
+    if notebook.name in _ML_NOTEBOOKS and importlib.util.find_spec("sklearn") is None:
+        pytest.skip(f"{notebook.name} requires [ml] extra (scikit-learn not installed)")
+    assert notebook.exists(), f"Slow notebook not found: {notebook}"
     try:
         _execute_notebook(notebook)
     except Exception as exc:
