@@ -110,6 +110,6 @@ def test_slow_notebook_executes_without_error(notebook):
         pytest.skip(f"{notebook.name} requires [ml] extra (scikit-learn not installed)")
     assert notebook.exists(), f"Slow notebook not found: {notebook}"
     try:
-        _execute_notebook(notebook, timeout=_SLOW_NOTEBOOK_TIMEOUT)
+        _execute_notebook(notebook)
     except Exception as exc:
         pytest.fail(f"Notebook execution failed — {notebook.name}: {exc}")
