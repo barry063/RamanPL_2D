@@ -39,7 +39,9 @@
   to Additional examples; updated Mapping Raman/PL Example descriptions to
   note that integration-under-peaks moved out in v0.5.5.
 - `tests/test_notebook_smoke.py`: validation notebook added to
-  `CANONICAL_NOTEBOOKS` (7 notebooks total, up from 6).
+  `CANONICAL_NOTEBOOKS` (6 notebooks in standard suite); `Clustering_Demo.ipynb`
+  moved to `_SLOW_NOTEBOOKS` / `pytest -m slow` due to >600 s/cell runtime on
+  real WDF data. `slow` marker registered in `pyproject.toml`.
 - `README.md`: v0.6.0 roadmap row updated to shipped state.
 - `docs/source/changelog.md`: Recent releases list extended through v0.6.0.
 - `RELEASE.md`: "Validation report" check section added.
@@ -59,7 +61,8 @@
 - Test suite: PASS=253, SKIP=3, FAIL=0 (base, excluding
   `test_mapping_backend_parity.py` and `test_preprocessing_backend_resolution.py`;
   full suite 270 passed).
-- Notebook smoke: 7 notebooks executed, 0 failures.
+- Notebook smoke: 6 notebooks executed (standard suite), 0 failures.
+  `Clustering_Demo.ipynb` runs under `pytest -m slow` (not counted here).
 
 ## [v0.5.5] — 2026-05-10 — Consolidation pause: API freeze, docs, dependency hygiene
 

@@ -58,3 +58,7 @@ ramanpl = ["raman_materials.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: notebooks excluded from standard CI smoke — runtime exceeds 600 s/cell on typical hardware (run with pytest -m slow)",
+]
