@@ -1,4 +1,4 @@
-# API stability — v0.5.5 freeze contract
+# API stability — v0.5.5–v0.6.0 freeze contract
 
 This document is the written, citable stability contract for the public surface
 introduced in v0.5.1–v0.5.4. The same surfaces are enforced as a regression
@@ -6,7 +6,10 @@ test in `tests/test_api_stability.py`.
 
 ---
 
-## 1. Scope of the v0.5.5 freeze
+## 1. Scope of the v0.5.5–v0.6.0 freeze
+
+v0.6.0 inherits the v0.5.5 freeze contract unchanged; the four frozen surfaces below
+remain frozen through v0.6.0 without modification.
 
 The following four surfaces are frozen as of v0.5.5:
 

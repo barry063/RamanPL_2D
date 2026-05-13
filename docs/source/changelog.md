@@ -4,6 +4,13 @@ Full release notes are maintained in the repository root [`CHANGELOG`](https://g
 
 ## Recent releases
 
+- **v0.6.0** — Stable interpretable-analysis milestone
+- **v0.5.5** — Consolidation pause: API freeze, docs, dependency hygiene
+- **v0.5.4** — Optional `[ml]` extra: unsupervised clustering on feature tables
+- **v0.5.3** — Classical peak-proposal aid for failed-fit recovery
+- **v0.5.2** — Generalised peak descriptors and feature-table accessor
+- **v0.5.1** — Mapping-fit benchmark and per-pixel QA columns
+- **v0.5.0** — Stable public milestone
 - **v0.4.12** — Documentation scaffold and hosted docs preparation
 - **v0.4.11** — Repository hardening and milestone freeze
 - **v0.4.10** — Release validation and packaging gates

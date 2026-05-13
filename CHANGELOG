@@ -1,5 +1,66 @@
 # Changelog
 
+## [v0.6.0] — 2026-05-13 — Stable interpretable-analysis milestone
+
+### Declared
+
+- First stable interpretable-analysis milestone built on v0.5.1–v0.5.5.
+- Stable components: per-pixel QA-augmented mapping export, generalised peak
+  descriptors, `feature_table()` accessors, classical peak-proposal aid for
+  failed-fit recovery, optional unsupervised clustering on fitted descriptors.
+- Deterministic physical fitting (Lorentzian / pseudo-Voigt least squares)
+  remains the final authority for all reported peak parameters.
+
+### Added
+
+- `benchmarks/validation_v0.6.0_vs_v0.5.0.py` (new): reproducible validation
+  harness comparing v0.6.0 to v0.5.0 on four synthetic cubes across fit
+  quality, runtime, and failure-mode axes. Reuses helpers from
+  `benchmark_mapping_fit.py`.
+- `benchmarks/results/v0.5.0_baseline/v0.5.0_baseline.json` (tracked): v0.5.0
+  reference runtime and `n_curve_fit_calls` for the standard small_3x4 cube.
+- `benchmarks/results/v0.5.0_baseline/checksums.txt` (tracked): SHA256 of the
+  v0.5.0 export, anchoring the byte-level fit-parity invariant.
+- `example-usage/Validation/Validation_v0.6.0_vs_v0.5.0.ipynb` (new):
+  executable validation notebook covering fit-quality parity, runtime
+  comparison, and failure-mode comparison. Added to `test_notebook_smoke.py`.
+- `docs/source/validation/v0.6.0.md` (new): citable validation report
+  summarising the three findings.
+
+### Changed
+
+- `docs/source/api-stability.md`: title and §1 scope wording updated to
+  "v0.5.5–v0.6.0"; the four frozen surfaces are unchanged.
+- `docs/source/examples/canonical-notebooks.md`: restructured into three
+  sections (Backend behaviour, Interpretable-analysis, Additional examples);
+  added Interpretable-analysis subsection covering `Feature_Table_Example.ipynb`,
+  `Peak_Proposal_Demo.ipynb`, `Clustering_Demo.ipynb`, and
+  `Validation_v0.6.0_vs_v0.5.0.ipynb`; added `Area Integration Example.ipynb`
+  to Additional examples; updated Mapping Raman/PL Example descriptions to
+  note that integration-under-peaks moved out in v0.5.5.
+- `tests/test_notebook_smoke.py`: validation notebook added to
+  `CANONICAL_NOTEBOOKS` (7 notebooks total, up from 6).
+- `README.md`: v0.6.0 roadmap row updated to shipped state.
+- `docs/source/changelog.md`: Recent releases list extended through v0.6.0.
+- `RELEASE.md`: "Validation report" check section added.
+- Version bumps: `pyproject.toml`, `src/ramanpl/__init__.py`, `CITATION.cff`,
+  `docs/source/conf.py`, `tests/test_packaging_smoke.py`.
+
+### Notes
+
+- No changes to fitting algorithms, preprocessing, backend resolution, export
+  schemas, descriptors, ml, or `feature_table()` output. v0.6.0 is a milestone
+  freeze; the only change under `src/ramanpl/` is the `__version__` line.
+- Supervised classification (e.g. layer-number labels) remains deferred to
+  v0.7.x, conditional on the availability of curated, labelled, multi-instrument
+  datasets.
+- Validation evidence committed in `benchmarks/results/v0.5.0_baseline/` and
+  reproduced by `benchmarks/validation_v0.6.0_vs_v0.5.0.py`.
+- Test suite: PASS=253, SKIP=3, FAIL=0 (base, excluding
+  `test_mapping_backend_parity.py` and `test_preprocessing_backend_resolution.py`;
+  full suite 270 passed).
+- Notebook smoke: 7 notebooks executed, 0 failures.
+
 ## [v0.5.5] — 2026-05-10 — Consolidation pause: API freeze, docs, dependency hygiene
 
 ### Added

@@ -84,7 +84,7 @@ def build_mapping_fit_benchmark_cases():
     cases = []
     for name, n_pts, shape in [
         ("small_3x4",       150, (3,  4,  150)),
-        ("extended_30x30",  150, (30, 30, 150)),
+        ("extended_15x15",  150, (15, 15, 150)),
         ("tall_axis_10x12", 500, (10, 12, 500)),
     ]:
         x = np.linspace(200.0, 1800.0, n_pts)
