@@ -6,8 +6,8 @@
   },
   "runtime": {
     "v0_5_0_baseline_median_s": 0.826715,
-    "current_median_s": 0.68276,
-    "ratio": 0.8259
+    "current_median_s": 0.539188,
+    "ratio": 0.6522
   },
   "failure_mode": {
     "hard_cube_failed_pixels_without_proposals": 0,
