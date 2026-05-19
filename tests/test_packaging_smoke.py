@@ -16,7 +16,7 @@ import pytest  # noqa: E402
 
 def test_import_top_level_package():
     import ramanpl
-    assert ramanpl.__version__ == "0.6.0"
+    assert ramanpl.__version__ == "0.6.1"
 
 
 def test_import_public_entry_points():
@@ -94,3 +94,9 @@ def test_descriptors_top_level_import_works():
     from ramanpl import descriptors
     assert callable(descriptors.build_feature_row)
     assert callable(descriptors.validate_peak_pairs)
+
+
+def test_tqdm_importable():
+    import tqdm
+    from tqdm.auto import tqdm as _t
+    assert hasattr(_t, "update")
