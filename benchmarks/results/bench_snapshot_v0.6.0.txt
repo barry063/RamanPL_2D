@@ -1,0 +1,4 @@
+commit: 3748b3fa6337f8d5c4f38a1f21f9f335145990d6
+version: 0.6.0
+pytest: 1 failed, 268 passed, 3 skipped, 1 deselected, 4 warnings (pre-existing notebook smoke failure: Peak_Proposal_Demo.ipynb)
+benchmark: benchmarks/results/mapping_fit_benchmark_v0.6.0.csv
