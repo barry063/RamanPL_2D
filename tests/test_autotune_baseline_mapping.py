@@ -228,3 +228,32 @@ def test_export_includes_autotune_block(tmp_path, mapping_with_baseline):
         content = f.read()
 
     assert "baseline_autotune" in content
+
+
+# ---------------------------------------------------------------------------
+# Test 11 — autotune raises for pipelines with >1 BaselineSubtract steps
+# (regression for P2: broad except ValueError silently used wrong pipeline)
+# ---------------------------------------------------------------------------
+
+def test_autotune_raises_for_multiple_baseline_steps():
+    from ramanpl.preprocessing import Pipeline, BaselineSubtract
+    from ramanpl.schema import normalise_baseline_spec
+
+    cube, x, peak = _make_synthetic_cube()
+    spec = normalise_baseline_spec({"method": "poly", "poly_order": 1})
+    pipe = Pipeline(
+        steps=[
+            BaselineSubtract(baseline_spec=spec),
+            BaselineSubtract(baseline_spec=spec),  # duplicate — invalid
+        ],
+        backend="native",
+        name="double_baseline",
+    )
+    mapping = RamanMapping.from_arrays(
+        cube, x, 2, 2,
+        custom_peaks=peak,
+        data_range=(300.0, 500.0),
+        preprocessing=pipe,
+    )
+    with pytest.raises(ValueError, match="BaselineSubtract"):
+        mapping.autotune_baseline(seed_coord=(0, 0), methods=["poly"], plot=False)
