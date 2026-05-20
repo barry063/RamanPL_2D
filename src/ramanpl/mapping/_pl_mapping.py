@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from scipy import optimize
 from scipy.integrate import simpson
 from scipy.signal import savgol_filter
+from tqdm.auto import tqdm
 
 try:
     from ..baselineAPI import BaselineAPI
@@ -339,7 +340,8 @@ class PLMapping(_MappingPreprocessMixin):
         maxfev = 6400,
         fit_spectrum_kwargs=None,
         fit_normalize=True,
-        compute_peak_maps=True
+        compute_peak_maps=True,
+        show_progress=True,
     ):
         """
         Fit all map spectra using self.custom_peaks as bounds.
@@ -509,8 +511,15 @@ class PLMapping(_MappingPreprocessMixin):
         prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
         score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))
 
+        pbar = tqdm(
+            total=self.Y * self.X,
+            desc="Fitting (PL mapping)",
+            disable=not show_progress,
+            mininterval=0.5,
+        )
         for j in range(self.Y):
             for i in range(self.X):
+                pbar.update(1)
 
                 # --- get already-preprocessed spectrum for this pixel ---
                 y = np.asarray(spectra_fit_cube[j, i, :], dtype=float)
@@ -742,12 +751,13 @@ class PLMapping(_MappingPreprocessMixin):
             if row_reset:
                 p0_current = p0_base.copy()
 
+        pbar.close()
         n_fit = np.sum(~np.isnan(self.residual_map))
         print(f"Successful fits: {n_fit} / {self.X * self.Y}")
 
         self.fitted_params = fitted_params
         return fitted_params
-               
+
     def plot_spectrum_fit(self, x, y):
         """Plot raw data and fitting results for a single map point.
 

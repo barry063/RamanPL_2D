@@ -1,5 +1,51 @@
 # Changelog
 
+## [v0.6.1] — 2026-05-19 — Progress indicators for mapping & batch fits
+
+### Added
+
+- `tqdm>=4.66` added as a hard runtime dependency in `pyproject.toml`.
+- `show_progress: bool = True` keyword added to `RamanMapping.fit_spectra` and
+  `PLMapping.fit_spectra`. Progress bar throttled at `mininterval=0.5`;
+  suppressed when `show_progress=False`.
+- `show_progress: bool = True` keyword added to `_BaseBatch.fit` and threaded
+  through to `fit_spectra_batch`. Both `RamanBatch` and `PLBatch` inherit this
+  via `_BaseBatch`.
+- `test_tqdm_importable` added to `tests/test_packaging_smoke.py`: verifies
+  `import tqdm` and `from tqdm.auto import tqdm` succeed in the installed
+  package.
+- `benchmarks/results/mapping_fit_benchmark_v0.6.0.csv`: archived baseline
+  snapshot for algorithmic parity verification.
+- `benchmarks/results/overhead_v0.6.1.txt`: overhead measurement record.
+- `bench_snapshot_v0.6.0.txt`: git hash + pytest counts at start of this build.
+
+### Changed
+
+- Pixel loop in `RamanMapping.fit_spectra` (`_raman_mapping.py`) wrapped with
+  `tqdm`; `pbar.update(1)` called at the top of the inner loop so all pixels
+  (including `continue` paths) are counted correctly.
+- Pixel loop in `PLMapping.fit_spectra` (`_pl_mapping.py`) wrapped identically.
+- File loop in `fit_spectra_batch` (`batch.py`) wrapped: `for s in tqdm(spectra,
+  desc="Fitting (batch)", disable=not show_progress, mininterval=0.5)`.
+
+### Notes
+
+- No changes to fitting algorithms, fitted values, preprocessing, or export
+  schemas.
+- `n_curve_fit_calls` is identical row-by-row versus the v0.6.0 baseline on
+  all 12 benchmark rows (algorithmic invariance confirmed).
+- tqdm overhead is below single-run measurement noise (±10-20% on this machine)
+  and analytically < 0.01% (225 `pbar.update()` calls × ~0.5 μs each over
+  12–68 s of fitting). The ≤ 1% acceptance criterion is satisfied.
+- Per-class `desc` strings ("Fitting (Raman batch)" / "Fitting (PL batch)")
+  were consolidated to `"Fitting (batch)"` because both classes share a single
+  inherited `_BaseBatch.fit` → `fit_spectra_batch` call path.
+- Deferred: `tqdm` inside single-fit multistart loops (negligible runtime),
+  preprocessing pipelines (preprocessing is fast relative to fitting),
+  per-tile bars (tile parallelism arrives in v0.6.3).
+
+---
+
 ## [v0.6.0] — 2026-05-13 — Stable interpretable-analysis milestone
 
 ### Declared
