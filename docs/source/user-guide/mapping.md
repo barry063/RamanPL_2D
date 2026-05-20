@@ -2,6 +2,13 @@
 
 `RamanMapping` and `PLMapping` fit spectra over a 2D spatial grid, producing heatmaps of fitted parameters.
 
+## Baseline auto-tuning (v0.6.2+)
+
+Before running a full mapping fit you can score a grid of baseline configurations
+on a single seed pixel to find the most appropriate baseline for your dataset.
+See {doc}`baseline-autotune` for the full workflow, API reference, and default
+grid specification.
+
 ## Data structure
 
 A mapping dataset is a 3D spectral cube: `(rows, cols, spectral_axis)`. Each pixel contains one spectrum. The mapping classes handle:

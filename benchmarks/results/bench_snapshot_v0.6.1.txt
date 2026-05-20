@@ -1,0 +1,4 @@
+﻿commit: 935269401c6583f105577d2f926b2c23466aee8e
+version: 0.6.1
+=========================== short test summary info ===========================
+FAILED tests/test_notebook_smoke.py::test_notebook_executes_without_error[Feature_Table_Example.ipynb]

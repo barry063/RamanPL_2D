@@ -18,6 +18,7 @@ user-guide/preprocessing
 user-guide/backend-behaviour
 user-guide/single-spectrum
 user-guide/mapping
+user-guide/baseline-autotune
 user-guide/low_snr_advisory
 user-guide/batch
 user-guide/export-provenance

@@ -156,6 +156,108 @@ class _MappingPreprocessMixin:
                 else:
                     yield (i, j, j, i)
 
+    # ------------------------------------------------------------------
+    # v0.6.2 — Baseline autotune façade methods
+    # ------------------------------------------------------------------
+
+    def autotune_baseline(
+        self,
+        *,
+        seed_coord: tuple,
+        methods=None,
+        lam_grid=None,
+        plot: bool = True,
+        fit_spectrum_kwargs=None,
+    ):
+        """
+        Score a grid of baseline candidates on a seed pixel. Does NOT modify self.
+
+        Call self.apply_choice(result.winner) to commit the winning configuration.
+
+        Parameters
+        ----------
+        seed_coord : (j, i)
+            Row-major pixel index (j=row, i=col).
+        methods : list[str] or None
+            Subset of {'asls','arpls','airpls','poly','gaussian'}. None → all.
+        lam_grid : list[float] or None
+            Override lam sweep for iterative methods.
+        plot : bool
+            If True, return a comparison figure in result.figure.
+        fit_spectrum_kwargs : dict or None
+            Extra kwargs for the internal fitter (e.g. n_starts).
+
+        Returns
+        -------
+        BaselineAutotuneResult
+        """
+        try:
+            from .._autotune import autotune_baseline_for_object
+        except Exception:
+            from ramanpl._autotune import autotune_baseline_for_object
+
+        result = autotune_baseline_for_object(
+            self,
+            seed_coord=seed_coord,
+            methods=methods,
+            lam_grid=lam_grid,
+            plot=plot,
+            fit_spectrum_kwargs=fit_spectrum_kwargs,
+        )
+        self._last_autotune_result = result
+        return result
+
+    def apply_choice(self, choice: dict) -> None:
+        """
+        Commit a baseline spec to self.preprocessing.
+
+        Invalidates the preprocessed-cube cache so the next fit_spectra() call
+        uses the new baseline.
+
+        Parameters
+        ----------
+        choice : dict
+            Baseline spec with at least a 'method' key, e.g.
+            {'method': 'airpls', 'lam': 1e5, 'niter': 50}.
+
+        Raises
+        ------
+        ValueError
+            If choice is not a valid spec dict, or if the pipeline has zero or
+            more than one BaselineSubtract steps.
+        """
+        if not isinstance(choice, dict) or "method" not in choice:
+            raise ValueError(
+                "choice must be a baseline spec dict with at least a 'method' key."
+            )
+
+        try:
+            from .._autotune import _swap_baseline_step_in_pipeline
+            from ..schema import baseline_spec_to_runtime, normalise_baseline_spec
+        except Exception:
+            from ramanpl._autotune import _swap_baseline_step_in_pipeline
+            from ramanpl.schema import baseline_spec_to_runtime, normalise_baseline_spec
+
+        new_pipe = _swap_baseline_step_in_pipeline(self.preprocessing, choice)
+
+        # Refresh pipeline state
+        self.preprocessing = new_pipe
+        try:
+            self.preprocessing_recipe = new_pipe.to_dict()
+        except Exception:
+            self.preprocessing_recipe = None
+
+        # Refresh legacy baseline attributes
+        self.baseline_method = normalise_baseline_spec(choice)
+        self._baseline_method, self._baseline_kwargs = baseline_spec_to_runtime(
+            self.baseline_method
+        )
+
+        # Invalidate cube cache so next fit_spectra() re-preprocesses
+        self._preprocessed_cube_cache = None
+        self._preprocessed_x_cache = None
+        self._preprocess_meta = {}
+
     def _build_mapping_fit_export_meta(self, *, coord_mode: str, scaled: bool, peak_labels):
         """
         Build shared export metadata for mapping fit exports.
@@ -174,7 +276,7 @@ class _MappingPreprocessMixin:
         backend_outcome = self._preprocess_meta.get("preprocessing_backend_info") if self._preprocess_meta else None
         provenance = serialise_backend_provenance(backend_outcome)
 
-        return build_export_meta(
+        meta = build_export_meta(
             export_kind="mapping_fit",
             map_kind="fit_params",
             spectrum_type=getattr(self, "spectrum_type", None),
@@ -195,6 +297,19 @@ class _MappingPreprocessMixin:
             smooth_poly=getattr(self, "smooth_poly", None),
             **provenance,
         )
+
+        ar = getattr(self, "_last_autotune_result", None)
+        if ar is not None:
+            meta["baseline_autotune"] = {
+                "methods": list({r["method"] for r in ar.ranking}),
+                "n_candidates": len(ar.ranking),
+                "seed_coord": list(ar.seed_coord) if ar.seed_coord is not None else None,
+                "winner": ar.winner,
+                "winner_rmse": float(ar.ranking[0]["rmse"]),
+                "ranking_top5": ar.ranking[:5],
+            }
+
+        return meta
 
     def _params_to_export_dict(self, xaxis, peak_labels, params, intensity_scale=1.0):
         """
