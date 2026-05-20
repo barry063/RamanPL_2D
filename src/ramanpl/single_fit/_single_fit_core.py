@@ -257,6 +257,17 @@ def build_single_fit_export_metadata(
     if extra_meta:
         meta.update(extra_meta)
 
+    ar = getattr(obj, "_last_autotune_result", None)
+    if ar is not None:
+        meta["baseline_autotune"] = {
+            "methods": list({r["method"] for r in ar.ranking}),
+            "n_candidates": len(ar.ranking),
+            "seed_coord": list(ar.seed_coord) if ar.seed_coord is not None else None,
+            "winner": ar.winner,
+            "winner_rmse": float(ar.ranking[0]["rmse"]),
+            "ranking_top5": ar.ranking[:5],
+        }
+
     if include_legacy:
         meta.update({
             "background_remove": getattr(obj, "background_remove", None),

@@ -185,10 +185,13 @@ class RamanFit:
         if self.remove_peaks_list:
             self.remove_peaks(*self.remove_peaks_list)
             
-        # Initialise data loaded                                                                                                                               
+        # Initialise data loaded
         self.raw_spectra = np.array(spectra)
         self.wavenumber = np.array(wavenumber)
         self.processed_spectra = np.array(spectra.copy())
+        # Store pristine copies before pipeline application so apply_choice() can re-apply from scratch
+        self._raw_spectra_pristine = np.asarray(spectra, dtype=float).ravel()
+        self._x_axis_pristine = np.asarray(wavenumber, dtype=float).ravel()
         
         self._smoothed_spectra = None
         self._baseline = None
@@ -298,6 +301,125 @@ class RamanFit:
             )
         self.intensity_normal = self.processed_spectra / self.peak_intensity
 
+
+    # ------------------------------------------------------------------
+    # v0.6.2 — Baseline autotune
+    # ------------------------------------------------------------------
+
+    def autotune_baseline(
+        self,
+        *,
+        methods=None,
+        lam_grid=None,
+        plot: bool = True,
+        fit_spectrum_kwargs=None,
+    ):
+        """
+        Score a grid of baseline candidates on this spectrum. Does NOT modify self.
+
+        Call self.apply_choice(result.winner) to commit the winning configuration.
+
+        Parameters
+        ----------
+        methods : list[str] or None
+            Subset of {'asls','arpls','airpls','poly','gaussian'}. None → all.
+        lam_grid : list[float] or None
+            Override lam sweep for iterative methods.
+        plot : bool
+            If True, return a comparison figure in result.figure.
+        fit_spectrum_kwargs : dict or None
+            Extra kwargs for the internal fitter (e.g. n_starts).
+
+        Returns
+        -------
+        BaselineAutotuneResult
+        """
+        from ramanpl._autotune import autotune_baseline_for_object
+
+        result = autotune_baseline_for_object(
+            self,
+            seed_coord=None,
+            methods=methods,
+            lam_grid=lam_grid,
+            plot=plot,
+            fit_spectrum_kwargs=fit_spectrum_kwargs,
+        )
+        self._last_autotune_result = result
+        return result
+
+    def apply_choice(self, choice: dict) -> None:
+        """
+        Commit a baseline spec to self.preprocessing and re-apply it.
+
+        Re-applies the full pipeline from the pristine raw spectrum so all
+        derived attributes are consistent.
+
+        Parameters
+        ----------
+        choice : dict
+            Baseline spec with at least a 'method' key, e.g.
+            {'method': 'airpls', 'lam': 1e5, 'niter': 50}.
+
+        Raises
+        ------
+        ValueError
+            If choice is not a valid spec dict, or if the pipeline has zero or
+            more than one BaselineSubtract steps.
+        """
+        if not isinstance(choice, dict) or "method" not in choice:
+            raise ValueError(
+                "choice must be a baseline spec dict with at least a 'method' key."
+            )
+
+        from ramanpl._autotune import _swap_baseline_step_in_pipeline
+        from ramanpl.preprocessing import SpectralDataset
+        from ramanpl.schema import baseline_spec_to_runtime, normalise_baseline_spec
+
+        new_pipe = _swap_baseline_step_in_pipeline(self.preprocessing, choice)
+
+        # Re-apply from pristine (pre-pipeline) data
+        ds0 = SpectralDataset(
+            x=self._x_axis_pristine,
+            y=self._raw_spectra_pristine,
+            modality="Raman",
+            axis_kind="raman_shift_cm-1",
+            meta={"x_trimmed_on_load": False},
+        )
+        ds = new_pipe.apply(ds0)
+
+        # Update pipeline state
+        self.preprocessing = new_pipe
+        try:
+            self.preprocessing_recipe = new_pipe.to_dict()
+        except Exception:
+            self.preprocessing_recipe = None
+
+        # Refresh legacy baseline attributes
+        self.baseline_method = normalise_baseline_spec(choice)
+        self._baseline_method, self._baseline_kwargs = baseline_spec_to_runtime(
+            self.baseline_method
+        )
+
+        # Refresh all derived attributes
+        self.wavenumber = np.asarray(ds.x, dtype=float).ravel()
+        self.processed_spectra = np.asarray(ds.y, dtype=float).ravel()
+        self._smoothed_spectra = ds.meta.get("_smoothed_last", None)
+        self._baseline = ds.meta.get("_baseline_last", None)
+        self._corrected_spectra = (
+            self.processed_spectra.copy()
+            if (self._smoothed_spectra is not None or self._baseline is not None)
+            else None
+        )
+        self.preprocessing_backend_resolved = ds.meta.get("preprocessing_backend", None)
+        self.preprocessing_backend_info = ds.meta.get("preprocessing_backend_info", None)
+        self._backend_outcome = self.preprocessing_backend_info
+
+        self.peak_intensity = float(np.max(self.processed_spectra))
+        if self.peak_intensity <= 0:
+            raise ValueError(
+                "Peak intensity is non-positive after re-applying pipeline with new baseline."
+            )
+        self.intensity_normal = self.processed_spectra / self.peak_intensity
 
     def _get_material_lib_path(self):
         """

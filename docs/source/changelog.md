@@ -4,6 +4,7 @@ Full release notes are maintained in the repository root [`CHANGELOG`](https://g
 
 ## Recent releases
 
+- **v0.6.2** — Seed-pixel baseline auto-tuning with visual review
 - **v0.6.1** — Progress indicators for mapping & batch fits
 - **v0.6.0** — Stable interpretable-analysis milestone
 - **v0.5.5** — Consolidation pause: API freeze, docs, dependency hygiene

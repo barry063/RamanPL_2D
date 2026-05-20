@@ -1,5 +1,57 @@
 # Changelog
 
+## [v0.6.2] — 2026-05-20 — Seed-pixel baseline auto-tuning
+
+### Added
+
+- `autotune_baseline()` method on `RamanMapping` and `PLMapping` (via
+  `_MappingPreprocessMixin`). Scores a configurable grid of 24 baseline
+  candidates on a user-chosen seed pixel and returns a ranked
+  `BaselineAutotuneResult` without modifying the object.
+- `apply_choice(choice)` method on `RamanMapping` and `PLMapping`. Commits
+  a baseline spec dict to `self.preprocessing`, refreshes all legacy
+  baseline attributes, and invalidates the preprocessed-cube cache so the
+  next `fit_spectra()` call picks up the new baseline.
+- `autotune_baseline()` method on `RamanFit` and `PLfit`. Same diagnostic,
+  but scores against the single stored spectrum (`_raw_spectra_pristine`).
+- `apply_choice(choice)` method on `RamanFit` and `PLfit`. Re-applies the
+  full pipeline from the pristine raw spectrum and refreshes all seven
+  derived attributes (`processed_spectra`, `_baseline`, `_smoothed_spectra`,
+  `_corrected_spectra`, `peak_intensity`, `preprocessing_backend_*`,
+  `_backend_outcome`).
+- `src/ramanpl/_autotune.py` — internal module providing:
+  `BaselineCandidate`, `BaselineAutotuneResult`,
+  `_swap_baseline_step_in_pipeline`, `_score_candidate`,
+  `_make_comparison_figure`, `_default_baseline_grid` (24 candidates),
+  `autotune_baseline_for_object`.
+- `_raw_spectra_pristine` and `_x_axis_pristine` attributes on `RamanFit`
+  and `PLfit` (set once at `__init__`, never mutated). Allow `apply_choice`
+  to re-apply any pipeline, including those with `CropByRange`.
+- `baseline_autotune` provenance block added to mapping and single-fit
+  export metadata when `_last_autotune_result` is set (keys: `methods`,
+  `n_candidates`, `seed_coord`, `winner`, `winner_rmse`, `ranking_top5`).
+- `tests/test_autotune_baseline_mapping.py` — 10 tests covering all
+  checklist items for mapping autotune.
+- `tests/test_autotune_baseline_single_fit.py` — 12 tests covering all
+  checklist items for single-fit autotune.
+- `benchmarks/results/bench_snapshot_v0.6.1.txt` — before-snapshot
+  artefact anchoring the v0.6.2 build.
+- `benchmarks/results/mapping_fit_benchmark_v0.6.1.csv` — archived
+  v0.6.1 mapping-fit benchmark for algorithmic parity verification.
+
+### Notes
+
+- No changes to `baselineAPI.py`. Autotune only composes existing baseline
+  methods into a grid.
+- No new keywords on `fit_spectra` or `fit_spectrum`. API surface unchanged.
+- No new runtime dependencies. `matplotlib` and `scipy` are already required.
+- `autotune_baseline()` is read-only: it never mutates the object. Only
+  `apply_choice()` writes to `self`.
+- `apply_choice()` raises `ValueError` if the pipeline has zero or more than
+  one `BaselineSubtract` steps (fail-loud contract).
+- Algorithmic invariance versus v0.6.1: `n_curve_fit_calls` row-by-row
+  identical on the v0.6.1 benchmark cube when `apply_choice` is not called.
+
 ## [v0.6.1] — 2026-05-19 — Progress indicators for mapping & batch fits
 
 ### Added
