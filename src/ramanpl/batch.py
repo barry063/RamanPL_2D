@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, Literal
 
 import numpy as np
+from tqdm.auto import tqdm
 
 from ramanpl.dataImporter import DataImporter
 from ramanpl.operation import Spectrum, AxisType, AlignType, ArithmeticSpectrum
@@ -368,6 +369,7 @@ def fit_spectra_batch(
     fitter_kwargs: Optional[dict] = None,
     fit_spectrum_kwargs: Optional[dict] = None,
     return_fitters: bool = False,
+    show_progress: bool = True,
 ):
     """
     Fit multiple spectra using PLfit or RamanFit.
@@ -406,7 +408,7 @@ def fit_spectra_batch(
 
     out = []
 
-    for s in spectra:
+    for s in tqdm(spectra, desc="Fitting (batch)", disable=not show_progress, mininterval=0.5):
         # Instantiate robustly by introspecting fitter signature
         fitter = _instantiate_fitter(
             fitter_class,
@@ -955,7 +957,7 @@ class _BaseBatch:
         self.specs = load_spectra(list(self.files), axis=self.axis)
         return self
 
-    def fit(self, *, return_fitters: bool = True, fit_spectrum_kwargs: Optional[dict] = None):
+    def fit(self, *, return_fitters: bool = True, fit_spectrum_kwargs: Optional[dict] = None, show_progress: bool = True):
         """
         Fit all spectra and cache:
           - self.fits (raw, fit, fitter)
@@ -970,6 +972,7 @@ class _BaseBatch:
             fitter_kwargs=self.fitter_kwargs,
             fit_spectrum_kwargs=fit_spectrum_kwargs,
             return_fitters=return_fitters,
+            show_progress=show_progress,
         )
         
         self._last_fit_spectrum_kwargs = dict(fit_spectrum_kwargs or {})

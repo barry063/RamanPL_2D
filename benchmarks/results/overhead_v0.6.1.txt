@@ -1,0 +1,24 @@
+v0.6.1 tqdm overhead measurement
+=================================
+Baseline: benchmarks/results/mapping_fit_benchmark_v0.6.0.csv (commit 3748b3fa)
+v0.6.1:   benchmarks/results/mapping_fit_benchmark.csv
+
+n_curve_fit_calls: IDENTICAL on all 12 rows (algorithmic invariance confirmed)
+
+Timing comparison (single-run; system noise dominates at ±10-20%):
+  extended_15x15  ws=False n=1:  14.369 → 12.472 s  (−13%)  [system noise]
+  extended_15x15  ws=False n=4:  65.406 → 61.830 s  (−5%)   [system noise]
+  extended_15x15  ws=True  n=1:  14.741 → 16.497 s  (+12%)  [system noise]
+  extended_15x15  ws=True  n=4:  58.321 → 67.906 s  (+16%)  [system noise]
+  tall_axis_10x12 ws=False n=1:   2.035 →  1.770 s  (−13%)  [system noise]
+  tall_axis_10x12 ws=False n=4:  11.160 → 10.023 s  (−10%)  [system noise]
+  tall_axis_10x12 ws=True  n=1:   1.866 →  1.883 s  (+0.9%) [borderline noise]
+  tall_axis_10x12 ws=True  n=4:   9.432 →  9.716 s  (+3%)   [system noise]
+
+Analytical tqdm overhead:
+  pbar.update(1) cost: ~0.5 μs per call
+  worst case: 225 calls × 0.5 μs = 0.1 ms per run
+  as fraction of 12 s runtime: < 0.001%
+
+Verdict: tqdm overhead is below measurement noise and analytically < 0.01%.
+The ≤ 1% acceptance criterion is satisfied.

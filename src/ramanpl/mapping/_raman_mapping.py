@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import optimize
 from scipy.integrate import simpson
+from tqdm.auto import tqdm
 
 try:
     from ..baselineAPI import BaselineAPI
@@ -375,6 +376,7 @@ class RamanMapping(_MappingPreprocessMixin):
         maxfev=6400,
         fit_spectrum_kwargs=None,
         fit_normalize=True,
+        show_progress=True,
     ):
 
 
@@ -584,6 +586,12 @@ class RamanMapping(_MappingPreprocessMixin):
         prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
         score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))
 
+        pbar = tqdm(
+            total=self.Y * self.X,
+            desc="Fitting (Raman mapping)",
+            disable=not show_progress,
+            mininterval=0.5,
+        )
         for j in range(self.Y):
 
             # IMPORTANT: prevents a bad seed at end of previous row from contaminating next row
@@ -591,6 +599,7 @@ class RamanMapping(_MappingPreprocessMixin):
                 p0_current = p0_base.copy()
 
             for i in range(self.X):
+                pbar.update(1)
                 # raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
                 # spec_fit, scale = self._preprocess_single_spectrum(xdata, raw_spec, fit_normalize=fit_normalize)
@@ -819,12 +828,13 @@ class RamanMapping(_MappingPreprocessMixin):
                         if reset_on_fail:
                             p0_current = p0_base.copy()
 
+        pbar.close()
         self.fitted_params = fitted_params
         n_fit = np.sum(~np.isnan(self.residual_map))
         print(f"Successful fits: {n_fit} / {self.X * self.Y}")
         return fitted_params
 
-    
+
     def plot_spectrum_fit(self, x, y):
         """Plot raw data and fitting results for a single map point.
 
