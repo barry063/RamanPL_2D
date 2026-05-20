@@ -368,17 +368,36 @@ def autotune_baseline_for_object(
     # ------------------------------------------------------------------
     # Build candidate grid and score each candidate
     # ------------------------------------------------------------------
+
+    # Pre-flight: reject ambiguous pipelines before scoring begins.
+    # >1 BaselineSubtract steps: scoring would use a wrong pipeline and
+    # apply_choice would fail anyway — raise immediately.
+    # 0 BaselineSubtract steps: allowed; each candidate is scored as a
+    # standalone single-step pipeline (useful when exploring baselines
+    # before one has been added to the pipeline).
+    try:
+        from .preprocessing import BaselineSubtract as _BS
+    except Exception:
+        from ramanpl.preprocessing import BaselineSubtract as _BS
+    _n_baseline_steps = sum(1 for s in obj.preprocessing.steps if isinstance(s, _BS))
+    if _n_baseline_steps > 1:
+        raise ValueError(
+            f"autotune_baseline requires at most one BaselineSubtract step in the "
+            f"pipeline, but found {_n_baseline_steps}. Remove duplicate baseline steps "
+            f"before calling autotune_baseline."
+        )
+    _has_baseline_step = _n_baseline_steps == 1
+
     candidates = _default_baseline_grid(methods=methods, lam_grid=lam_grid)
 
     ranking_raw: List[Dict[str, Any]] = []
 
     for cand in candidates:
-        # Build a pipeline that only swaps the baseline step
-        try:
+        # Build a pipeline that only swaps the baseline step, or a standalone
+        # single-step pipeline when the object has no baseline step.
+        if _has_baseline_step:
             new_pipe = _swap_baseline_step_in_pipeline(obj.preprocessing, cand.as_spec())
-        except ValueError:
-            # No baseline step in pipeline — score with the candidate as a
-            # standalone single-step pipeline
+        else:
             from ramanpl.preprocessing import Pipeline, BaselineSubtract
             from ramanpl.schema import normalise_baseline_spec
             new_pipe = Pipeline(
