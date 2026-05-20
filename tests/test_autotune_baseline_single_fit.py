@@ -57,6 +57,8 @@ def test_autotune_returns_ranking_sorted_ascending(raman_fit):
     rmses = [r["rmse"] for r in result.ranking]
     assert rmses == sorted(rmses, key=lambda v: (not np.isfinite(v), v))
     assert result.winner == {"method": result.ranking[0]["method"], **result.ranking[0]["kwargs"]}
+    finite = [v for v in rmses if np.isfinite(v)]
+    assert len(finite) > 0, "All candidates scored inf — sum_peaks stride or pipeline issue"
 
 
 # ---------------------------------------------------------------------------
@@ -225,3 +227,51 @@ def test_single_fit_apply_choice_refreshes_derived_attrs():
 
     # 7. _backend_outcome: same object as preprocessing_backend_info
     assert fit._backend_outcome is fit.preprocessing_backend_info
+
+
+# ---------------------------------------------------------------------------
+# Test 13 — autotune scoring is valid when pipeline contains a crop step
+# (regression: x was taken from the post-crop axis while y_raw was the
+# full pristine spectrum, causing a length mismatch → all rmse=inf)
+# ---------------------------------------------------------------------------
+
+def test_autotune_works_with_crop_in_pipeline():
+    """Ranking must contain at least one finite RMSE when a CropByRange step
+    is present in the pipeline (i.e. the spectral axis is shorter than the
+    raw spectrum passed at construction)."""
+    from ramanpl.preprocessing import Pipeline, CropByRange, BaselineSubtract
+    from ramanpl.schema import normalise_baseline_spec
+
+    x_full = np.linspace(250.0, 550.0, 200)
+    y_full = 5.0 + 80.0 * np.exp(-((x_full - 400.0) / 8.0) ** 2)
+
+    custom_peaks = {"A": ([390.0, 2.0, 0.01], [410.0, 20.0, 200.0])}
+
+    pipe = Pipeline(
+        steps=[
+            CropByRange(data_range=(300.0, 500.0)),
+            BaselineSubtract(baseline_spec=normalise_baseline_spec({"method": "poly", "poly_order": 1})),
+        ],
+        backend="native",
+        name="crop_then_baseline",
+    )
+
+    fit = RamanFit(
+        spectra=y_full,
+        wavenumber=x_full,
+        custom_peaks=custom_peaks,
+        preprocessing=pipe,
+        normalize=False,
+    )
+
+    # The cropped axis is shorter than the pristine spectrum — this is exactly
+    # the condition that triggered the bug.
+    assert len(fit.wavenumber) < len(fit._x_axis_pristine)
+
+    result = fit.autotune_baseline(methods=["poly", "gaussian"], plot=False)
+
+    finite_rmses = [r["rmse"] for r in result.ranking if np.isfinite(r["rmse"])]
+    assert len(finite_rmses) > 0, (
+        "All candidates scored inf — x/y_raw length mismatch detected. "
+        "Pristine x-axis must be used for scoring, not the post-crop axis."
+    )

@@ -335,10 +335,16 @@ def autotune_baseline_for_object(
     else:
         # Single-fit object (RamanFit or PLfit)
         seed_coord = None
+        # x_attr drives modality detection below; always set it.
         x_attr = "energy" if hasattr(obj, "energy") else "wavenumber"
-        x = np.asarray(getattr(obj, x_attr), dtype=float).ravel()
 
-        # Use pristine raw spectrum if available (set in __init__ after Step 4)
+        # Use the pristine (pre-pipeline) arrays so x and y_raw are always aligned,
+        # even when the pipeline contains a CropByRange step.
+        if hasattr(obj, "_x_axis_pristine"):
+            x = np.asarray(obj._x_axis_pristine, dtype=float).ravel()
+        else:
+            x = np.asarray(getattr(obj, x_attr), dtype=float).ravel()
+
         if hasattr(obj, "_raw_spectra_pristine"):
             y_raw = np.asarray(obj._raw_spectra_pristine, dtype=float).ravel()
         else:
@@ -354,9 +360,10 @@ def autotune_baseline_for_object(
     lb = np.asarray(lb_list, dtype=float)
     ub = np.asarray(ub_list, dtype=float)
     peak_profile = getattr(obj, "peak_profile", "lorentzian")
+    _stride = 4 if peak_profile == "pvoigt" else 3
 
     def model_fn(x_in, *params):
-        return sum_peaks(x_in, np.asarray(params), profile=peak_profile)
+        return sum_peaks(x_in, np.asarray(params), profile=peak_profile, stride=_stride)
 
     # ------------------------------------------------------------------
     # Build candidate grid and score each candidate
