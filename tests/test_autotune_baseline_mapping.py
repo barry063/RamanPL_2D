@@ -69,6 +69,8 @@ def test_autotune_returns_ranking_sorted_ascending(mapping_with_baseline):
     rmses = [r["rmse"] for r in result.ranking]
     assert rmses == sorted(rmses, key=lambda v: (not np.isfinite(v), v))
     assert result.winner == {"method": result.ranking[0]["method"], **result.ranking[0]["kwargs"]}
+    finite = [v for v in rmses if np.isfinite(v)]
+    assert len(finite) > 0, "All candidates scored inf — sum_peaks stride or pipeline issue"
 
 
 # ---------------------------------------------------------------------------
