@@ -87,3 +87,54 @@ Opt-in `autotune_baseline` / `apply_choice` diagnostic added to all four fit cla
 - [x] No new runtime dependency in `pyproject.toml`
 - [x] `autotune_baseline()` never mutates the object — only `apply_choice()` does
 - [x] `apply_choice()` raises `ValueError` if pipeline has 0 or >1 `BaselineSubtract` steps
+
+---
+
+## Known limitations — deferred to v0.6.3
+
+### 1. Grid expressiveness: `methods` + `lam_grid` cannot sweep non-lam parameters
+
+The `autotune_baseline` API exposes two grid controls:
+
+- `methods` — restricts which baseline methods are included
+- `lam_grid` — overrides the lam sweep, applied identically to **all** selected iterative
+  methods (`asls`, `arpls`, `airpls`); `niter`, `tol`, and `p` remain hardcoded
+
+This means the following are **not possible** with the v0.6.2 API:
+- Scanning `niter` or `tol` at a fixed lam (e.g. `{"method": "arpls", "lam": 1e4, "niter": 100, "tol": 1e-6}`)
+- Giving `arpls` a different lam range than `airpls`
+- Sub-decade lam resolution without manually calling the internal `_score_candidate`
+
+**Planned fix (v0.6.3):** replace `methods` + `lam_grid` with a `method_grids` dict that
+specifies per-method parameter sweeps and takes the Cartesian product automatically:
+
+```python
+result = mapping.autotune_baseline(
+    seed_coord=(1, 1),
+    method_grids={
+        "arpls":  {"lam": [1e4, 1e5, 1e6], "niter": [50, 100]},
+        "airpls": {"lam": [1e4, 1e5], "tol": [1e-3, 1e-6]},
+        "poly":   {"poly_order": [1, 2, 3]},
+    },
+)
+```
+
+`methods` and `lam_grid` will be kept as a `DeprecationWarning` shim for one version.
+
+### 2. Demo notebook uses only synthetic data
+
+`Baseline_Autotune_Demo.ipynb` uses a clean linear background and a noise-free Lorentzian.
+This makes lam sensitivity invisible (all iterative methods score identically) and does not
+show how autotune behaves on real spectra with curved or structured backgrounds.
+
+**Planned fix (v0.6.3):** add a real-data section to `Baseline_Autotune_Demo.ipynb` using
+`example-usage/Ramanfit/Raman_background-remove.ipynb` as the source of a worked example
+with a genuine non-linear background.
+
+### 3. No public API documentation
+
+The `autotune_baseline` / `apply_choice` / `BaselineAutotuneResult` surface is documented
+in `docs/source/user-guide/baseline-autotune.md` (prose) but has no auto-generated API
+reference (no `autoclass`/`autofunction` directives in `docs/source/api/`).
+
+**Planned fix (v0.6.3):** add Sphinx autodoc entries for `_autotune.py` public symbols.

@@ -130,6 +130,47 @@ spurious key in default exports).
 - No new keywords on `fit_spectra` or `fit_spectrum`.
 - No new runtime dependencies.
 
+## Known limitations (v0.6.2)
+
+### Grid expressiveness
+
+`methods` and `lam_grid` cannot express per-method parameter sweeps. The
+`lam_grid` override is applied identically to **all** selected iterative
+methods (`asls`, `arpls`, `airpls`); `niter`, `tol`, and `p` remain
+hardcoded at their defaults.
+
+This means the following are not possible with the v0.6.2 API:
+
+- Scanning `niter` or `tol` at a fixed `lam`
+- Giving `arpls` a different `lam` range than `airpls`
+- Sub-decade `lam` resolution without calling internal helpers manually
+
+**v0.6.3** replaces `methods` + `lam_grid` with a `method_grids` dict that
+specifies per-method parameter sweeps and generates candidates via Cartesian
+product:
+
+```python
+result = mapping.autotune_baseline(
+    seed_coord=(5, 3),
+    method_grids={
+        "arpls":  {"lam": [1e4, 1e5, 1e6], "niter": [50, 100]},
+        "airpls": {"lam": [1e4, 1e5], "tol": [1e-3, 1e-6]},
+        "poly":   {"poly_order": [1, 2, 3]},
+    },
+)
+```
+
+`methods` and `lam_grid` will remain as `DeprecationWarning` shims for one
+version (v0.6.3) before removal.
+
+### Demo notebook (v0.6.2) uses only synthetic data
+
+`Baseline_Autotune_Demo.ipynb` uses a linear background and a noise-free
+Lorentzian. This makes `lam` sensitivity invisible (all iterative methods
+score identically) and does not demonstrate autotune on real spectra with
+curved or structured backgrounds. A real-data section will be added in
+v0.6.3.
+
 ## See also
 
 - {doc}`preprocessing` — pipeline architecture
