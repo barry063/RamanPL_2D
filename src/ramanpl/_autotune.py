@@ -441,6 +441,12 @@ def autotune_baseline_for_object(
             y_raw=y_raw,
             axis_label=axis_label,
         )
+        try:
+            from IPython.display import display as _ipy_display
+            _ipy_display(fig)
+        except Exception:
+            import matplotlib.pyplot as _plt
+            _plt.show()
 
     meta = {
         "n_candidates": len(candidates),

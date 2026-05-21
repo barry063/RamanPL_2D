@@ -51,6 +51,7 @@
   one `BaselineSubtract` steps (fail-loud contract).
 - Algorithmic invariance versus v0.6.1: `n_curve_fit_calls` row-by-row
   identical on the v0.6.1 benchmark cube when `apply_choice` is not called.
+- Behaviour notes (updated 2026-5-21): autone_baseline(plot = True) will always show a inline figure in notebooks
 
 ## [v0.6.1] — 2026-05-19 — Progress indicators for mapping & batch fits
 
