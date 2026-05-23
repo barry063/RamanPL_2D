@@ -299,12 +299,12 @@ def _validate_method_grids(method_grids: Dict[str, Dict[str, list]]) -> None:
                 f"{sorted(unknown)}. Allowed: {sorted(_ALLOWED_PARAMS[method])}"
             )
         for k, v in params.items():
-            if not hasattr(v, "__iter__") or isinstance(v, str):
+            if not isinstance(v, list):
                 raise TypeError(
-                    f"method_grids[{method!r}][{k!r}] must be a list/sequence, "
+                    f"method_grids[{method!r}][{k!r}] must be a list, "
                     f"got {type(v).__name__}"
                 )
-            if len(list(v)) == 0:
+            if len(v) == 0:
                 raise ValueError(
                     f"method_grids[{method!r}][{k!r}] is empty"
                 )
@@ -329,6 +329,12 @@ def _default_baseline_grid(
             "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]},
         }
     else:
+        # Materialize all value sequences once so validation and candidate
+        # building share the same concrete lists; guards against one-shot iterators.
+        method_grids = {
+            method: {k: list(v) for k, v in params.items()}
+            for method, params in method_grids.items()
+        }
         _validate_method_grids(method_grids)
 
     candidates: List[BaselineCandidate] = []

@@ -238,7 +238,7 @@ class PLfit:
     def autotune_baseline(
         self,
         *,
-        method_grids: dict | None = None,
+        method_grids=None,
         methods=None,
         lam_grid=None,
         plot: bool = True,

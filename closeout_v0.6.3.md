@@ -127,6 +127,23 @@ manager; the `%matplotlib inline` cell-end hook then re-rendered it.
 `autotune_baseline_for_object` (`src/ramanpl/_autotune.py`). The figure object is
 still accessible via `result.figure`. All 33 autotune tests pass after the fix.
 
+### Bug: Python 3.9 import failure — `dict | None` annotation (CI P1)
+
+The `method_grids` parameter in all three façade methods was annotated `dict | None`,
+which is Python 3.10+ syntax and raises `TypeError` at class-definition time on 3.9,
+breaking every mapping and single-fit import. **Fix:** annotation dropped from
+`_preprocess.py`, `RamanFit.py`, and `PLfit.py`; type remains documented in the
+docstring. Caught by CI Python 3.9 matrix job.
+
+### Bug: one-shot iterator consumed by validator (CI P2)
+
+`_validate_method_grids` called `len(list(v))` to check for empty value sequences,
+exhausting generators before `_default_baseline_grid` could build candidates — silently
+producing zero candidates and an `IndexError` at `ranking[0]`. **Fix:** `_default_baseline_grid`
+now materialises all value sequences to plain lists before calling validation; the
+per-value guard in `_validate_method_grids` tightened to `isinstance(v, list)` +
+`len(v) == 0`. All 33 autotune tests pass.
+
 ### Notebooks completed
 
 - `Baseline_Autotune_Demo.ipynb` section 5 — observation narrative filled in:
