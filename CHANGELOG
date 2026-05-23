@@ -1,5 +1,66 @@
 # Changelog
 
+## [v0.6.3] — 2026-05-23 — Autotune API refinement, real-data notebooks, API docs
+
+### Added
+
+- `method_grids` parameter on `autotune_baseline()` for `RamanMapping`, `PLMapping`,
+  `RamanFit`, and `PLfit`. Accepts a `{method: {param: [values]}}` dict; candidates are
+  the Cartesian product over each method's parameter lists.
+- `_shim_methods_lam_grid` internal function that converts the deprecated `methods` /
+  `lam_grid` keyword pair into an equivalent `method_grids` dict, preserving v0.6.2
+  byte-parity on the default 24-candidate grid.
+- `_validate_method_grids` internal function with five guards: not-a-dict, empty dict,
+  unknown method, unknown parameter, empty value list.
+- Module constants in `_autotune.py`: `_KNOWN_METHODS`, `_ALLOWED_PARAMS`,
+  `_DEFAULT_LAM_5`, `_DEFAULT_LAM_4`, `_DEFAULT_METHODS`.
+- Real-data section "5. Real-data example: non-linear background" in
+  `Baseline_Autotune_Demo.ipynb` using a bilayer-graphene spectrum
+  (`Raman Sample 532nm 2L-Graphene.txt`).
+- Autotune blocks ("Optional: use `autotune_baseline`") in
+  `Raman_background-remove.ipynb` with a focused 7-candidate grid.
+- Sphinx autodoc page `docs/source/api/autotune.rst` for `autotune_baseline`,
+  `apply_choice`, and `BaselineAutotuneResult`.
+- `docs/source/user-guide/baseline-autotune.md` rewritten with `method_grids` examples
+  and a "Deprecated arguments" subsection.
+- `Raman_background-remove.ipynb` added to the notebook smoke-test suite (`CANONICAL_NOTEBOOKS`).
+- `benchmarks/results/bench_snapshot_v0.6.2.txt` — pre-v0.6.3 baseline snapshot.
+- 7 new mapping-autotune tests and 2 new single-fit-autotune tests.
+
+### Changed
+
+- `autotune_baseline()` signature: `method_grids` keyword added before the deprecated
+  `methods` and `lam_grid` kwargs on all four façade methods.
+- `_default_baseline_grid` now accepts an optional `method_grids` dict; `method_grids=None`
+  reproduces the v0.6.2 24-candidate grid byte-for-byte.
+- All 19 autotune test call sites converted from `methods=[...]` to `method_grids={...}`.
+
+### Fixed
+
+- `autotune_baseline(plot=True)` rendered the comparison figure twice in Jupyter
+  notebooks. After `IPython.display.display(fig)` the figure remained registered in
+  matplotlib's figure manager, causing a second render at cell end via the
+  `%matplotlib inline` hook. Fixed by calling `plt.close(fig)` immediately after the
+  explicit `display()` call; the figure object is still returned in
+  `BaselineAutotuneResult.figure`.
+
+### Deprecated
+
+- `methods` and `lam_grid` keyword arguments on `autotune_baseline()`. Both emit
+  `DeprecationWarning` in v0.6.3 and will be removed in v0.6.4.
+
+### Notebooks
+
+- `Baseline_Autotune_Demo.ipynb` section 5 ("Real-data example"): filled in the
+  observation narrative — Gaussian (σ = 50) won the autotune with RMSE = 0.0712;
+  explains why iterative methods underperformed (peak-to-window ratio) and documents
+  the amplitude trade-off of the Gaussian baseline.
+- `Raman_background-remove.ipynb` section 6 ("Using `gaussian` baseline"): new
+  worked example using `gaussian_sigma=50`, matching the structure of sections 1–4
+  (load → fit → plot). Includes tuning rules and a note on the amplitude trade-off.
+
+---
+
 ## [v0.6.2] — 2026-05-20 — Seed-pixel baseline auto-tuning
 
 ### Added

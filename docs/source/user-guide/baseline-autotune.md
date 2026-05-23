@@ -38,7 +38,11 @@ from ramanpl import RamanFit
 fit = RamanFit(spectra=y, wavenumber=x, materials=["WS2"],
                background_remove=True)
 
-result = fit.autotune_baseline(methods=["poly", "airpls"], plot=False)
+result = fit.autotune_baseline(
+    method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]},
+                  "airpls": {"lam": [1e4, 1e5, 1e6], "niter": [50]}},
+    plot=False,
+)
 fit.apply_choice(result.winner)
 fit.fit_spectrum()
 ```
@@ -50,9 +54,10 @@ fit.fit_spectrum()
 ```python
 mapping.autotune_baseline(
     *,
-    seed_coord: tuple[int, int],   # (row, col) — row-major
-    methods: list[str] | None = None,
-    lam_grid: list[float] | None = None,
+    seed_coord: tuple[int, int],            # (row, col) — row-major
+    method_grids: dict | None = None,       # v0.6.3+ primary API
+    methods: list[str] | None = None,       # deprecated — use method_grids
+    lam_grid: list[float] | None = None,    # deprecated — use method_grids
     plot: bool = True,
     fit_spectrum_kwargs: dict | None = None,
 ) -> BaselineAutotuneResult
@@ -100,8 +105,75 @@ Raises `ValueError` if the pipeline has zero or more than one
 | `gaussian` | `gaussian_sigma ∈ {5, 10, 20, 50, 100}` | 5 |
 | **Total** | | **24** |
 
-Restrict the scan with `methods=["poly", "gaussian"]` or override the lam
-sweep with `lam_grid=[1e4, 1e5, 1e6]`.
+Pass `method_grids=None` (the default) to use this full 24-candidate grid.
+
+## v0.6.3 — `method_grids` parameter sweeps
+
+`method_grids` replaces the old `methods` + `lam_grid` pair. It accepts a
+dict mapping each method name to a dict of parameter lists; the Cartesian
+product is taken automatically per method.
+
+**Two-axis sweep** — scan `asls` over both `lam` and `p`:
+
+```python
+result = mapping.autotune_baseline(
+    seed_coord=(5, 3),
+    method_grids={
+        "asls": {
+            "lam": [1e4, 1e5, 1e6, 1e7],   # 4 values
+            "p":   [0.001, 0.005, 0.01],    # 3 values
+        },
+    },
+)
+# → 4 × 3 = 12 asls candidates scored
+```
+
+**Per-method ranges** — give `arpls` and `airpls` different `lam` ranges:
+
+```python
+result = mapping.autotune_baseline(
+    seed_coord=(5, 3),
+    method_grids={
+        "arpls":  {"lam": [1e4, 1e5, 1e6], "niter": [50, 100]},
+        "airpls": {"lam": [1e5, 1e6, 1e7], "niter": [50]},
+        "poly":   {"poly_order": [1, 2, 3, 4, 5]},
+    },
+)
+```
+
+**Supported parameters per method:**
+
+| Method | Allowed `method_grids` keys |
+|---|---|
+| `asls` | `lam`, `p`, `niter` |
+| `arpls` | `lam`, `niter` |
+| `airpls` | `lam`, `niter` |
+| `poly` | `poly_order` |
+| `gaussian` | `gaussian_sigma` |
+
+## Deprecated arguments
+
+`methods` and `lam_grid` are **deprecated in v0.6.3** and will be **removed
+in v0.6.4**. They emit a `DeprecationWarning` when used.
+
+Migrate by replacing:
+
+```python
+# Old (v0.6.2) — deprecated
+result = fit.autotune_baseline(methods=["poly", "airpls"], plot=False)
+
+# New (v0.6.3+) — explicit
+result = fit.autotune_baseline(
+    method_grids={
+        "poly":   {"poly_order": [1, 2, 3, 4, 5]},
+        "airpls": {"lam": [1e3, 1e4, 1e5, 1e6], "niter": [50]},
+    },
+    plot=False,
+)
+```
+
+Passing both `method_grids` and `methods`/`lam_grid` in the same call raises
+`TypeError`.
 
 ## Provenance in exports
 
@@ -129,47 +201,6 @@ spurious key in default exports).
   more than one `BaselineSubtract` steps.
 - No new keywords on `fit_spectra` or `fit_spectrum`.
 - No new runtime dependencies.
-
-## Known limitations (v0.6.2)
-
-### Grid expressiveness
-
-`methods` and `lam_grid` cannot express per-method parameter sweeps. The
-`lam_grid` override is applied identically to **all** selected iterative
-methods (`asls`, `arpls`, `airpls`); `niter`, `tol`, and `p` remain
-hardcoded at their defaults.
-
-This means the following are not possible with the v0.6.2 API:
-
-- Scanning `niter` or `tol` at a fixed `lam`
-- Giving `arpls` a different `lam` range than `airpls`
-- Sub-decade `lam` resolution without calling internal helpers manually
-
-**v0.6.3** replaces `methods` + `lam_grid` with a `method_grids` dict that
-specifies per-method parameter sweeps and generates candidates via Cartesian
-product:
-
-```python
-result = mapping.autotune_baseline(
-    seed_coord=(5, 3),
-    method_grids={
-        "arpls":  {"lam": [1e4, 1e5, 1e6], "niter": [50, 100]},
-        "airpls": {"lam": [1e4, 1e5], "tol": [1e-3, 1e-6]},
-        "poly":   {"poly_order": [1, 2, 3]},
-    },
-)
-```
-
-`methods` and `lam_grid` will remain as `DeprecationWarning` shims for one
-version (v0.6.3) before removal.
-
-### Demo notebook (v0.6.2) uses only synthetic data
-
-`Baseline_Autotune_Demo.ipynb` uses a linear background and a noise-free
-Lorentzian. This makes `lam` sensitivity invisible (all iterative methods
-score identically) and does not demonstrate autotune on real spectra with
-curved or structured backgrounds. A real-data section will be added in
-v0.6.3.
 
 ## See also
 

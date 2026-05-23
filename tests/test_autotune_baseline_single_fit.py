@@ -1,5 +1,5 @@
 """
-Tests for autotune_baseline / apply_choice on single-fit objects (v0.6.2).
+Tests for autotune_baseline / apply_choice on single-fit objects (v0.6.3).
 
 Uses synthetic data only — no file I/O.
 """
@@ -52,7 +52,10 @@ def raman_fit_no_baseline():
 # ---------------------------------------------------------------------------
 
 def test_autotune_returns_ranking_sorted_ascending(raman_fit):
-    result = raman_fit.autotune_baseline(methods=["poly", "gaussian"], plot=False)
+    result = raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}, "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]}},
+        plot=False,
+    )
     assert isinstance(result, BaselineAutotuneResult)
     rmses = [r["rmse"] for r in result.ranking]
     assert rmses == sorted(rmses, key=lambda v: (not np.isfinite(v), v))
@@ -67,7 +70,10 @@ def test_autotune_returns_ranking_sorted_ascending(raman_fit):
 
 def test_autotune_does_not_mutate_baseline_method(raman_fit):
     before = dict(raman_fit.baseline_method)
-    raman_fit.autotune_baseline(methods=["poly"], plot=False)
+    raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+        plot=False,
+    )
     assert raman_fit.baseline_method == before
 
 
@@ -77,7 +83,10 @@ def test_autotune_does_not_mutate_baseline_method(raman_fit):
 
 def test_autotune_does_not_mutate_processed_spectra(raman_fit):
     proc_before = raman_fit.processed_spectra.copy()
-    raman_fit.autotune_baseline(methods=["poly"], plot=False)
+    raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+        plot=False,
+    )
     np.testing.assert_array_equal(raman_fit.processed_spectra, proc_before)
 
 
@@ -86,7 +95,10 @@ def test_autotune_does_not_mutate_processed_spectra(raman_fit):
 # ---------------------------------------------------------------------------
 
 def test_autotune_plot_false_returns_no_figure(raman_fit):
-    result = raman_fit.autotune_baseline(methods=["poly"], plot=False)
+    result = raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+        plot=False,
+    )
     assert result.figure is None
 
 
@@ -96,7 +108,10 @@ def test_autotune_plot_false_returns_no_figure(raman_fit):
 
 def test_autotune_plot_true_returns_figure(raman_fit):
     import matplotlib.figure
-    result = raman_fit.autotune_baseline(methods=["poly", "gaussian"], plot=True)
+    result = raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}, "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]}},
+        plot=True,
+    )
     assert isinstance(result.figure, matplotlib.figure.Figure)
     import matplotlib.pyplot as plt
     plt.close("all")
@@ -109,7 +124,10 @@ def test_autotune_plot_true_returns_figure(raman_fit):
 def test_apply_choice_updates_pipeline(raman_fit):
     from ramanpl.preprocessing import BaselineSubtract
 
-    result = raman_fit.autotune_baseline(methods=["poly"], plot=False)
+    result = raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+        plot=False,
+    )
     raman_fit.apply_choice(result.winner)
 
     baseline_steps = [
@@ -126,7 +144,10 @@ def test_apply_choice_updates_pipeline(raman_fit):
 # ---------------------------------------------------------------------------
 
 def test_apply_choice_updates_legacy_attributes(raman_fit):
-    result = raman_fit.autotune_baseline(methods=["poly"], plot=False)
+    result = raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+        plot=False,
+    )
     winner_method = result.winner["method"]
     raman_fit.apply_choice(result.winner)
 
@@ -162,7 +183,10 @@ def test_apply_choice_raises_when_no_baseline_step(raman_fit_no_baseline):
 # ---------------------------------------------------------------------------
 
 def test_export_includes_autotune_block(tmp_path, raman_fit):
-    result = raman_fit.autotune_baseline(methods=["poly"], plot=False)
+    result = raman_fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+        plot=False,
+    )
     raman_fit.apply_choice(result.winner)
     raman_fit.fit_spectrum()
 
@@ -268,10 +292,34 @@ def test_autotune_works_with_crop_in_pipeline():
     # the condition that triggered the bug.
     assert len(fit.wavenumber) < len(fit._x_axis_pristine)
 
-    result = fit.autotune_baseline(methods=["poly", "gaussian"], plot=False)
+    result = fit.autotune_baseline(
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}, "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]}},
+        plot=False,
+    )
 
     finite_rmses = [r["rmse"] for r in result.ranking if np.isfinite(r["rmse"])]
     assert len(finite_rmses) > 0, (
         "All candidates scored inf — x/y_raw length mismatch detected. "
         "Pristine x-axis must be used for scoring, not the post-crop axis."
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.3 — method_grids API tests (mirrored from mapping tests)
+# ---------------------------------------------------------------------------
+
+def test_method_grids_and_methods_are_mutually_exclusive(raman_fit):
+    with pytest.raises(TypeError, match="not both"):
+        raman_fit.autotune_baseline(
+            method_grids={"poly": {"poly_order": [1]}},
+            methods=["poly"],
+            plot=False,
+        )
+
+
+def test_deprecated_methods_kwarg_emits_warning(raman_fit):
+    with pytest.warns(DeprecationWarning, match="method_grids"):
+        raman_fit.autotune_baseline(
+            methods=["poly"],
+            plot=False,
+        )

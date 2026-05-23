@@ -1,11 +1,12 @@
 """
-Tests for autotune_baseline / apply_choice on mapping objects (v0.6.2).
+Tests for autotune_baseline / apply_choice on mapping objects (v0.6.3).
 
 Uses synthetic data only — no file I/O.
 """
 
 import numpy as np
 import pytest
+import warnings
 import matplotlib
 matplotlib.use("Agg")  # headless
 
@@ -62,7 +63,7 @@ def mapping_no_baseline():
 def test_autotune_returns_ranking_sorted_ascending(mapping_with_baseline):
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly", "gaussian"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}, "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]}},
         plot=False,
     )
     assert isinstance(result, BaselineAutotuneResult)
@@ -81,7 +82,7 @@ def test_autotune_does_not_mutate_baseline_method(mapping_with_baseline):
     before = dict(mapping_with_baseline.baseline_method)
     mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     assert mapping_with_baseline.baseline_method == before
@@ -99,7 +100,7 @@ def test_autotune_does_not_invalidate_cube_cache(mapping_with_baseline):
 
     mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     # Cache should be identical object (untouched)
@@ -113,7 +114,7 @@ def test_autotune_does_not_invalidate_cube_cache(mapping_with_baseline):
 def test_autotune_plot_false_returns_no_figure(mapping_with_baseline):
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     assert result.figure is None
@@ -127,7 +128,7 @@ def test_autotune_plot_true_returns_figure(mapping_with_baseline):
     import matplotlib.figure
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly", "gaussian"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}, "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]}},
         plot=True,
     )
     assert isinstance(result.figure, matplotlib.figure.Figure)
@@ -144,7 +145,7 @@ def test_apply_choice_updates_pipeline(mapping_with_baseline):
 
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     mapping_with_baseline.apply_choice(result.winner)
@@ -165,7 +166,7 @@ def test_apply_choice_updates_pipeline(mapping_with_baseline):
 def test_apply_choice_updates_legacy_attributes(mapping_with_baseline):
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     winner_method = result.winner["method"]
@@ -186,7 +187,7 @@ def test_apply_choice_invalidates_cube_cache(mapping_with_baseline):
 
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     mapping_with_baseline.apply_choice(result.winner)
@@ -214,7 +215,7 @@ def test_export_includes_autotune_block(tmp_path, mapping_with_baseline):
 
     result = mapping_with_baseline.autotune_baseline(
         seed_coord=(0, 0),
-        methods=["poly"],
+        method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
         plot=False,
     )
     mapping_with_baseline.apply_choice(result.winner)
@@ -256,4 +257,83 @@ def test_autotune_raises_for_multiple_baseline_steps():
         preprocessing=pipe,
     )
     with pytest.raises(ValueError, match="BaselineSubtract"):
-        mapping.autotune_baseline(seed_coord=(0, 0), methods=["poly"], plot=False)
+        mapping.autotune_baseline(
+            seed_coord=(0, 0),
+            method_grids={"poly": {"poly_order": [1, 2, 3, 4, 5]}},
+            plot=False,
+        )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.3 — method_grids API tests
+# ---------------------------------------------------------------------------
+
+def test_method_grids_and_methods_are_mutually_exclusive(mapping_with_baseline):
+    with pytest.raises(TypeError, match="not both"):
+        mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            method_grids={"poly": {"poly_order": [1]}},
+            methods=["poly"],
+            plot=False,
+        )
+
+
+def test_deprecated_methods_kwarg_emits_warning(mapping_with_baseline):
+    with pytest.warns(DeprecationWarning, match="method_grids"):
+        mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            methods=["poly"],
+            plot=False,
+        )
+
+
+def test_deprecated_kwargs_produce_same_ranking_as_method_grids(mapping_with_baseline):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        r_old = mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            methods=["airpls"],
+            plot=False,
+        )
+    r_new = mapping_with_baseline.autotune_baseline(
+        seed_coord=(0, 0),
+        method_grids={"airpls": {"lam": [1e3, 1e4, 1e5, 1e6], "niter": [50]}},
+        plot=False,
+    )
+    assert [e["rmse"] for e in r_old.ranking] == [e["rmse"] for e in r_new.ranking]
+
+
+def test_method_grids_empty_dict_raises(mapping_with_baseline):
+    with pytest.raises(ValueError, match="empty"):
+        mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            method_grids={},
+            plot=False,
+        )
+
+
+def test_method_grids_unknown_method_raises(mapping_with_baseline):
+    with pytest.raises(ValueError, match="Unknown method"):
+        mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            method_grids={"polynomial": {"poly_order": [1]}},
+            plot=False,
+        )
+
+
+def test_method_grids_unknown_param_raises(mapping_with_baseline):
+    with pytest.raises(ValueError, match="Unknown parameter"):
+        mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            method_grids={"poly": {"order": [1]}},
+            plot=False,
+        )
+
+
+def test_method_grids_empty_param_list_raises(mapping_with_baseline):
+    with pytest.raises(ValueError, match="empty"):
+        mapping_with_baseline.autotune_baseline(
+            seed_coord=(0, 0),
+            method_grids={"poly": {"poly_order": []}},
+            plot=False,
+        )

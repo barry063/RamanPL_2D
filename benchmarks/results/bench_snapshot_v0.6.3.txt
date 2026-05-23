@@ -1,0 +1,93 @@
+bench_snapshot_v0.6.3.txt — pre-v0.6.4 baseline captured on 2026-05-22
+===========================================================================
+
+1. Full test suite (pytest -q --tb=no)
+--------------------------------------
+305 passed, 3 skipped, 1 deselected, 4 warnings in 1133.10s (0:18:53)
+
+Note: 1 deselected = Clustering_Demo.ipynb slow-notebook test (excluded by addopts = "-m 'not slow'")
+Note: 4 warnings are pre-existing third-party warnings (jupyter platformdirs, zmq, pybaselines, baselineAPI.py)
+
+
+2. Autotune tests (pytest tests/test_autotune_baseline_*.py -v)
+---------------------------------------------------------------
+tests/test_autotune_baseline_mapping.py::test_autotune_returns_ranking_sorted_ascending PASSED
+tests/test_autotune_baseline_mapping.py::test_autotune_does_not_mutate_baseline_method PASSED
+tests/test_autotune_baseline_mapping.py::test_autotune_does_not_invalidate_cube_cache PASSED
+tests/test_autotune_baseline_mapping.py::test_autotune_plot_false_returns_no_figure PASSED
+tests/test_autotune_baseline_mapping.py::test_autotune_plot_true_returns_figure PASSED
+tests/test_autotune_baseline_mapping.py::test_apply_choice_updates_pipeline PASSED
+tests/test_autotune_baseline_mapping.py::test_apply_choice_updates_legacy_attributes PASSED
+tests/test_autotune_baseline_mapping.py::test_apply_choice_invalidates_cube_cache PASSED
+tests/test_autotune_baseline_mapping.py::test_apply_choice_raises_when_no_baseline_step PASSED
+tests/test_autotune_baseline_mapping.py::test_export_includes_autotune_block PASSED
+tests/test_autotune_baseline_mapping.py::test_autotune_raises_for_multiple_baseline_steps PASSED
+tests/test_autotune_baseline_mapping.py::test_method_grids_and_methods_are_mutually_exclusive PASSED
+tests/test_autotune_baseline_mapping.py::test_deprecated_methods_kwarg_emits_warning PASSED
+tests/test_autotune_baseline_mapping.py::test_deprecated_kwargs_produce_same_ranking_as_method_grids PASSED
+tests/test_autotune_baseline_mapping.py::test_method_grids_empty_dict_raises PASSED
+tests/test_autotune_baseline_mapping.py::test_method_grids_unknown_method_raises PASSED
+tests/test_autotune_baseline_mapping.py::test_method_grids_unknown_param_raises PASSED
+tests/test_autotune_baseline_mapping.py::test_method_grids_empty_param_list_raises PASSED
+tests/test_autotune_baseline_single_fit.py::test_autotune_returns_ranking_sorted_ascending PASSED
+tests/test_autotune_baseline_single_fit.py::test_autotune_does_not_mutate_baseline_method PASSED
+tests/test_autotune_baseline_single_fit.py::test_autotune_does_not_mutate_processed_spectra PASSED
+tests/test_autotune_baseline_single_fit.py::test_autotune_plot_false_returns_no_figure PASSED
+tests/test_autotune_baseline_single_fit.py::test_autotune_plot_true_returns_figure PASSED
+tests/test_autotune_baseline_single_fit.py::test_apply_choice_updates_pipeline PASSED
+tests/test_autotune_baseline_single_fit.py::test_apply_choice_updates_legacy_attributes PASSED
+tests/test_autotune_baseline_single_fit.py::test_apply_choice_changes_processed_spectra PASSED
+tests/test_autotune_baseline_single_fit.py::test_apply_choice_raises_when_no_baseline_step PASSED
+tests/test_autotune_baseline_single_fit.py::test_export_includes_autotune_block PASSED
+tests/test_autotune_baseline_single_fit.py::test_single_fit_apply_choice_reapplies_pipeline PASSED
+tests/test_autotune_baseline_single_fit.py::test_single_fit_apply_choice_refreshes_derived_attrs PASSED
+tests/test_autotune_baseline_single_fit.py::test_autotune_works_with_crop_in_pipeline PASSED
+tests/test_autotune_baseline_single_fit.py::test_method_grids_and_methods_are_mutually_exclusive PASSED
+tests/test_autotune_baseline_single_fit.py::test_deprecated_methods_kwarg_emits_warning PASSED
+33 passed in 7.64s
+
+
+3. Notebook smoke tests (inferred from full suite — all 8 PASSED)
+-----------------------------------------------------------------
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Raman_backend_demo.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Raman_mapping_backend_demo.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Backend_fallback_cases.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Feature_Table_Example.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Peak_Proposal_Demo.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Validation_v0.6.0_vs_v0.5.0.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Baseline_Autotune_Demo.ipynb] PASSED
+tests/test_notebook_smoke.py::test_notebook_executes_without_error[Raman_background-remove.ipynb] PASSED
+8 passed (total runtime included in full suite above)
+
+
+4. Version
+----------
+from ramanpl import __version__  →  "0.6.3"
+
+
+5. Default baseline grid (24-line byte-parity reference — unchanged from v0.6.2)
+---------------------------------------------------------------------------------
+asls {'lam': 1000.0, 'p': 0.001, 'niter': 20}
+asls {'lam': 10000.0, 'p': 0.001, 'niter': 20}
+asls {'lam': 100000.0, 'p': 0.001, 'niter': 20}
+asls {'lam': 1000000.0, 'p': 0.001, 'niter': 20}
+asls {'lam': 10000000.0, 'p': 0.001, 'niter': 20}
+arpls {'lam': 1000.0, 'niter': 50}
+arpls {'lam': 10000.0, 'niter': 50}
+arpls {'lam': 100000.0, 'niter': 50}
+arpls {'lam': 1000000.0, 'niter': 50}
+arpls {'lam': 10000000.0, 'niter': 50}
+airpls {'lam': 1000.0, 'niter': 50}
+airpls {'lam': 10000.0, 'niter': 50}
+airpls {'lam': 100000.0, 'niter': 50}
+airpls {'lam': 1000000.0, 'niter': 50}
+poly {'poly_order': 1}
+poly {'poly_order': 2}
+poly {'poly_order': 3}
+poly {'poly_order': 4}
+poly {'poly_order': 5}
+gaussian {'gaussian_sigma': 5}
+gaussian {'gaussian_sigma': 10}
+gaussian {'gaussian_sigma': 20}
+gaussian {'gaussian_sigma': 50}
+gaussian {'gaussian_sigma': 100}

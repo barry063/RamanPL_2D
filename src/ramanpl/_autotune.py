@@ -1,5 +1,5 @@
 """
-_autotune.py — Baseline auto-tuning helper for RamanPL_2D v0.6.2.
+_autotune.py — Baseline auto-tuning helper for RamanPL_2D v0.6.3.
 
 Opt-in diagnostic that scores a grid of candidate baseline configurations
 on a representative spectrum (seed pixel for mapping, single spectrum for
@@ -19,6 +19,9 @@ Default baseline grid (24 candidates):
 """
 
 from __future__ import annotations
+
+import itertools
+import warnings
 
 import numpy as np
 from dataclasses import dataclass, field
@@ -43,6 +46,27 @@ class BaselineAutotuneResult:
     seed_coord: Optional[Tuple[int, int]]
     figure: Any                     # matplotlib.Figure or None
     meta: Dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# v0.6.3 — method_grids API constants
+# ---------------------------------------------------------------------------
+
+_KNOWN_METHODS = {"asls", "arpls", "airpls", "poly", "gaussian"}
+
+# Parameters this v0.6.3 build is verified to forward correctly.
+# 'tol' is intentionally absent until a smoke test confirms support.
+_ALLOWED_PARAMS = {
+    "asls":     {"lam", "p", "niter"},
+    "arpls":    {"lam", "niter"},
+    "airpls":   {"lam", "niter"},
+    "poly":     {"poly_order"},
+    "gaussian": {"gaussian_sigma"},
+}
+
+_DEFAULT_LAM_5   = [1e3, 1e4, 1e5, 1e6, 1e7]   # asls, arpls
+_DEFAULT_LAM_4   = [1e3, 1e4, 1e5, 1e6]         # airpls (asymmetric — preserved)
+_DEFAULT_METHODS = ["asls", "arpls", "airpls", "poly", "gaussian"]
 
 
 def _swap_baseline_step_in_pipeline(pipeline, new_baseline_spec: Dict[str, Any]):
@@ -207,55 +231,113 @@ def _make_comparison_figure(
     return fig
 
 
+def _shim_methods_lam_grid(
+    methods: Optional[List[str]],
+    lam_grid: Optional[List[float]],
+) -> Dict[str, Dict[str, list]]:
+    """
+    Translate the deprecated (methods, lam_grid) pair into an equivalent
+    method_grids dict that yields the same candidate set as v0.6.2.
+
+    When lam_grid is given, it overrides BOTH asls/arpls (5-lam default) and
+    airpls (4-lam default), matching v0.6.2 behaviour exactly.
+    """
+    selected = methods if methods is not None else _DEFAULT_METHODS
+    grids: Dict[str, Dict[str, list]] = {}
+    for m in selected:
+        if m == "asls":
+            grids[m] = {
+                "lam":   lam_grid if lam_grid is not None else _DEFAULT_LAM_5,
+                "p":     [0.001],
+                "niter": [20],
+            }
+        elif m == "arpls":
+            grids[m] = {
+                "lam":   lam_grid if lam_grid is not None else _DEFAULT_LAM_5,
+                "niter": [50],
+            }
+        elif m == "airpls":
+            grids[m] = {
+                "lam":   lam_grid if lam_grid is not None else _DEFAULT_LAM_4,
+                "niter": [50],
+            }
+        elif m == "poly":
+            grids[m] = {"poly_order": [1, 2, 3, 4, 5]}
+        elif m == "gaussian":
+            grids[m] = {"gaussian_sigma": [5, 10, 20, 50, 100]}
+        else:
+            raise ValueError(
+                f"Unknown baseline method in 'methods' argument: {m!r}. "
+                f"Supported: {sorted(_KNOWN_METHODS)}"
+            )
+    return grids
+
+
+def _validate_method_grids(method_grids: Dict[str, Dict[str, list]]) -> None:
+    """Fail fast on malformed method_grids before scoring begins."""
+    if not isinstance(method_grids, dict):
+        raise TypeError(
+            f"method_grids must be a dict, got {type(method_grids).__name__}"
+        )
+    if len(method_grids) == 0:
+        raise ValueError("method_grids must not be empty")
+    for method, params in method_grids.items():
+        if method not in _KNOWN_METHODS:
+            raise ValueError(
+                f"Unknown method {method!r} in method_grids. "
+                f"Supported: {sorted(_KNOWN_METHODS)}"
+            )
+        if not isinstance(params, dict):
+            raise TypeError(
+                f"method_grids[{method!r}] must be a dict, "
+                f"got {type(params).__name__}"
+            )
+        unknown = set(params.keys()) - _ALLOWED_PARAMS[method]
+        if unknown:
+            raise ValueError(
+                f"Unknown parameter(s) for method {method!r}: "
+                f"{sorted(unknown)}. Allowed: {sorted(_ALLOWED_PARAMS[method])}"
+            )
+        for k, v in params.items():
+            if not hasattr(v, "__iter__") or isinstance(v, str):
+                raise TypeError(
+                    f"method_grids[{method!r}][{k!r}] must be a list/sequence, "
+                    f"got {type(v).__name__}"
+                )
+            if len(list(v)) == 0:
+                raise ValueError(
+                    f"method_grids[{method!r}][{k!r}] is empty"
+                )
+
+
 def _default_baseline_grid(
-    methods: Optional[List[str]] = None,
-    lam_grid: Optional[List[float]] = None,
+    method_grids: Optional[Dict[str, Dict[str, list]]] = None,
 ) -> List[BaselineCandidate]:
     """
-    Build the default 24-candidate baseline grid.
+    Build the candidate baseline grid from a per-method parameter sweep dict.
 
-    Parameters
-    ----------
-    methods : list of str or None
-        Subset of {'asls', 'arpls', 'airpls', 'poly', 'gaussian'}.
-        None → all five methods.
-    lam_grid : list of float or None
-        Override the default lam sweep for iterative methods.
-        None → use default {1e3,1e4,1e5,1e6,1e7} (asls/arpls) or {1e3,1e4,1e5,1e6} (airpls).
+    When method_grids is None, returns the v0.6.2 default 24-candidate grid
+    byte-for-byte: hardcoded p, niter, and the airpls 4-lam asymmetry are
+    preserved as single-element lists.
     """
-    all_methods = {"asls", "arpls", "airpls", "poly", "gaussian"}
-    if methods is None:
-        methods = list(all_methods)
+    if method_grids is None:
+        method_grids = {
+            "asls":     {"lam": _DEFAULT_LAM_5, "p": [0.001], "niter": [20]},
+            "arpls":    {"lam": _DEFAULT_LAM_5, "niter": [50]},
+            "airpls":   {"lam": _DEFAULT_LAM_4, "niter": [50]},
+            "poly":     {"poly_order": [1, 2, 3, 4, 5]},
+            "gaussian": {"gaussian_sigma": [5, 10, 20, 50, 100]},
+        }
     else:
-        unknown = set(methods) - all_methods
-        if unknown:
-            raise ValueError(f"Unknown baseline method(s): {unknown}. Choose from {all_methods}.")
-
-    default_lam = lam_grid if lam_grid is not None else [1e3, 1e4, 1e5, 1e6, 1e7]
-    airpls_lam = lam_grid if lam_grid is not None else [1e3, 1e4, 1e5, 1e6]
+        _validate_method_grids(method_grids)
 
     candidates: List[BaselineCandidate] = []
-
-    if "asls" in methods:
-        for lam in default_lam:
-            candidates.append(BaselineCandidate("asls", {"lam": lam, "p": 0.001, "niter": 20}))
-
-    if "arpls" in methods:
-        for lam in default_lam:
-            candidates.append(BaselineCandidate("arpls", {"lam": lam, "niter": 50}))
-
-    if "airpls" in methods:
-        for lam in airpls_lam:
-            candidates.append(BaselineCandidate("airpls", {"lam": lam, "niter": 50}))
-
-    if "poly" in methods:
-        for order in [1, 2, 3, 4, 5]:
-            candidates.append(BaselineCandidate("poly", {"poly_order": order}))
-
-    if "gaussian" in methods:
-        for sigma in [5, 10, 20, 50, 100]:
-            candidates.append(BaselineCandidate("gaussian", {"gaussian_sigma": sigma}))
-
+    for method, param_dict in method_grids.items():
+        keys = list(param_dict.keys())
+        value_lists = [list(param_dict[k]) for k in keys]
+        for combo in itertools.product(*value_lists):
+            kwargs = dict(zip(keys, combo))
+            candidates.append(BaselineCandidate(method=method, kwargs=kwargs))
     return candidates
 
 
@@ -263,8 +345,9 @@ def autotune_baseline_for_object(
     obj,
     *,
     seed_coord: Optional[Tuple[int, int]] = None,
-    methods: Optional[List[str]] = None,
-    lam_grid: Optional[List[float]] = None,
+    method_grids: Optional[Dict[str, Dict[str, list]]] = None,  # v0.6.3 primary API
+    methods: Optional[List[str]] = None,                        # deprecated v0.6.3
+    lam_grid: Optional[List[float]] = None,                     # deprecated v0.6.3
     plot: bool = True,
     fit_spectrum_kwargs: Optional[Dict[str, Any]] = None,
 ) -> BaselineAutotuneResult:
@@ -282,10 +365,15 @@ def autotune_baseline_for_object(
     seed_coord : (j, i) or None
         Row-major pixel index for mapping objects (j=row, i=col).
         Ignored for single-fit objects.
+    method_grids : dict or None
+        Per-method parameter sweep dict, e.g.
+        ``{"arpls": {"lam": [1e4, 1e5], "niter": [50, 100]}}``.
+        Cartesian product is taken automatically per method.
+        None → full 24-candidate default grid (v0.6.2-compatible).
     methods : list[str] or None
-        Subset of baseline methods to scan. None → all five (24 candidates).
+        Deprecated. Use method_grids instead. Removed in v0.6.4.
     lam_grid : list[float] or None
-        Override lam sweep for iterative methods.
+        Deprecated. Use method_grids instead. Removed in v0.6.4.
     plot : bool
         If True, build a comparison figure for the top-5 candidates.
     fit_spectrum_kwargs : dict or None
@@ -295,6 +383,24 @@ def autotune_baseline_for_object(
     -------
     BaselineAutotuneResult
     """
+    # ------------------------------------------------------------------
+    # v0.6.3 — mutual-exclusion guard + deprecation shim
+    # ------------------------------------------------------------------
+    if method_grids is not None and (methods is not None or lam_grid is not None):
+        raise TypeError(
+            "Pass either 'method_grids' (v0.6.3+) or the deprecated "
+            "'methods'/'lam_grid' arguments, not both."
+        )
+
+    if methods is not None or lam_grid is not None:
+        warnings.warn(
+            "The 'methods' and 'lam_grid' arguments are deprecated in v0.6.3 "
+            "and will be removed in v0.6.4. Use 'method_grids' instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        method_grids = _shim_methods_lam_grid(methods, lam_grid)
+
     try:
         from .preprocessing import Pipeline, BaselineSubtract
         from .peak_models import sum_peaks
@@ -388,7 +494,7 @@ def autotune_baseline_for_object(
         )
     _has_baseline_step = _n_baseline_steps == 1
 
-    candidates = _default_baseline_grid(methods=methods, lam_grid=lam_grid)
+    candidates = _default_baseline_grid(method_grids=method_grids)
 
     ranking_raw: List[Dict[str, Any]] = []
 
@@ -441,16 +547,19 @@ def autotune_baseline_for_object(
             y_raw=y_raw,
             axis_label=axis_label,
         )
-        try:
-            from IPython.display import display as _ipy_display
-            _ipy_display(fig)
-        except Exception:
+        if fig is not None:
             import matplotlib.pyplot as _plt
-            _plt.show()
+            try:
+                from IPython.display import display as _ipy_display
+                _ipy_display(fig)
+            except Exception:
+                _plt.show()
+            _plt.close(fig)  # remove from pyplot manager; prevents Jupyter auto-display
 
     meta = {
         "n_candidates": len(candidates),
-        "methods_scanned": methods if methods is not None else ["asls", "arpls", "airpls", "poly", "gaussian"],
+        "methods_scanned": sorted(method_grids.keys()) if method_grids is not None
+                           else list(_DEFAULT_METHODS),
         "seed_coord": list(seed_coord) if seed_coord is not None else None,
     }
 

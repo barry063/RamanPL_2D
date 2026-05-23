@@ -309,6 +309,7 @@ class RamanFit:
     def autotune_baseline(
         self,
         *,
+        method_grids: dict | None = None,
         methods=None,
         lam_grid=None,
         plot: bool = True,
@@ -321,10 +322,14 @@ class RamanFit:
 
         Parameters
         ----------
+        method_grids : dict or None
+            Per-method parameter sweep, e.g.
+            ``{"arpls": {"lam": [1e4, 1e5], "niter": [50, 100]}}``.
+            None → full 24-candidate default grid.
         methods : list[str] or None
-            Subset of {'asls','arpls','airpls','poly','gaussian'}. None → all.
+            Deprecated. Use method_grids instead. Removed in v0.6.4.
         lam_grid : list[float] or None
-            Override lam sweep for iterative methods.
+            Deprecated. Use method_grids instead. Removed in v0.6.4.
         plot : bool
             If True, return a comparison figure in result.figure.
         fit_spectrum_kwargs : dict or None
@@ -339,6 +344,7 @@ class RamanFit:
         result = autotune_baseline_for_object(
             self,
             seed_coord=None,
+            method_grids=method_grids,
             methods=methods,
             lam_grid=lam_grid,
             plot=plot,

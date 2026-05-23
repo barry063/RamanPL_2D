@@ -55,6 +55,7 @@ CANONICAL_NOTEBOOKS = [
     REPO_ROOT / "example-usage" / "Mapping" / "Peak_Proposal_Demo.ipynb",
     REPO_ROOT / "example-usage" / "Validation" / "Validation_v0.6.0_vs_v0.5.0.ipynb",
     REPO_ROOT / "example-usage" / "Validation" / "Baseline_Autotune_Demo.ipynb",
+    REPO_ROOT / "example-usage" / "Ramanfit" / "Raman_background-remove.ipynb",
 ]
 
 # Notebooks excluded from standard CI smoke: runtime exceeds 600 s/cell on typical hardware.
