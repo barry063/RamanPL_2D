@@ -9,3 +9,4 @@ The ``ramanpl.integration`` subpackage is an internal optional-dependency bridge
    :maxdepth: 2
 
    modules
+   autotune
