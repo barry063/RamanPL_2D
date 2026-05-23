@@ -43,6 +43,17 @@
   `%matplotlib inline` hook. Fixed by calling `plt.close(fig)` immediately after the
   explicit `display()` call; the figure object is still returned in
   `BaselineAutotuneResult.figure`.
+- `method_grids` parameter annotated as `dict | None` in the three façade methods
+  (`_preprocess.py`, `RamanFit.py`, `PLfit.py`), which is a Python 3.10+ syntax and
+  raises `TypeError` at import time on Python 3.9. Annotation removed; type is
+  documented in the docstring. Caught by CI Python 3.9 matrix job.
+- `_validate_method_grids` called `len(list(v))` to check for empty value sequences,
+  which consumed one-shot iterators (e.g. generators) before the candidate-building
+  loop in `_default_baseline_grid` could iterate them, silently producing zero
+  candidates and an `IndexError` at `ranking[0]`. Fixed by materialising all value
+  sequences to plain lists in `_default_baseline_grid` before validation; the
+  per-value check in `_validate_method_grids` tightened to `isinstance(v, list)` +
+  `len(v) == 0`.
 
 ### Deprecated
 
