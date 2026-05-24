@@ -56,6 +56,7 @@ _RESULT_FIELDS = [
     "cube_shape",
     "warm_start",
     "n_starts",
+    "n_jobs",
     "random_state",
     "runtime_s",
     "n_curve_fit_calls",
@@ -95,18 +96,33 @@ def build_mapping_fit_benchmark_cases():
 
 
 def build_fit_kwargs_variants():
-    """Return list of fit-kwargs dicts covering the 2x2 warm_start x n_starts grid."""
+    """Return fit-kwargs dicts covering warm_start × n_starts × n_jobs grid.
+
+    n_jobs ∈ {1, 2, 4} is swept for warm_start=False variants; warm_start=True
+    variants use n_jobs=1 only (state-propagation comparisons are serial).
+    """
     variants = []
-    for warm_start in (False, True):
-        for n_starts in (1, 4):
+    for n_starts in (1, 4):
+        for n_jobs in (1, 2, 4):
             variants.append({
-                "warm_start": warm_start,
+                "warm_start": False,
+                "n_jobs": n_jobs,
                 "fit_spectrum_kwargs": {
                     "diagnostics": "light",
                     "random_state": _RANDOM_STATE,
                     "n_starts": n_starts,
                 },
             })
+    for n_starts in (1, 4):
+        variants.append({
+            "warm_start": True,
+            "n_jobs": 1,
+            "fit_spectrum_kwargs": {
+                "diagnostics": "light",
+                "random_state": _RANDOM_STATE,
+                "n_starts": n_starts,
+            },
+        })
     return variants
 
 
@@ -140,6 +156,7 @@ def run_mapping_fit_case(*, x, cube, fit_kwargs, dataset_name) -> dict:
     """
     Y, X, _ = cube.shape
     warm_start = fit_kwargs.get("warm_start", False)
+    n_jobs = fit_kwargs.get("n_jobs", 1)
     fsw = dict(fit_kwargs.get("fit_spectrum_kwargs", {}))
     n_starts_val = fsw.get("n_starts", 1)
 
@@ -164,7 +181,7 @@ def run_mapping_fit_case(*, x, cube, fit_kwargs, dataset_name) -> dict:
     with patch.object(_scipy_opt, "curve_fit", _wrapped_curve_fit):
         t0 = time.perf_counter()
         m = _build()
-        m.fit_spectra(warm_start=warm_start, fit_spectrum_kwargs=fsw)
+        m.fit_spectra(warm_start=warm_start, fit_spectrum_kwargs=fsw, n_jobs=n_jobs)
         runtime_s = time.perf_counter() - t0
         n_curve_fit_calls = counter["n"]
 
@@ -182,6 +199,7 @@ def run_mapping_fit_case(*, x, cube, fit_kwargs, dataset_name) -> dict:
         "cube_shape":         str(cube.shape),
         "warm_start":         warm_start,
         "n_starts":           n_starts_val,
+        "n_jobs":             n_jobs,
         "random_state":       _RANDOM_STATE,
         "runtime_s":          round(runtime_s, 6),
         "n_curve_fit_calls":  int(n_curve_fit_calls),
@@ -208,7 +226,7 @@ def write_mapping_fit_benchmark_csv(results, output_path=_DEFAULT_OUTPUT):
 
 def _print_summary(results):
     header = (
-        f"{'dataset':<20} {'warm':>5} {'nst':>4} {'time(s)':>9} "
+        f"{'dataset':<20} {'warm':>5} {'nst':>4} {'jobs':>5} {'time(s)':>9} "
         f"{'calls':>7} {'ok%':>7} {'rmse':>10}"
     )
     sep = "-" * len(header)
@@ -218,7 +236,8 @@ def _print_summary(results):
     for row in results:
         print(
             f"{row['dataset_name']:<20} {str(row['warm_start']):>5} "
-            f"{row['n_starts']:>4} {row['runtime_s']:>9.4f} "
+            f"{row['n_starts']:>4} {row.get('n_jobs', 1):>5} "
+            f"{row['runtime_s']:>9.4f} "
             f"{row['n_curve_fit_calls']:>7} "
             f"{row['success_rate'] * 100:>6.1f}% "
             f"{row['mean_rmse_finite']:>10.4f}"

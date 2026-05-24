@@ -106,7 +106,7 @@ def test_mapping_benchmark_smoke_run_native():
 # ---------------------------------------------------------------------------
 
 _FIT_REQUIRED_FIELDS = {
-    "dataset_name", "cube_shape", "warm_start", "n_starts", "random_state",
+    "dataset_name", "cube_shape", "warm_start", "n_starts", "n_jobs", "random_state",
     "runtime_s", "n_curve_fit_calls", "success_rate", "mean_rmse_finite",
     "n_failed_pixels",
 }
