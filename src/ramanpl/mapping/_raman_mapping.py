@@ -28,6 +28,12 @@ try:
     from ._io import MappingFileLoader
     from ._image import MappingImage
     from ._preprocess import _MappingPreprocessMixin
+    from ._parallel import (
+        _split_rows,
+        _validate_parallel_kwargs,
+        _merge_band_outputs,
+        _raman_fit_band,
+    )
 except Exception:  # pragma: no cover
     from ramanpl.baselineAPI import BaselineAPI
     from ramanpl.dataImporter import DataImporter
@@ -49,6 +55,12 @@ except Exception:  # pragma: no cover
     from ramanpl.mapping._io import MappingFileLoader
     from ramanpl.mapping._image import MappingImage
     from ramanpl.mapping._preprocess import _MappingPreprocessMixin
+    from ramanpl.mapping._parallel import (
+        _split_rows,
+        _validate_parallel_kwargs,
+        _merge_band_outputs,
+        _raman_fit_band,
+    )
 
 
 ########################################################################################################################
@@ -377,6 +389,7 @@ class RamanMapping(_MappingPreprocessMixin):
         fit_spectrum_kwargs=None,
         fit_normalize=True,
         show_progress=True,
+        n_jobs=1,
     ):
 
 
@@ -521,53 +534,103 @@ class RamanMapping(_MappingPreprocessMixin):
         prefer_nonbound = bool(fit_spectrum_kwargs.get("prefer_nonbound", False))
         score_tie_tol = float(fit_spectrum_kwargs.get("score_tie_tol", 1e-6))
 
-        pbar = tqdm(
-            total=self.Y * self.X,
-            desc="Fitting (Raman mapping)",
-            disable=not show_progress,
-            mininterval=0.5,
-        )
+        n_jobs = _validate_parallel_kwargs(n_jobs, warm_start, row_reset, self.Y)
 
-        self._fit_rows(
-            0, self.Y,
-            fitted_params=fitted_params,
-            spectra_fit_cube=spectra_fit_cube,
-            xdata=xdata,
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-            n_params=n_params,
-            n_peaks=n_peaks,
-            idx_a1g=idx_a1g,
-            idx_e2g=idx_e2g,
-            p0_base=p0_base,
-            p0_start=p0_current,
-            model_fn=model_fn,
-            stride=stride,
-            warm_start=warm_start,
-            row_reset=row_reset,
-            warm_start_rmse_gate=warm_start_rmse_gate,
-            reset_on_fail=reset_on_fail,
-            fit_normalize=fit_normalize,
-            maxfev=maxfev,
-            adaptive_multistart=adaptive_multistart,
-            fast_n_starts=fast_n_starts,
-            fast_p0_strategy=fast_p0_strategy,
-            fast_random_state=fast_random_state,
-            fallback_n_starts=fallback_n_starts,
-            fallback_p0_strategy=fallback_p0_strategy,
-            fallback_random_state=fallback_random_state,
-            retry_on_fail=retry_on_fail,
-            retry_on_high_rmse=retry_on_high_rmse,
-            retry_on_bound_hit=retry_on_bound_hit,
-            retry_rmse_gate=retry_rmse_gate,
-            width_penalty=width_penalty,
-            prefer_nonbound=prefer_nonbound,
-            score_tie_tol=score_tie_tol,
-            diagnostics_mode=diagnostics_mode,
-            pbar=pbar,
-        )
+        if n_jobs == 1:
+            pbar = tqdm(
+                total=self.Y * self.X,
+                desc="Fitting (Raman mapping)",
+                disable=not show_progress,
+                mininterval=0.5,
+            )
+            self._fit_rows(
+                0, self.Y,
+                fitted_params=fitted_params,
+                spectra_fit_cube=spectra_fit_cube,
+                xdata=xdata,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                n_params=n_params,
+                n_peaks=n_peaks,
+                idx_a1g=idx_a1g,
+                idx_e2g=idx_e2g,
+                p0_base=p0_base,
+                p0_start=p0_current,
+                model_fn=model_fn,
+                stride=stride,
+                warm_start=warm_start,
+                row_reset=row_reset,
+                warm_start_rmse_gate=warm_start_rmse_gate,
+                reset_on_fail=reset_on_fail,
+                fit_normalize=fit_normalize,
+                maxfev=maxfev,
+                adaptive_multistart=adaptive_multistart,
+                fast_n_starts=fast_n_starts,
+                fast_p0_strategy=fast_p0_strategy,
+                fast_random_state=fast_random_state,
+                fallback_n_starts=fallback_n_starts,
+                fallback_p0_strategy=fallback_p0_strategy,
+                fallback_random_state=fallback_random_state,
+                retry_on_fail=retry_on_fail,
+                retry_on_high_rmse=retry_on_high_rmse,
+                retry_on_bound_hit=retry_on_bound_hit,
+                retry_rmse_gate=retry_rmse_gate,
+                width_penalty=width_penalty,
+                prefer_nonbound=prefer_nonbound,
+                score_tie_tol=score_tie_tol,
+                diagnostics_mode=diagnostics_mode,
+                pbar=pbar,
+            )
+            pbar.close()
+        else:
+            from joblib import Parallel, delayed
+            bands = _split_rows(self.Y, n_jobs)
+            cfg = dict(
+                X=self.X,
+                n_params=n_params,
+                n_peaks=n_peaks,
+                idx_a1g=idx_a1g,
+                idx_e2g=idx_e2g,
+                p0_base=p0_base,
+                p0_start=p0_current,
+                peak_profile=self.peak_profile,
+                stride=stride,
+                normalize=self.normalize,
+                warm_start=warm_start,
+                row_reset=row_reset,
+                warm_start_rmse_gate=warm_start_rmse_gate,
+                reset_on_fail=reset_on_fail,
+                fit_normalize=fit_normalize,
+                maxfev=maxfev,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                adaptive_multistart=adaptive_multistart,
+                fast_n_starts=fast_n_starts,
+                fast_p0_strategy=fast_p0_strategy,
+                fast_random_state=fast_random_state,
+                fallback_n_starts=fallback_n_starts,
+                fallback_p0_strategy=fallback_p0_strategy,
+                fallback_random_state=fallback_random_state,
+                retry_on_fail=retry_on_fail,
+                retry_on_high_rmse=retry_on_high_rmse,
+                retry_on_bound_hit=retry_on_bound_hit,
+                retry_rmse_gate=retry_rmse_gate,
+                width_penalty=width_penalty,
+                prefer_nonbound=prefer_nonbound,
+                score_tie_tol=score_tie_tol,
+                diagnostics_mode=diagnostics_mode,
+            )
+            band_results = Parallel(n_jobs=n_jobs, backend="loky")(
+                delayed(_raman_fit_band)(
+                    j_start, j_end,
+                    spectra_fit_cube[j_start:j_end],
+                    xdata,
+                    cfg,
+                )
+                for j_start, j_end in bands
+            )
+            _merge_band_outputs(self, fitted_params, bands, band_results)
 
-        pbar.close()
         self.fitted_params = fitted_params
         n_fit = np.sum(~np.isnan(self.residual_map))
         print(f"Successful fits: {n_fit} / {self.X * self.Y}")
