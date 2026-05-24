@@ -585,7 +585,7 @@ class PLMapping(_MappingPreprocessMixin):
                 score_tie_tol=score_tie_tol,
                 diagnostics_mode=diagnostics_mode,
             )
-            band_results = Parallel(n_jobs=n_jobs, backend="loky")(
+            _gen = Parallel(n_jobs=n_jobs, backend="loky", return_as="generator")(
                 delayed(_pl_fit_band)(
                     j_start, j_end,
                     spectra_fit_cube[j_start:j_end],
@@ -594,6 +594,13 @@ class PLMapping(_MappingPreprocessMixin):
                 )
                 for j_start, j_end in bands
             )
+            band_results = list(tqdm(
+                _gen,
+                total=len(bands),
+                desc=f"Fitting (PL mapping, {n_jobs} workers)",
+                disable=not show_progress,
+                mininterval=0.5,
+            ))
             _merge_band_outputs(self, fitted_params, bands, band_results)
 
         n_fit = np.sum(~np.isnan(self.residual_map))
