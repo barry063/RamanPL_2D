@@ -72,6 +72,7 @@ _CSV_FIELDS = [
     "cube_shape",
     "warm_start",
     "n_starts",
+    "n_jobs",
     "use_peak_proposals",
     "random_state",
     "runtime_s",
