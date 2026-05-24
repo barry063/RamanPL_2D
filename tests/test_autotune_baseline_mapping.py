@@ -6,7 +6,6 @@ Uses synthetic data only — no file I/O.
 
 import numpy as np
 import pytest
-import warnings
 import matplotlib
 matplotlib.use("Agg")  # headless
 
@@ -268,39 +267,13 @@ def test_autotune_raises_for_multiple_baseline_steps():
 # v0.6.3 — method_grids API tests
 # ---------------------------------------------------------------------------
 
-def test_method_grids_and_methods_are_mutually_exclusive(mapping_with_baseline):
-    with pytest.raises(TypeError, match="not both"):
-        mapping_with_baseline.autotune_baseline(
-            seed_coord=(0, 0),
-            method_grids={"poly": {"poly_order": [1]}},
-            methods=["poly"],
-            plot=False,
-        )
-
-
-def test_deprecated_methods_kwarg_emits_warning(mapping_with_baseline):
-    with pytest.warns(DeprecationWarning, match="method_grids"):
+def test_methods_kwarg_removed_raises_typeerror(mapping_with_baseline):
+    with pytest.raises(TypeError):
         mapping_with_baseline.autotune_baseline(
             seed_coord=(0, 0),
             methods=["poly"],
             plot=False,
         )
-
-
-def test_deprecated_kwargs_produce_same_ranking_as_method_grids(mapping_with_baseline):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        r_old = mapping_with_baseline.autotune_baseline(
-            seed_coord=(0, 0),
-            methods=["airpls"],
-            plot=False,
-        )
-    r_new = mapping_with_baseline.autotune_baseline(
-        seed_coord=(0, 0),
-        method_grids={"airpls": {"lam": [1e3, 1e4, 1e5, 1e6], "niter": [50]}},
-        plot=False,
-    )
-    assert [e["rmse"] for e in r_old.ranking] == [e["rmse"] for e in r_new.ranking]
 
 
 def test_method_grids_empty_dict_raises(mapping_with_baseline):

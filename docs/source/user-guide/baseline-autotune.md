@@ -55,9 +55,7 @@ fit.fit_spectrum()
 mapping.autotune_baseline(
     *,
     seed_coord: tuple[int, int],            # (row, col) — row-major
-    method_grids: dict | None = None,       # v0.6.3+ primary API
-    methods: list[str] | None = None,       # deprecated — use method_grids
-    lam_grid: list[float] | None = None,    # deprecated — use method_grids
+    method_grids: dict | None = None,
     plot: bool = True,
     fit_spectrum_kwargs: dict | None = None,
 ) -> BaselineAutotuneResult
@@ -150,30 +148,6 @@ result = mapping.autotune_baseline(
 | `airpls` | `lam`, `niter` |
 | `poly` | `poly_order` |
 | `gaussian` | `gaussian_sigma` |
-
-## Deprecated arguments
-
-`methods` and `lam_grid` are **deprecated in v0.6.3** and will be **removed
-in v0.6.4**. They emit a `DeprecationWarning` when used.
-
-Migrate by replacing:
-
-```python
-# Old (v0.6.2) — deprecated
-result = fit.autotune_baseline(methods=["poly", "airpls"], plot=False)
-
-# New (v0.6.3+) — explicit
-result = fit.autotune_baseline(
-    method_grids={
-        "poly":   {"poly_order": [1, 2, 3, 4, 5]},
-        "airpls": {"lam": [1e3, 1e4, 1e5, 1e6], "niter": [50]},
-    },
-    plot=False,
-)
-```
-
-Passing both `method_grids` and `methods`/`lam_grid` in the same call raises
-`TypeError`.
 
 ## Provenance in exports
 
