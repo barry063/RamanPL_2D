@@ -4,6 +4,7 @@ Full release notes are maintained in the repository root [`CHANGELOG`](https://g
 
 ## Recent releases
 
+- **v0.6.4** — Parallel mapping fit with row-band warm-start
 - **v0.6.3** — Autotune API refinement, real-data notebooks, API docs
 - **v0.6.2** — Seed-pixel baseline auto-tuning with visual review
 - **v0.6.1** — Progress indicators for mapping & batch fits

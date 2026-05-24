@@ -377,6 +377,10 @@ class PLMapping(_MappingPreprocessMixin):
             If True, internal scaling for optimisation is normalised
         compute_peak_maps : bool
             If True, compute the peak maps and store them internally
+        n_jobs : int
+            Number of parallel loky workers for the row loop (v0.6.4+).
+            Default 1 preserves byte-parity with v0.6.3.
+            n_jobs > 1 with warm_start=True requires row_reset=True.
         Returns
         -------
         params_map : ndarray

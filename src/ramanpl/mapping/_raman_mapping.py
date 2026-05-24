@@ -402,6 +402,8 @@ class RamanMapping(_MappingPreprocessMixin):
         - supports initial_p0 as vector or dict package {"p0":..., "peak_order":...}
         - warm-start propagation is gated (RMSE + plausibility) to reduce scanline ledges
         - optional row_reset prevents row-to-row propagation artefacts
+        - n_jobs > 1 distributes the row loop across loky workers (v0.6.4+);
+          n_jobs=1 (default) preserves byte-parity with v0.6.3
 
         Returns
         -------
