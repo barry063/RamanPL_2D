@@ -16,7 +16,7 @@ import pytest  # noqa: E402
 
 def test_import_top_level_package():
     import ramanpl
-    assert ramanpl.__version__ == "0.6.3"
+    assert ramanpl.__version__ == "0.6.4"
 
 
 def test_import_public_entry_points():

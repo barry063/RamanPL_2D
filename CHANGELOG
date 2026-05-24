@@ -1,5 +1,48 @@
 # Changelog
 
+## [v0.6.4] — 2026-05-24 — Parallel mapping fit with row-band warm-start
+
+### Added
+
+- `n_jobs` keyword on `RamanMapping.fit_spectra` and `PLMapping.fit_spectra`
+  (default `1`, serial — byte-parity with v0.6.3 preserved).  When `n_jobs > 1`
+  the row loop is distributed across loky worker processes via `joblib.Parallel`.
+- `src/ramanpl/mapping/_parallel.py` — module-level band workers
+  (`_raman_fit_band`, `_pl_fit_band`), row-splitting helper (`_split_rows`),
+  validation helper (`_validate_parallel_kwargs`), and result merger
+  (`_merge_band_outputs`).
+- `joblib>=1.3` as a hard runtime dependency.
+- `tests/test_parallel_fit_mapping.py` — 11 new tests covering byte-parity,
+  unsafe-mode ValueError, call-count invariant, clamping, and utility functions.
+- `benchmarks/results/mapping_fit_benchmark_v0.6.4.csv` — versioned benchmark
+  results over 3 dataset sizes × 8 fit-kwargs variants (including n_jobs axis).
+- `benchmarks/results/parallel_speedup_v0.6.4.txt` — wall-clock speedup table
+  for `extended_15x15` dataset; 2.42× at n_jobs=4 (n_starts=1).
+- `docs/source/user-guide/parallel-fitting.md` — user guide for `n_jobs`.
+- `closeout_v0.6.4.md` — release closeout document.
+
+### Changed
+
+- `benchmarks/benchmark_mapping_fit.py` — `n_jobs` axis added to
+  `build_fit_kwargs_variants`; result records include `n_jobs` field.
+- `RamanMapping.fit_spectra` and `PLMapping.fit_spectra` docstrings updated
+  to document `n_jobs` parameter.
+- Example notebooks (`Mapping Raman Example.ipynb`, `Mapping PL Example.ipynb`)
+  extended with `n_jobs` parallel-fit demonstration cells.
+
+### Removed
+
+- `methods` / `lam_grid` deprecation shim (`_shim_methods_lam_grid`) from
+  `_autotune.py`.  Both kwargs now raise `TypeError` when passed.  (Deprecated
+  in v0.6.3; removal announced in that release.)
+
+### Fixed
+
+- `tol` parameter added to `_ALLOWED_PARAMS["arpls"]` and
+  `_ALLOWED_PARAMS["airpls"]`, enabling `tol` sweeps via `method_grids`.
+
+---
+
 ## [v0.6.3] — 2026-05-23 — Autotune API refinement, real-data notebooks, API docs
 
 ### Added
