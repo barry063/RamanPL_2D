@@ -40,6 +40,15 @@
 
 - `tol` parameter added to `_ALLOWED_PARAMS["arpls"]` and
   `_ALLOWED_PARAMS["airpls"]`, enabling `tol` sweeps via `method_grids`.
+- `_validate_parallel_kwargs` now returns `1` immediately when `Y=0`, preventing
+  a `ZeroDivisionError` in `_split_rows` that was a regression over the prior
+  serial no-op behaviour on empty cubes.
+- `show_progress=True` now shows a tqdm bar for `n_jobs > 1` fits, using
+  `Parallel(return_as="generator")` to report per-band completion progress.
+  Previously the flag was silently ignored in the parallel branch.
+- `benchmarks/validation_v0.6.0_vs_v0.5.0.py` — `"n_jobs"` added to
+  `_CSV_FIELDS` so `DictWriter` accepts the extended `run_mapping_fit_case`
+  result dict (CI regression introduced by Step 6).
 
 ---
 
