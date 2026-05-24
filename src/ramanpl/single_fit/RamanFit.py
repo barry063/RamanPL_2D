@@ -310,8 +310,6 @@ class RamanFit:
         self,
         *,
         method_grids=None,
-        methods=None,
-        lam_grid=None,
         plot: bool = True,
         fit_spectrum_kwargs=None,
     ):
@@ -326,10 +324,6 @@ class RamanFit:
             Per-method parameter sweep, e.g.
             ``{"arpls": {"lam": [1e4, 1e5], "niter": [50, 100]}}``.
             None → full 24-candidate default grid.
-        methods : list[str] or None
-            Deprecated. Use method_grids instead. Removed in v0.6.4.
-        lam_grid : list[float] or None
-            Deprecated. Use method_grids instead. Removed in v0.6.4.
         plot : bool
             If True, return a comparison figure in result.figure.
         fit_spectrum_kwargs : dict or None
@@ -345,8 +339,6 @@ class RamanFit:
             self,
             seed_coord=None,
             method_grids=method_grids,
-            methods=methods,
-            lam_grid=lam_grid,
             plot=plot,
             fit_spectrum_kwargs=fit_spectrum_kwargs,
         )

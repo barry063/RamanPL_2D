@@ -21,7 +21,6 @@ Default baseline grid (24 candidates):
 from __future__ import annotations
 
 import itertools
-import warnings
 
 import numpy as np
 from dataclasses import dataclass, field
@@ -231,48 +230,6 @@ def _make_comparison_figure(
     return fig
 
 
-def _shim_methods_lam_grid(
-    methods: Optional[List[str]],
-    lam_grid: Optional[List[float]],
-) -> Dict[str, Dict[str, list]]:
-    """
-    Translate the deprecated (methods, lam_grid) pair into an equivalent
-    method_grids dict that yields the same candidate set as v0.6.2.
-
-    When lam_grid is given, it overrides BOTH asls/arpls (5-lam default) and
-    airpls (4-lam default), matching v0.6.2 behaviour exactly.
-    """
-    selected = methods if methods is not None else _DEFAULT_METHODS
-    grids: Dict[str, Dict[str, list]] = {}
-    for m in selected:
-        if m == "asls":
-            grids[m] = {
-                "lam":   lam_grid if lam_grid is not None else _DEFAULT_LAM_5,
-                "p":     [0.001],
-                "niter": [20],
-            }
-        elif m == "arpls":
-            grids[m] = {
-                "lam":   lam_grid if lam_grid is not None else _DEFAULT_LAM_5,
-                "niter": [50],
-            }
-        elif m == "airpls":
-            grids[m] = {
-                "lam":   lam_grid if lam_grid is not None else _DEFAULT_LAM_4,
-                "niter": [50],
-            }
-        elif m == "poly":
-            grids[m] = {"poly_order": [1, 2, 3, 4, 5]}
-        elif m == "gaussian":
-            grids[m] = {"gaussian_sigma": [5, 10, 20, 50, 100]}
-        else:
-            raise ValueError(
-                f"Unknown baseline method in 'methods' argument: {m!r}. "
-                f"Supported: {sorted(_KNOWN_METHODS)}"
-            )
-    return grids
-
-
 def _validate_method_grids(method_grids: Dict[str, Dict[str, list]]) -> None:
     """Fail fast on malformed method_grids before scoring begins."""
     if not isinstance(method_grids, dict):
@@ -351,9 +308,7 @@ def autotune_baseline_for_object(
     obj,
     *,
     seed_coord: Optional[Tuple[int, int]] = None,
-    method_grids: Optional[Dict[str, Dict[str, list]]] = None,  # v0.6.3 primary API
-    methods: Optional[List[str]] = None,                        # deprecated v0.6.3
-    lam_grid: Optional[List[float]] = None,                     # deprecated v0.6.3
+    method_grids: Optional[Dict[str, Dict[str, list]]] = None,
     plot: bool = True,
     fit_spectrum_kwargs: Optional[Dict[str, Any]] = None,
 ) -> BaselineAutotuneResult:
@@ -376,10 +331,6 @@ def autotune_baseline_for_object(
         ``{"arpls": {"lam": [1e4, 1e5], "niter": [50, 100]}}``.
         Cartesian product is taken automatically per method.
         None → full 24-candidate default grid (v0.6.2-compatible).
-    methods : list[str] or None
-        Deprecated. Use method_grids instead. Removed in v0.6.4.
-    lam_grid : list[float] or None
-        Deprecated. Use method_grids instead. Removed in v0.6.4.
     plot : bool
         If True, build a comparison figure for the top-5 candidates.
     fit_spectrum_kwargs : dict or None
@@ -389,24 +340,6 @@ def autotune_baseline_for_object(
     -------
     BaselineAutotuneResult
     """
-    # ------------------------------------------------------------------
-    # v0.6.3 — mutual-exclusion guard + deprecation shim
-    # ------------------------------------------------------------------
-    if method_grids is not None and (methods is not None or lam_grid is not None):
-        raise TypeError(
-            "Pass either 'method_grids' (v0.6.3+) or the deprecated "
-            "'methods'/'lam_grid' arguments, not both."
-        )
-
-    if methods is not None or lam_grid is not None:
-        warnings.warn(
-            "The 'methods' and 'lam_grid' arguments are deprecated in v0.6.3 "
-            "and will be removed in v0.6.4. Use 'method_grids' instead.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-        method_grids = _shim_methods_lam_grid(methods, lam_grid)
-
     try:
         from .preprocessing import Pipeline, BaselineSubtract
         from .peak_models import sum_peaks

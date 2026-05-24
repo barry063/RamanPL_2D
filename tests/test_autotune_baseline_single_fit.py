@@ -308,17 +308,8 @@ def test_autotune_works_with_crop_in_pipeline():
 # v0.6.3 — method_grids API tests (mirrored from mapping tests)
 # ---------------------------------------------------------------------------
 
-def test_method_grids_and_methods_are_mutually_exclusive(raman_fit):
-    with pytest.raises(TypeError, match="not both"):
-        raman_fit.autotune_baseline(
-            method_grids={"poly": {"poly_order": [1]}},
-            methods=["poly"],
-            plot=False,
-        )
-
-
-def test_deprecated_methods_kwarg_emits_warning(raman_fit):
-    with pytest.warns(DeprecationWarning, match="method_grids"):
+def test_methods_kwarg_removed_raises_typeerror(raman_fit):
+    with pytest.raises(TypeError):
         raman_fit.autotune_baseline(
             methods=["poly"],
             plot=False,
