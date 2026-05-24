@@ -80,6 +80,11 @@ mapping.fit_spectra(warm_start=True, seed_coord=(10, 10), row_reset=True, n_jobs
 | `tests/test_release_benchmark_smoke.py` | 6 | `"n_jobs"` in `_FIT_REQUIRED_FIELDS` |
 | `example-usage/Mapping/Mapping Raman Example.ipynb` | 6b | `n_jobs` demo cells |
 | `example-usage/Mapping/Mapping PL Example.ipynb` | 6b | `n_jobs` demo cells |
+| `benchmarks/validation_v0.6.0_vs_v0.5.0.py` | post | `"n_jobs"` added to `_CSV_FIELDS` (CI fix) |
+| `src/ramanpl/mapping/_parallel.py` | post | `Y=0` guard in `_validate_parallel_kwargs` |
+| `src/ramanpl/mapping/_raman_mapping.py` | post | `tqdm` progress bar for `n_jobs > 1` path |
+| `src/ramanpl/mapping/_pl_mapping.py` | post | Same |
+| `tests/test_parallel_fit_mapping.py` | post | `test_validate_parallel_kwargs_zero_rows_returns_one` added |
 | `src/ramanpl/__init__.py` | 7 | `__version__ = "0.6.4"` |
 | `CITATION.cff` | 7 | `version: 0.6.4`, `date-released: "2026-05-24"` |
 | `docs/source/conf.py` | 7 | `release = "0.6.4"` |
@@ -95,12 +100,36 @@ mapping.fit_spectra(warm_start=True, seed_coord=(10, 10), row_reset=True, n_jobs
 |-------|--------|
 | `from ramanpl import __version__` | `"0.6.4"` ✓ |
 | Byte-parity: `n_jobs=1` vs v0.6.3 benchmark | **identical n_curve_fit_calls** ✓ |
-| `pytest tests/test_parallel_fit_mapping.py -v` | **11 passed** ✓ |
+| `pytest tests/test_parallel_fit_mapping.py -v` | **12 passed** ✓ |
 | `pytest -q` (full suite) | **315 passed, 3 skipped, 1 deselected** in 1416.86s ✓ |
 | `grep _shim_methods_lam_grid src/` | **0 hits** ✓ |
 | `python -c "import joblib"` | exits 0 ✓ |
 | `benchmarks/results/mapping_fit_benchmark_v0.6.4.csv` | **24 rows**, no NaN in finite fields ✓ |
 | Speedup at `n_jobs=4` (`extended_15x15`, `n_starts=1`) | **2.42×** ✓ |
+
+---
+
+## Post-publish fixes
+
+### CI: `n_jobs` missing from `_CSV_FIELDS` in validation script
+
+`run_mapping_fit_case` returns `n_jobs` in its result dict (added in Step 6), but
+`benchmarks/validation_v0.6.0_vs_v0.5.0.py` imports the function directly and its
+`DictWriter` fieldnames were not updated. Fix: `"n_jobs"` inserted after `"n_starts"`.
+
+### Reviewer (P2): `Y=0` causes `ZeroDivisionError`
+
+When `Y=0`, `_validate_parallel_kwargs` clamped `n_jobs` to `0`, causing the caller
+to fall into the parallel branch and call `_split_rows(0, 0)` → `divmod(0, 0)`.
+Fix: early return `1` when `Y=0` so the serial path handles the empty cube as a
+no-op. Test `test_validate_parallel_kwargs_zero_rows_returns_one` added.
+
+### `show_progress=True` silently ignored for `n_jobs > 1`
+
+The `tqdm` progress bar was only created in the `n_jobs=1` branch. The parallel
+branch had no progress feedback. Fix: `Parallel(..., return_as="generator")` used
+so the generator can be wrapped with `tqdm(total=len(bands))`, yielding per-band
+completion ticks. Both notebooks confirmed green after fix.
 
 ---
 
