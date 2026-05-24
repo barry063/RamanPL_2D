@@ -198,3 +198,8 @@ def test_validate_parallel_kwargs_clamping():
 def test_validate_parallel_kwargs_unsafe_raises():
     with pytest.raises(ValueError, match="row_reset=True"):
         _validate_parallel_kwargs(n_jobs=2, warm_start=True, row_reset=False, Y=4)
+
+
+def test_validate_parallel_kwargs_zero_rows_returns_one():
+    # Y=0 must return 1 so the serial path no-ops safely (no ZeroDivisionError).
+    assert _validate_parallel_kwargs(n_jobs=4, warm_start=False, row_reset=True, Y=0) == 1
