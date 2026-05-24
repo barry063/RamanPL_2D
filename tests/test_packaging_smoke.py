@@ -100,3 +100,9 @@ def test_tqdm_importable():
     import tqdm
     from tqdm.auto import tqdm as _t
     assert hasattr(_t, "update")
+
+
+def test_joblib_importable():
+    import joblib
+    assert hasattr(joblib, "Parallel")
+    assert hasattr(joblib, "delayed")
