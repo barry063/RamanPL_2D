@@ -409,73 +409,8 @@ class RamanMapping(_MappingPreprocessMixin):
             raise ValueError("fit_spectrum_kwargs['diagnostics'] must be 'full', 'light', or 'none'.")
         self.diagnostics_mode = diagnostics_mode
 
-        def _store_diag(j, i, payload):
-            if self.fit_diagnostics_map is None:
-                return
-
-            if diagnostics_mode == "full":
-                self.fit_diagnostics_map[j, i] = payload
-                return
-
-            # light mode: keep only compact QA fields
-            light = {"ok": payload.get("ok", None)}
-            for key in (
-                "reason",
-                "rmse",
-                "n_starts",
-                "n_fail",
-                "p0_strategy",
-                "adaptive_retry_used",
-                "n_params_at_lower_bounds",
-                "n_params_at_upper_bounds",
-            ):
-                if key in payload:
-                    light[key] = payload[key]
-
-            self.fit_diagnostics_map[j, i] = light
-
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising RamanMapping.")
-
-        # ---------- helpers ----------
-        def _params_plausible(params, lb, ub, n_peaks, stride, profile, tol=1e-10):
-            """
-            Reject fits likely stuck at bounds or non-physical.
-            stride = params_per_peak (3 lorentzian, 4 pvoigt)
-            """
-            params = np.asarray(params, dtype=float)
-            lb = np.asarray(lb, dtype=float)
-            ub = np.asarray(ub, dtype=float)
-
-            for k in range(n_peaks):
-                base = stride * k
-                c = params[base + 0]
-                w = params[base + 1]
-                a = params[base + 2]
-
-                # width must be positive
-                if (not np.isfinite(w)) or w <= 1e-8:
-                    return False
-
-                # centre/width at bounds often indicates constrained "fallback"
-                if abs(c - lb[base + 0]) < tol or abs(c - ub[base + 0]) < tol:
-                    return False
-                if abs(w - lb[base + 1]) < tol or abs(w - ub[base + 1]) < tol:
-                    return False
-
-                # amplitude at bounds is suspicious in mapping
-                if abs(a - lb[base + 2]) < tol or abs(a - ub[base + 2]) < tol:
-                    return False
-
-                if profile == "pvoigt":
-                    eta = params[base + 3]
-                    # eta should be in [0,1] and not stuck at bounds
-                    if (not np.isfinite(eta)) or eta < -1e-6 or eta > 1 + 1e-6:
-                        return False
-                    if abs(eta - lb[base + 3]) < tol or abs(eta - ub[base + 3]) < tol:
-                        return False
-
-            return True
 
         # ---------- shared preprocessing path ----------
         xdata, spectra_fit_cube = self._get_processed_mapping_cube()
@@ -592,14 +527,167 @@ class RamanMapping(_MappingPreprocessMixin):
             disable=not show_progress,
             mininterval=0.5,
         )
-        for j in range(self.Y):
+
+        self._fit_rows(
+            0, self.Y,
+            fitted_params=fitted_params,
+            spectra_fit_cube=spectra_fit_cube,
+            xdata=xdata,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+            n_params=n_params,
+            n_peaks=n_peaks,
+            idx_a1g=idx_a1g,
+            idx_e2g=idx_e2g,
+            p0_base=p0_base,
+            p0_start=p0_current,
+            model_fn=model_fn,
+            stride=stride,
+            warm_start=warm_start,
+            row_reset=row_reset,
+            warm_start_rmse_gate=warm_start_rmse_gate,
+            reset_on_fail=reset_on_fail,
+            fit_normalize=fit_normalize,
+            maxfev=maxfev,
+            adaptive_multistart=adaptive_multistart,
+            fast_n_starts=fast_n_starts,
+            fast_p0_strategy=fast_p0_strategy,
+            fast_random_state=fast_random_state,
+            fallback_n_starts=fallback_n_starts,
+            fallback_p0_strategy=fallback_p0_strategy,
+            fallback_random_state=fallback_random_state,
+            retry_on_fail=retry_on_fail,
+            retry_on_high_rmse=retry_on_high_rmse,
+            retry_on_bound_hit=retry_on_bound_hit,
+            retry_rmse_gate=retry_rmse_gate,
+            width_penalty=width_penalty,
+            prefer_nonbound=prefer_nonbound,
+            score_tie_tol=score_tie_tol,
+            diagnostics_mode=diagnostics_mode,
+            pbar=pbar,
+        )
+
+        pbar.close()
+        self.fitted_params = fitted_params
+        n_fit = np.sum(~np.isnan(self.residual_map))
+        print(f"Successful fits: {n_fit} / {self.X * self.Y}")
+        return fitted_params
+
+    def _fit_rows(
+        self,
+        j_start,
+        j_end,
+        *,
+        fitted_params,
+        spectra_fit_cube,
+        xdata,
+        lower_bound,
+        upper_bound,
+        n_params,
+        n_peaks,
+        idx_a1g,
+        idx_e2g,
+        p0_base,
+        p0_start,
+        model_fn,
+        stride,
+        warm_start,
+        row_reset,
+        warm_start_rmse_gate,
+        reset_on_fail,
+        fit_normalize,
+        maxfev,
+        adaptive_multistart,
+        fast_n_starts,
+        fast_p0_strategy,
+        fast_random_state,
+        fallback_n_starts,
+        fallback_p0_strategy,
+        fallback_random_state,
+        retry_on_fail,
+        retry_on_high_rmse,
+        retry_on_bound_hit,
+        retry_rmse_gate,
+        width_penalty,
+        prefer_nonbound,
+        score_tie_tol,
+        diagnostics_mode,
+        pbar=None,
+    ):
+        def _store_diag(j, i, payload):
+            if self.fit_diagnostics_map is None:
+                return
+
+            if diagnostics_mode == "full":
+                self.fit_diagnostics_map[j, i] = payload
+                return
+
+            # light mode: keep only compact QA fields
+            light = {"ok": payload.get("ok", None)}
+            for key in (
+                "reason",
+                "rmse",
+                "n_starts",
+                "n_fail",
+                "p0_strategy",
+                "adaptive_retry_used",
+                "n_params_at_lower_bounds",
+                "n_params_at_upper_bounds",
+            ):
+                if key in payload:
+                    light[key] = payload[key]
+
+            self.fit_diagnostics_map[j, i] = light
+
+        def _params_plausible(params, lb, ub, n_peaks, stride, profile, tol=1e-10):
+            """
+            Reject fits likely stuck at bounds or non-physical.
+            stride = params_per_peak (3 lorentzian, 4 pvoigt)
+            """
+            params = np.asarray(params, dtype=float)
+            lb = np.asarray(lb, dtype=float)
+            ub = np.asarray(ub, dtype=float)
+
+            for k in range(n_peaks):
+                base = stride * k
+                c = params[base + 0]
+                w = params[base + 1]
+                a = params[base + 2]
+
+                # width must be positive
+                if (not np.isfinite(w)) or w <= 1e-8:
+                    return False
+
+                # centre/width at bounds often indicates constrained "fallback"
+                if abs(c - lb[base + 0]) < tol or abs(c - ub[base + 0]) < tol:
+                    return False
+                if abs(w - lb[base + 1]) < tol or abs(w - ub[base + 1]) < tol:
+                    return False
+
+                # amplitude at bounds is suspicious in mapping
+                if abs(a - lb[base + 2]) < tol or abs(a - ub[base + 2]) < tol:
+                    return False
+
+                if profile == "pvoigt":
+                    eta = params[base + 3]
+                    # eta should be in [0,1] and not stuck at bounds
+                    if (not np.isfinite(eta)) or eta < -1e-6 or eta > 1 + 1e-6:
+                        return False
+                    if abs(eta - lb[base + 3]) < tol or abs(eta - ub[base + 3]) < tol:
+                        return False
+
+            return True
+
+        p0_current = p0_start.copy()
+        for j in range(j_start, j_end):
 
             # IMPORTANT: prevents a bad seed at end of previous row from contaminating next row
             if warm_start and row_reset:
                 p0_current = p0_base.copy()
 
             for i in range(self.X):
-                pbar.update(1)
+                if pbar is not None:
+                    pbar.update(1)
                 # raw_spec = self.spectra[j, i, :] if mask is None else self.spectra[j, i, :][mask]
 
                 # spec_fit, scale = self._preprocess_single_spectrum(xdata, raw_spec, fit_normalize=fit_normalize)
@@ -827,12 +915,6 @@ class RamanMapping(_MappingPreprocessMixin):
                     else:
                         if reset_on_fail:
                             p0_current = p0_base.copy()
-
-        pbar.close()
-        self.fitted_params = fitted_params
-        n_fit = np.sum(~np.isnan(self.residual_map))
-        print(f"Successful fits: {n_fit} / {self.X * self.Y}")
-        return fitted_params
 
 
     def plot_spectrum_fit(self, x, y):

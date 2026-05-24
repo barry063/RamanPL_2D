@@ -381,30 +381,6 @@ class PLMapping(_MappingPreprocessMixin):
             raise ValueError("fit_spectrum_kwargs['diagnostics'] must be 'full', 'light', or 'none'.")
         self.diagnostics_mode = diagnostics_mode
 
-        def _store_diag(j, i, payload):
-            if self.fit_diagnostics_map is None:
-                return
-
-            if diagnostics_mode == "full":
-                self.fit_diagnostics_map[j, i] = payload
-                return
-
-            light = {"ok": payload.get("ok", None)}
-            for key in (
-                "reason",
-                "rmse",
-                "n_starts",
-                "n_fail",
-                "p0_strategy",
-                "adaptive_retry_used",
-                "n_params_at_lower_bounds",
-                "n_params_at_upper_bounds",
-            ):
-                if key in payload:
-                    light[key] = payload[key]
-
-            self.fit_diagnostics_map[j, i] = light
-
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
 
@@ -517,9 +493,117 @@ class PLMapping(_MappingPreprocessMixin):
             disable=not show_progress,
             mininterval=0.5,
         )
-        for j in range(self.Y):
+
+        self._fit_rows(
+            0, self.Y,
+            fitted_params=fitted_params,
+            spectra_fit_cube=spectra_fit_cube,
+            xdata=xdata,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+            n_params=n_params,
+            p0_base=p0_base,
+            p0_start=p0_current,
+            model_fn=model_fn,
+            stride=stride,
+            warm_start=warm_start,
+            row_reset=row_reset,
+            warm_start_rmse_gate=warm_start_rmse_gate,
+            reset_on_fail=reset_on_fail,
+            fit_normalize=fit_normalize,
+            maxfev=maxfev,
+            adaptive_multistart=adaptive_multistart,
+            fast_n_starts=fast_n_starts,
+            fast_p0_strategy=fast_p0_strategy,
+            fast_random_state=fast_random_state,
+            fallback_n_starts=fallback_n_starts,
+            fallback_p0_strategy=fallback_p0_strategy,
+            fallback_random_state=fallback_random_state,
+            retry_on_fail=retry_on_fail,
+            retry_on_high_rmse=retry_on_high_rmse,
+            retry_on_bound_hit=retry_on_bound_hit,
+            retry_rmse_gate=retry_rmse_gate,
+            width_penalty=width_penalty,
+            prefer_nonbound=prefer_nonbound,
+            score_tie_tol=score_tie_tol,
+            diagnostics_mode=diagnostics_mode,
+            pbar=pbar,
+        )
+
+        pbar.close()
+        n_fit = np.sum(~np.isnan(self.residual_map))
+        print(f"Successful fits: {n_fit} / {self.X * self.Y}")
+
+        self.fitted_params = fitted_params
+        return fitted_params
+
+    def _fit_rows(
+        self,
+        j_start,
+        j_end,
+        *,
+        fitted_params,
+        spectra_fit_cube,
+        xdata,
+        lower_bound,
+        upper_bound,
+        n_params,
+        p0_base,
+        p0_start,
+        model_fn,
+        stride,
+        warm_start,
+        row_reset,
+        warm_start_rmse_gate,
+        reset_on_fail,
+        fit_normalize,
+        maxfev,
+        adaptive_multistart,
+        fast_n_starts,
+        fast_p0_strategy,
+        fast_random_state,
+        fallback_n_starts,
+        fallback_p0_strategy,
+        fallback_random_state,
+        retry_on_fail,
+        retry_on_high_rmse,
+        retry_on_bound_hit,
+        retry_rmse_gate,
+        width_penalty,
+        prefer_nonbound,
+        score_tie_tol,
+        diagnostics_mode,
+        pbar=None,
+    ):
+        def _store_diag(j, i, payload):
+            if self.fit_diagnostics_map is None:
+                return
+
+            if diagnostics_mode == "full":
+                self.fit_diagnostics_map[j, i] = payload
+                return
+
+            light = {"ok": payload.get("ok", None)}
+            for key in (
+                "reason",
+                "rmse",
+                "n_starts",
+                "n_fail",
+                "p0_strategy",
+                "adaptive_retry_used",
+                "n_params_at_lower_bounds",
+                "n_params_at_upper_bounds",
+            ):
+                if key in payload:
+                    light[key] = payload[key]
+
+            self.fit_diagnostics_map[j, i] = light
+
+        p0_current = p0_start.copy()
+        for j in range(j_start, j_end):
             for i in range(self.X):
-                pbar.update(1)
+                if pbar is not None:
+                    pbar.update(1)
 
                 # --- get already-preprocessed spectrum for this pixel ---
                 y = np.asarray(spectra_fit_cube[j, i, :], dtype=float)
@@ -747,16 +831,9 @@ class PLMapping(_MappingPreprocessMixin):
                         p0_current = p0_base.copy()
 
 
-            # Row reset    
+            # Row reset
             if row_reset:
                 p0_current = p0_base.copy()
-
-        pbar.close()
-        n_fit = np.sum(~np.isnan(self.residual_map))
-        print(f"Successful fits: {n_fit} / {self.X * self.Y}")
-
-        self.fitted_params = fitted_params
-        return fitted_params
 
     def plot_spectrum_fit(self, x, y):
         """Plot raw data and fitting results for a single map point.
