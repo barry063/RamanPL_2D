@@ -30,6 +30,8 @@ def _validate_parallel_kwargs(n_jobs, warm_start, row_reset, Y):
     """Validate n_jobs and parallel-safety rules. Returns effective n_jobs."""
     if not isinstance(n_jobs, int) or n_jobs < 1:
         raise ValueError(f"n_jobs must be a positive integer, got {n_jobs!r}")
+    if Y == 0:
+        return 1
     if n_jobs > 1 and warm_start and not row_reset:
         raise ValueError(
             "n_jobs > 1 with warm_start=True requires row_reset=True. "
