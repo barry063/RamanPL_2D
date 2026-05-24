@@ -53,12 +53,12 @@ class BaselineAutotuneResult:
 
 _KNOWN_METHODS = {"asls", "arpls", "airpls", "poly", "gaussian"}
 
-# Parameters this v0.6.3 build is verified to forward correctly.
-# 'tol' is intentionally absent until a smoke test confirms support.
+# Parameters verified to be forwarded correctly to each baseline solver.
+# tol added in v0.6.4: confirmed forwarded by _baseline_arpls and _baseline_airpls.
 _ALLOWED_PARAMS = {
     "asls":     {"lam", "p", "niter"},
-    "arpls":    {"lam", "niter"},
-    "airpls":   {"lam", "niter"},
+    "arpls":    {"lam", "niter", "tol"},
+    "airpls":   {"lam", "niter", "tol"},
     "poly":     {"poly_order"},
     "gaussian": {"gaussian_sigma"},
 }

@@ -144,8 +144,8 @@ result = mapping.autotune_baseline(
 | Method | Allowed `method_grids` keys |
 |---|---|
 | `asls` | `lam`, `p`, `niter` |
-| `arpls` | `lam`, `niter` |
-| `airpls` | `lam`, `niter` |
+| `arpls` | `lam`, `niter`, `tol` |
+| `airpls` | `lam`, `niter`, `tol` |
 | `poly` | `poly_order` |
 | `gaussian` | `gaussian_sigma` |
 

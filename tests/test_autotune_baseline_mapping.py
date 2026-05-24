@@ -310,3 +310,16 @@ def test_method_grids_empty_param_list_raises(mapping_with_baseline):
             method_grids={"poly": {"poly_order": []}},
             plot=False,
         )
+
+
+# v0.6.4 — tol parameter
+# ---------------------------------------------------------------------------
+
+def test_tol_param_accepted_for_arpls(mapping_with_baseline):
+    result = mapping_with_baseline.autotune_baseline(
+        seed_coord=(0, 0),
+        method_grids={"arpls": {"lam": [1e5], "niter": [50], "tol": [1e-4, 1e-6]}},
+        plot=False,
+    )
+    assert len(result.ranking) == 2
+    assert all(np.isfinite(e["rmse"]) for e in result.ranking)
