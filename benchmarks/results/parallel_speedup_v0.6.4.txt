@@ -1,0 +1,23 @@
+Parallel fit speedup — v0.6.4
+Generated: 2026-05-24
+Machine: Windows 11, Intel/AMD CPU (see system info)
+Dataset: extended_15x15 (225 pixels, 150 spectral points)
+Backend: joblib loky
+
+n_starts=1 (warm_start=False):
+  n_jobs=1  runtime=15.29s  speedup=1.00x
+  n_jobs=2  runtime= 8.54s  speedup=1.79x
+  n_jobs=4  runtime= 6.32s  speedup=2.42x
+
+n_starts=4 (warm_start=False):
+  n_jobs=1  runtime=47.34s  speedup=1.00x
+  n_jobs=2  runtime=30.41s  speedup=1.56x
+  n_jobs=4  runtime=18.36s  speedup=2.58x
+
+Notes:
+- n_curve_fit_calls = 0 for n_jobs > 1 in the CSV because unittest.mock.patch
+  does not propagate across loky subprocess boundaries; call counts are only
+  valid for n_jobs=1 rows (the algorithmic baseline).
+- warm_start=True variants use n_jobs=1 only (serial state-propagation).
+- Speedup is sub-linear due to loky spawn overhead and GIL-free but
+  process-creation cost dominating for small cubes.
