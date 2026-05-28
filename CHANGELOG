@@ -34,6 +34,10 @@
   and default on both mapping classes.
 - `tests/test_release_benchmark_smoke.py` — expects `cluster_seeds` field in
   fit benchmark records.
+- `example-usage/Mapping/Mapping Raman Example.ipynb` and
+  `example-usage/Mapping/Mapping PL Example.ipynb` — `cluster_seeds` demo cells
+  added (Option B: markdown explanation + code cell after the existing `n_jobs`
+  section in each notebook).
 
 ### Known limitations
 

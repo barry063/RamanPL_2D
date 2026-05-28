@@ -86,6 +86,8 @@ mapping.fit_spectra(
 | `docs/source/api-stability.md` | §9 additive changes |
 | `CHANGELOG` | v0.6.5 section |
 | `docs/source/changelog.md` | v0.6.5 entry |
+| `example-usage/Mapping/Mapping Raman Example.ipynb` | `cluster_seeds` markdown + code demo cells (Option B) |
+| `example-usage/Mapping/Mapping PL Example.ipynb` | `cluster_seeds` markdown + code demo cells (Option B) |
 
 ---
 
@@ -132,7 +134,12 @@ The `n_curve_fit_calls` acceptance gate requires that cluster-seeded fitting use
 
 ### Notebook decision
 
-Notebook coverage for `cluster_seeds` is deferred. The user was not asked about notebook placement (options A/B/C from the action plan) during this implementation session. No notebook was written. This should be addressed before v0.6.6 or as a follow-up commit on the same branch.
+**Option B chosen** (demo cells inside existing mapping notebooks). Two cells (markdown explanation + code demo) were added to each of:
+
+- `example-usage/Mapping/Mapping Raman Example.ipynb`
+- `example-usage/Mapping/Mapping PL Example.ipynb`
+
+Both pairs are inserted immediately after the existing `n_jobs` demo section, following the same style. Each code cell demonstrates `cluster_seeds=True` (auto defaults) and `cluster_seeds={...}` (custom config). No standalone demo notebook was created.
 
 ---
 
