@@ -30,6 +30,13 @@ mapping.fit_spectra(
 | `n_jobs > self.Y` | Clamped to `self.Y` with `UserWarning` |
 | `n_jobs > 1`, `warm_start=True`, `row_reset=False` | `ValueError` — unsafe combination |
 | Non-integer or `n_jobs < 1` | `ValueError` |
+| `cluster_seeds=True`, `n_jobs > 1` | `ValueError` — cluster seeding is serial-only in v0.6.5 |
+
+## `cluster_seeds` is serial-only (v0.6.5)
+
+`cluster_seeds=True` requires `n_jobs=1`. Passing `n_jobs > 1` with `cluster_seeds=True` raises `ValueError` with a message naming both resolutions: use `n_jobs=1`, or set `cluster_seeds=False`.
+
+Two-phase parallel cluster dispatch is deferred to a later release.
 
 ## Why row-band parallelism?
 

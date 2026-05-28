@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "RamanPL_2D"
-version = "0.6.4"
+version = "0.6.5"
 description = "Python toolkit for Raman and photoluminescence spectroscopy analysis in 2D materials."
 readme = "README.md"
 requires-python = ">=3.9"

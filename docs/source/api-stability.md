@@ -146,3 +146,19 @@ Within the v0.5.x series:
 
 The regression test `tests/test_api_stability.py` enforces this contract
 automatically. Any change that breaks those tests is a breaking change.
+
+---
+
+## 9. v0.6.5 additive changes
+
+v0.6.5 adds the `cluster_seeds` keyword to `RamanMapping.fit_spectra` and
+`PLMapping.fit_spectra` with default `False`. This is a backward-compatible
+additive change: existing call sites receive the default and existing output
+is unchanged.
+
+The pre-fit spectral clustering used by `cluster_seeds=True` is implemented
+in `ramanpl.mapping._cluster_seeds` (package-private) and does not extend or
+alter the public `ramanpl.ml` surface. Frozen column vocabulary, QA columns,
+and feature-table schema are unchanged.
+
+Full freeze language for v0.6.5 additions is deferred to v0.6.6.

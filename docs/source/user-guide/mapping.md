@@ -64,6 +64,33 @@ raman_map.fit_spectra(
 
 **Warm start:** reuses the previous pixel's fit result as the initial guess for the next pixel — useful for spatially correlated maps.
 
+## Cluster-seeds warm-start (v0.6.5+)
+
+`cluster_seeds=True` groups spectra into clusters before fitting, fits one representative pixel per cluster first, and uses each representative's fitted parameters as the initial guess (`p0`) for the remaining pixels in that cluster.
+
+```python
+raman_map.fit_spectra(
+    warm_start=True,
+    cluster_seeds=True,           # opt-in; default False
+    fit_spectrum_kwargs={"random_state": 42},
+)
+```
+
+The default clustering uses `n_clusters = min(8, max(1, √(X×Y)))` PCA components and k-means. This is a pragmatic heuristic — it is not a principled optimal choice. For fine-grained control, pass a config dict:
+
+```python
+raman_map.fit_spectra(
+    cluster_seeds={"n_clusters": 6, "n_components": 3, "random_state": 42},
+)
+```
+
+**Constraints (v0.6.5):**
+
+- `cluster_seeds=True` requires `n_jobs=1`. Passing `n_jobs > 1` raises `ValueError`.
+- `cluster_seeds=True` and `seed_coord` are mutually exclusive.
+- The final reported parameters still come from normal Lorentzian / pseudo-Voigt least-squares fitting on each pixel. Cluster seeding only changes the initial guess; it does not alter the fitting model.
+- `scikit-learn` must be installed (`pip install ramanpl[ml]`). The base install is unaffected when `cluster_seeds=False` (default).
+
 ## Diagnostics modes
 
 | Mode | Behaviour |

@@ -52,7 +52,7 @@ __all__ = [
     "descriptors",
 ]
 
-__version__ = "0.6.4"
+__version__ = "0.6.5"
 
 # Attributes that should resolve to a class/object directly
 _LAZY_ATTR_MAP = {
