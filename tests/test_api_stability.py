@@ -257,3 +257,17 @@ def test_ramanpl_descriptors_public_surface_is_frozen():
     assert callable(descriptors.validate_peak_pairs), (
         "ramanpl.descriptors.validate_peak_pairs is not callable"
     )
+
+
+def test_cluster_seeds_keyword_present_on_both_mapping_classes():
+    """cluster_seeds=False keyword must exist on both fit_spectra methods (v0.6.5+)."""
+    import inspect
+    for cls, label in [(RamanMapping, "RamanMapping"), (PLMapping, "PLMapping")]:
+        sig = inspect.signature(cls.fit_spectra)
+        assert "cluster_seeds" in sig.parameters, (
+            f"{label}.fit_spectra is missing the cluster_seeds parameter"
+        )
+        default = sig.parameters["cluster_seeds"].default
+        assert default is False, (
+            f"{label}.fit_spectra cluster_seeds default should be False, got {default!r}"
+        )
