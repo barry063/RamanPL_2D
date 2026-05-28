@@ -1,0 +1,7 @@
+cluster_seeds=True vs cluster_seeds=False (serial, warm_start=False, n_starts=1)
+dataset                 baseline_calls   cs_calls   reduction%
+--------------------------------------------------------------
+small_3x4                           60         60         0.0%
+extended_15x15                    1125       1125         0.0%
+tall_axis_10x12                    600        600         0.0%
+noisy_5x8                          200        200         0.0%
