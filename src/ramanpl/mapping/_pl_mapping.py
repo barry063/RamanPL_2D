@@ -35,6 +35,7 @@ try:
         _merge_band_outputs,
         _pl_fit_band,
     )
+    from ._cluster_seeds import _normalise_cluster_seed_config
 except Exception:  # pragma: no cover
     from ramanpl.baselineAPI import BaselineAPI
     from ramanpl.dataImporter import DataImporter
@@ -62,6 +63,7 @@ except Exception:  # pragma: no cover
         _merge_band_outputs,
         _pl_fit_band,
     )
+    from ramanpl.mapping._cluster_seeds import _normalise_cluster_seed_config
 
 
 #########################################################################################################################
@@ -355,6 +357,7 @@ class PLMapping(_MappingPreprocessMixin):
         compute_peak_maps=True,
         show_progress=True,
         n_jobs=1,
+        cluster_seeds=False,
     ):
         """
         Fit all map spectra using self.custom_peaks as bounds.
@@ -400,6 +403,8 @@ class PLMapping(_MappingPreprocessMixin):
 
         if not hasattr(self, "custom_peaks") or not isinstance(self.custom_peaks, dict) or len(self.custom_peaks) == 0:
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
+
+        cluster_seed_cfg = _normalise_cluster_seed_config(cluster_seeds, X=self.X, Y=self.Y)
 
         # --- Shared preprocessing path (crop + smoothing + baseline) ---
         xdata, spectra_fit_cube = self._get_processed_mapping_cube()
