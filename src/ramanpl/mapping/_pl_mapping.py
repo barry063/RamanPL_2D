@@ -35,7 +35,12 @@ try:
         _merge_band_outputs,
         _pl_fit_band,
     )
-    from ._cluster_seeds import _normalise_cluster_seed_config
+    from ._cluster_seeds import (
+        _normalise_cluster_seed_config,
+        _cluster_spectra,
+        _representative_pixels,
+        _build_cluster_schedule,
+    )
 except Exception:  # pragma: no cover
     from ramanpl.baselineAPI import BaselineAPI
     from ramanpl.dataImporter import DataImporter
@@ -63,7 +68,12 @@ except Exception:  # pragma: no cover
         _merge_band_outputs,
         _pl_fit_band,
     )
-    from ramanpl.mapping._cluster_seeds import _normalise_cluster_seed_config
+    from ramanpl.mapping._cluster_seeds import (
+        _normalise_cluster_seed_config,
+        _cluster_spectra,
+        _representative_pixels,
+        _build_cluster_schedule,
+    )
 
 
 #########################################################################################################################
@@ -405,6 +415,11 @@ class PLMapping(_MappingPreprocessMixin):
             raise ValueError("custom_peaks is not set or empty. Provide custom_peaks when initialising PLMapping.")
 
         cluster_seed_cfg = _normalise_cluster_seed_config(cluster_seeds, X=self.X, Y=self.Y)
+        if cluster_seed_cfg is not None and n_jobs != 1:
+            raise ValueError(
+                "cluster_seeds=True requires n_jobs=1 in v0.6.5. "
+                "Either set n_jobs=1, or set cluster_seeds=False."
+            )
 
         # --- Shared preprocessing path (crop + smoothing + baseline) ---
         xdata, spectra_fit_cube = self._get_processed_mapping_cube()
@@ -427,6 +442,11 @@ class PLMapping(_MappingPreprocessMixin):
         p0_base = (lower_bound + upper_bound) / 2.0
 
         # --- optional: seed from a coordinate inside this mapping object ---
+        if cluster_seed_cfg is not None and seed_coord is not None:
+            raise ValueError(
+                "cluster_seeds=True and seed_coord are mutually exclusive. "
+                "Either drop seed_coord, or set cluster_seeds=False."
+            )
         if seed_coord is not None:
             if initial_p0 is not None:
                 raise ValueError("Provide either initial_p0 or seed_coord, not both.")
@@ -511,7 +531,51 @@ class PLMapping(_MappingPreprocessMixin):
 
         n_jobs = _validate_parallel_kwargs(n_jobs, warm_start, row_reset, self.Y)
 
-        if n_jobs == 1:
+        _common_pixel_kwargs = dict(
+            fitted_params=fitted_params, spectra_fit_cube=spectra_fit_cube, xdata=xdata,
+            lower_bound=lower_bound, upper_bound=upper_bound, n_params=n_params,
+            p0_base=p0_base, model_fn=model_fn, stride=stride,
+            warm_start=warm_start, warm_start_rmse_gate=warm_start_rmse_gate,
+            reset_on_fail=reset_on_fail, fit_normalize=fit_normalize, maxfev=maxfev,
+            adaptive_multistart=adaptive_multistart,
+            fast_n_starts=fast_n_starts, fast_p0_strategy=fast_p0_strategy,
+            fast_random_state=fast_random_state,
+            fallback_n_starts=fallback_n_starts, fallback_p0_strategy=fallback_p0_strategy,
+            fallback_random_state=fallback_random_state,
+            retry_on_fail=retry_on_fail, retry_on_high_rmse=retry_on_high_rmse,
+            retry_on_bound_hit=retry_on_bound_hit, retry_rmse_gate=retry_rmse_gate,
+            width_penalty=width_penalty, prefer_nonbound=prefer_nonbound,
+            score_tie_tol=score_tie_tol, diagnostics_mode=diagnostics_mode,
+        )
+
+        if cluster_seed_cfg is not None:
+            labels, cs_meta = _cluster_spectra(
+                spectra_fit_cube,
+                n_clusters=cluster_seed_cfg["n_clusters"],
+                n_components=cluster_seed_cfg["n_components"],
+                random_state=cluster_seed_cfg["random_state"],
+            )
+            reps = _representative_pixels(spectra_fit_cube, labels, cs_meta)
+            schedule = _build_cluster_schedule(labels, reps)
+            pbar = tqdm(
+                total=self.Y * self.X,
+                desc="Fitting (PL mapping, cluster seeds)",
+                disable=not show_progress,
+                mininterval=0.5,
+            )
+            for entry in schedule:
+                sx, sy = entry["seed"]
+                self._fit_single_pixel(sy, sx, p0_current=p0_base.copy(), **_common_pixel_kwargs)
+                pbar.update(1)
+                rep_params = fitted_params[sy, sx, :]
+                cluster_p0 = rep_params.copy() if np.all(np.isfinite(rep_params)) else p0_base.copy()
+                p0_member = cluster_p0.copy()
+                for mx, my in entry["members"]:
+                    start_p0 = p0_member.copy() if warm_start else cluster_p0.copy()
+                    p0_member = self._fit_single_pixel(my, mx, p0_current=start_p0, **_common_pixel_kwargs)
+                    pbar.update(1)
+            pbar.close()
+        elif n_jobs == 1:
             pbar = tqdm(
                 total=self.Y * self.X,
                 desc="Fitting (PL mapping)",
@@ -613,6 +677,163 @@ class PLMapping(_MappingPreprocessMixin):
 
         self.fitted_params = fitted_params
         return fitted_params
+
+    def _fit_single_pixel(
+        self, j, i, *,
+        fitted_params, spectra_fit_cube, xdata,
+        lower_bound, upper_bound, n_params,
+        p0_current, p0_base,
+        model_fn, stride,
+        warm_start, warm_start_rmse_gate, reset_on_fail,
+        fit_normalize, maxfev,
+        adaptive_multistart,
+        fast_n_starts, fast_p0_strategy, fast_random_state,
+        fallback_n_starts, fallback_p0_strategy, fallback_random_state,
+        retry_on_fail, retry_on_high_rmse, retry_on_bound_hit, retry_rmse_gate,
+        width_penalty, prefer_nonbound, score_tie_tol,
+        diagnostics_mode,
+    ):
+        """Fit a single pixel (j, i), store all results, return new p0_current."""
+
+        def _store(payload):
+            if self.fit_diagnostics_map is None:
+                return
+            if diagnostics_mode == "full":
+                self.fit_diagnostics_map[j, i] = payload
+                return
+            light = {"ok": payload.get("ok")}
+            for k in ("reason", "rmse", "n_starts", "n_fail", "p0_strategy",
+                      "adaptive_retry_used", "n_params_at_lower_bounds",
+                      "n_params_at_upper_bounds"):
+                if k in payload:
+                    light[k] = payload[k]
+            self.fit_diagnostics_map[j, i] = light
+
+        y = np.asarray(spectra_fit_cube[j, i, :], dtype=float)
+        y_fitspace, s = self._prepare_fit_spectrum(xdata, y, fit_normalize=fit_normalize)
+
+        if y_fitspace is None:
+            self.norm_scale_map[j, i] = np.nan
+            self.residual_map[j, i] = np.nan
+            _store({"ok": False, "reason": "no_positive_signal"})
+            return p0_base.copy() if reset_on_fail else p0_current.copy()
+
+        self.norm_scale_map[j, i] = float(s)
+
+        retry_used = False
+        retry_result = None
+
+        if adaptive_multistart:
+            quick_result = _run_mapping_curve_fit_trials(
+                model_fn=model_fn, x=xdata, y=y_fitspace,
+                lower_bound=lower_bound, upper_bound=upper_bound,
+                p0_current=p0_current, maxfev=maxfev,
+                n_starts=fast_n_starts, p0_strategy=fast_p0_strategy,
+                random_state=fast_random_state, width_penalty=width_penalty,
+                prefer_nonbound=prefer_nonbound, score_tie_tol=score_tie_tol,
+                peak_profile=self.peak_profile, stride=stride,
+            )
+            fit_result = quick_result
+            need_retry = (not quick_result["ok"] and retry_on_fail) or \
+                         (quick_result["ok"] and retry_on_high_rmse and quick_result["best_rmse"] > retry_rmse_gate) or \
+                         (quick_result["ok"] and retry_on_bound_hit and quick_result["best_hits"] > 0)
+            if need_retry and fallback_n_starts > 1:
+                retry_used = True
+                retry_result = _run_mapping_curve_fit_trials(
+                    model_fn=model_fn, x=xdata, y=y_fitspace,
+                    lower_bound=lower_bound, upper_bound=upper_bound,
+                    p0_current=p0_current, maxfev=maxfev,
+                    n_starts=fallback_n_starts, p0_strategy=fallback_p0_strategy,
+                    random_state=fallback_random_state, width_penalty=width_penalty,
+                    prefer_nonbound=prefer_nonbound, score_tie_tol=score_tie_tol,
+                    peak_profile=self.peak_profile, stride=stride,
+                )
+                if retry_result["ok"]:
+                    if not fit_result["ok"]:
+                        fit_result = retry_result
+                    else:
+                        better = retry_result["best_score"] < fit_result["best_score"]
+                        near_tie = abs(retry_result["best_score"] - fit_result["best_score"]) <= score_tie_tol
+                        if better or (prefer_nonbound and near_tie and
+                                      retry_result["best_hits"] < fit_result["best_hits"]):
+                            fit_result = retry_result
+                elif not fit_result["ok"]:
+                    fit_result = retry_result
+            n_fail_total = quick_result["n_fail"] + (retry_result["n_fail"] if retry_result else 0)
+            n_starts_total = fast_n_starts + (fallback_n_starts if retry_used else 0)
+        else:
+            fit_result = _run_mapping_curve_fit_trials(
+                model_fn=model_fn, x=xdata, y=y_fitspace,
+                lower_bound=lower_bound, upper_bound=upper_bound,
+                p0_current=p0_current, maxfev=maxfev,
+                n_starts=fallback_n_starts, p0_strategy=fallback_p0_strategy,
+                random_state=fallback_random_state, width_penalty=width_penalty,
+                prefer_nonbound=prefer_nonbound, score_tie_tol=score_tie_tol,
+                peak_profile=self.peak_profile, stride=stride,
+            )
+            n_fail_total = fit_result["n_fail"]
+            n_starts_total = fit_result["n_starts"]
+
+        strategy = "adaptive" if adaptive_multistart else fallback_p0_strategy
+
+        if not fit_result["ok"]:
+            fitted_params[j, i, :] = np.nan
+            self.residual_map[j, i] = np.nan
+            _store({"ok": False, "n_starts": n_starts_total, "n_fail": n_fail_total,
+                    "p0_strategy": strategy, "adaptive_retry_used": bool(retry_used)})
+            return p0_base.copy() if reset_on_fail else p0_current.copy()
+
+        best_params = fit_result["best_params"]
+        best_rmse = fit_result["best_rmse"]
+        best_p0 = fit_result["best_p0"]
+
+        if best_params is None:
+            fitted_params[j, i, :] = np.nan
+            self.residual_map[j, i] = np.nan
+            _store({"ok": False, "n_starts": n_starts_total, "n_fail": n_fail_total,
+                    "p0_strategy": strategy, "adaptive_retry_used": bool(retry_used)})
+            return p0_base.copy() if reset_on_fail else p0_current.copy()
+
+        fitted_params[j, i, :] = best_params
+        self.residual_map[j, i] = float(best_rmse)
+        at_lo = _params_at_bounds(best_params, lower_bound, upper_bound, which="lower", rtol=1e-6)
+        at_hi = _params_at_bounds(best_params, lower_bound, upper_bound, which="upper", rtol=1e-6)
+
+        payload = {
+            "ok": True, "rmse": float(best_rmse), "n_starts": n_starts_total,
+            "n_fail": n_fail_total, "p0_strategy": strategy,
+            "adaptive_retry_used": bool(retry_used),
+            "n_params_at_lower_bounds": int(np.count_nonzero(at_lo)),
+            "n_params_at_upper_bounds": int(np.count_nonzero(at_hi)),
+        }
+        if diagnostics_mode == "full":
+            payload["best_p0"] = np.asarray(best_p0, dtype=float)
+            payload["params_at_lower_bounds_mask"] = at_lo
+            payload["params_at_upper_bounds_mask"] = at_hi
+        _store(payload)
+
+        n_peaks = len(self.peak_params)
+        for k in range(n_peaks):
+            block = np.asarray(best_params[stride * k:stride * (k + 1)], dtype=float)
+            centre = float(block[0])
+            self.peak_positions[j, i, k] = centre
+            if self.peak_profile == "lorentzian":
+                hwhm = float(block[1])
+                amp_area = float(block[2])
+                hf = amp_area / (np.pi * hwhm) if (np.isfinite(hwhm) and hwhm > 0) else np.nan
+            else:
+                y_one = single_peak(xdata, block, profile="pvoigt")
+                hf = float(np.nanmax(y_one))
+            if self.normalize:
+                self.peak_intensities[j, i, k] = hf
+            else:
+                self.peak_intensities[j, i, k] = hf * float(self.norm_scale_map[j, i]) if fit_normalize else hf
+
+        if warm_start and best_rmse <= warm_start_rmse_gate:
+            return np.asarray(best_params, dtype=float)
+        if reset_on_fail:
+            return p0_base.copy()
+        return p0_current.copy()
 
     def _fit_rows(
         self,
