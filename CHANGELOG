@@ -1,5 +1,51 @@
 # Changelog
 
+## [v0.6.5] — 2026-05-28 — Similarity-based seed selection for warm-start
+
+### Added
+
+- `cluster_seeds` keyword on `RamanMapping.fit_spectra` and `PLMapping.fit_spectra`
+  (default `False`; backward-compatible).  When `True` or a config dict, preprocessed
+  spectra are clustered with PCA + k-means (scikit-learn), one representative pixel
+  per cluster is fitted first, and each representative's fitted parameters are used as
+  the initial guess for remaining pixels in that cluster.
+- `src/ramanpl/mapping/_cluster_seeds.py` — package-private helpers:
+  `_require_sklearn_for_cluster_seeds`, `_normalise_cluster_seed_config`,
+  `_spectral_feature_matrix`, `_cluster_spectra`, `_representative_pixels`,
+  `_build_cluster_schedule`.  All sklearn imports are lazy; base install unaffected.
+- `_fit_single_pixel` private method on both mapping classes — minimal per-pixel
+  fit wrapper enabling the cluster-seeded dispatch without modifying `_fit_rows`.
+- `tests/test_cluster_seed_helpers.py` — 15 tests for helpers and schedule invariants.
+- `tests/test_cluster_seed_fit_mapping.py` — 15 integration tests covering parity,
+  serial completion, success-rate gate, tolerance, mutual exclusions, parallel guard.
+- `benchmarks/results/mapping_fit_benchmark_v0.6.5.csv` — versioned benchmark
+  results including `cluster_seeds` axis across 4 dataset sizes.
+- `benchmarks/results/cluster_seed_speedup_v0.6.5.txt` — call-count comparison.
+- `docs/source/user-guide/mapping.md` — `cluster_seeds` usage example.
+- `docs/source/user-guide/parallel-fitting.md` — v0.6.5 serial-only constraint.
+- `docs/source/api-stability.md` — §9 documents the additive `cluster_seeds` change.
+- `closeout_v0.6.5.md` — release closeout document.
+
+### Changed
+
+- `benchmarks/benchmark_mapping_fit.py` — `cluster_seeds` axis added to result
+  schema and `build_fit_kwargs_variants`; new `noisy_5x8` benchmark case added.
+- `tests/test_api_stability.py` — new test pins `cluster_seeds` keyword presence
+  and default on both mapping classes.
+- `tests/test_release_benchmark_smoke.py` — expects `cluster_seeds` field in
+  fit benchmark records.
+
+### Known limitations
+
+- `cluster_seeds=True` is serial-only (`n_jobs=1` required). Two-phase parallel
+  cluster dispatch is deferred.
+- On homogeneous synthetic benchmark cubes, `n_curve_fit_calls` is identical for
+  `cluster_seeds=True` and `cluster_seeds=False` because the optimizer converges
+  to the global minimum from any reasonable starting point. The call-count benefit
+  manifests on real multi-domain spectroscopic data.
+
+---
+
 ## [v0.6.4] — 2026-05-24 — Parallel mapping fit with row-band warm-start
 
 ### Added
