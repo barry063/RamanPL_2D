@@ -55,6 +55,10 @@
   `residual_map` under `cluster_seeds=True`.
 - `tests/test_cluster_seed_helpers.py` — updated six `_build_cluster_schedule` fixtures
   to the new `(cluster_id, (x, y))` representative format.
+- `benchmarks/benchmark_mapping_fit.py` — speedup summary header corrected from
+  `n_starts=1` to `n_starts=4`; the baseline rows were already filtered to
+  `n_starts=4` and the cluster-seed variants are built with `n_starts=4`, so the
+  file was documenting the wrong experimental setting.
 - `src/ramanpl/mapping/_raman_mapping.py` and `_pl_mapping.py` — cluster seed
   broadcast now gates on `warm_start_rmse_gate` before setting `cluster_p0`.
   Previously only finiteness was checked, so a representative whose fit converged but
