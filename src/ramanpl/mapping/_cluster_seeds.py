@@ -229,8 +229,8 @@ def _representative_pixels(cube, labels, metadata):
 
     Returns
     -------
-    representatives : list of (x, y) tuples, one per non-empty cluster,
-        in ascending cluster-id order.
+    representatives : list of (cluster_id, (x, y)) tuples, one per non-empty
+        cluster, in ascending cluster-id order.
     """
     embedding = metadata["embedding"]     # [n_valid, n_comp]
     valid_coords = metadata["valid_coords"]  # [(y, x), ...]
@@ -251,7 +251,7 @@ def _representative_pixels(cube, labels, metadata):
         dists = np.sum((cluster_emb - centroid) ** 2, axis=1)
         best = member_row_idxs[int(np.argmin(dists))]
         j, i = valid_coords[best]
-        representatives.append((i, j))  # return as (x, y)
+        representatives.append((k, (i, j)))  # (cluster_id, (x, y))
 
     return representatives
 
@@ -267,8 +267,8 @@ def _build_cluster_schedule(labels, representatives):
     ----------
     labels : ndarray [Y, X]
         Cluster assignment; -1 for invalid pixels.
-    representatives : list of (x, y)
-        ``representatives[k]`` is the seed coordinate for cluster k.
+    representatives : list of (cluster_id, (x, y))
+        As returned by ``_representative_pixels``.
 
     Returns
     -------
@@ -280,15 +280,15 @@ def _build_cluster_schedule(labels, representatives):
     Y, X = labels.shape
     schedule = []
 
-    for k, seed in enumerate(representatives):
-        # All valid pixels in cluster k, row-major order
+    for cluster_id, seed in representatives:
+        # All valid pixels in this cluster, row-major order
         cluster_pixels = [
             (i, j) for j in range(Y) for i in range(X)
-            if labels[j, i] == k
+            if labels[j, i] == cluster_id
         ]
         if not cluster_pixels:
             continue
         members = [px for px in cluster_pixels if px != seed]
-        schedule.append({"cluster": k, "seed": seed, "members": members})
+        schedule.append({"cluster": cluster_id, "seed": seed, "members": members})
 
     return schedule

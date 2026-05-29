@@ -176,7 +176,7 @@ def test_representative_pixels_are_in_bounds():
     reps = _representative_pixels(cube, labels, metadata)
     n_non_empty = len(np.unique(labels[labels >= 0]))
     assert len(reps) == n_non_empty
-    for x, y in reps:
+    for _, (x, y) in reps:
         assert 0 <= x < X, f"x={x} out of bounds [0, {X})"
         assert 0 <= y < Y, f"y={y} out of bounds [0, {Y})"
 
@@ -207,7 +207,7 @@ def test_build_cluster_schedule_single_cluster():
     """One cluster: one seed entry whose members cover all other pixels."""
     Y, X = 2, 3
     labels = _make_labels(Y, X, [0, 0, 0, 0, 0, 0])
-    reps = [(0, 0)]  # (x=0, y=0) is the representative
+    reps = [(0, (0, 0))]  # cluster_id=0, (x=0, y=0) is the representative
     schedule = _build_cluster_schedule(labels, reps)
     assert len(schedule) == 1
     entry = schedule[0]
@@ -228,7 +228,7 @@ def test_build_cluster_schedule_multiple_clusters():
     # 4x4 grid: top-left 2x4 = cluster 0, bottom-left 2x4 = cluster 1
     assignment = [0] * 8 + [1] * 8
     labels = _make_labels(Y, X, assignment)
-    reps = [(0, 0), (0, 2)]  # (x=0, y=0) for cluster 0; (x=0, y=2) for cluster 1
+    reps = [(0, (0, 0)), (1, (0, 2))]  # cluster_id=0 seed (x=0,y=0); cluster_id=1 seed (x=0,y=2)
     schedule = _build_cluster_schedule(labels, reps)
 
     assert len(schedule) == 2
@@ -249,7 +249,7 @@ def test_build_cluster_schedule_invalid_pixels_excluded():
     Y, X = 3, 3
     # Centre pixel is invalid (-1)
     labels = _make_labels(Y, X, [0, 0, 0, 0, -1, 0, 0, 0, 0])
-    reps = [(0, 0)]
+    reps = [(0, (0, 0))]
     schedule = _build_cluster_schedule(labels, reps)
 
     all_pixels = set()
@@ -267,7 +267,7 @@ def test_build_cluster_schedule_empty_cluster_ignored():
     # All pixels in cluster 0; cluster 1 has no pixels
     labels = _make_labels(Y, X, [0, 0, 0, 0])
     # Representative for cluster 1 points to a valid coord but no pixels belong to it
-    reps = [(0, 0), (1, 1)]  # rep for non-existent cluster 1 shouldn't matter
+    reps = [(0, (0, 0)), (1, (1, 1))]  # rep for non-existent cluster 1 shouldn't matter
     schedule = _build_cluster_schedule(labels, reps)
     cluster_ids = [e["cluster"] for e in schedule]
     assert 1 not in cluster_ids  # cluster 1 absent from schedule
@@ -277,7 +277,7 @@ def test_build_cluster_schedule_member_order_is_row_major():
     """Members within each cluster are in row-major (y, x) order."""
     Y, X = 3, 4
     labels = np.zeros((Y, X), dtype=np.intp)
-    reps = [(0, 0)]  # seed at (x=0, y=0)
+    reps = [(0, (0, 0))]  # cluster_id=0, seed at (x=0, y=0)
     schedule = _build_cluster_schedule(labels, reps)
     members = schedule[0]["members"]
     # All pixels except seed, in row-major order
