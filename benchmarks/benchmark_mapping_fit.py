@@ -302,7 +302,7 @@ def write_cluster_seed_speedup(results, output_path=_V065_SPEEDUP_OUTPUT):
         and r.get("n_jobs", 1) == 1
     ]
 
-    lines = ["cluster_seeds=True vs cluster_seeds=False (serial, warm_start=False, n_starts=1)\n"]
+    lines = ["cluster_seeds=True vs cluster_seeds=False (serial, warm_start=False, n_starts=4)\n"]
     lines.append(f"{'dataset':<22} {'baseline_calls':>15} {'cs_calls':>10} {'reduction%':>12}\n")
     lines.append("-" * 62 + "\n")
 
