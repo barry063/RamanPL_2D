@@ -74,8 +74,10 @@ mapping.fit_spectra(
 | `src/ramanpl/mapping/_raman_mapping.py` | `cluster_seeds` keyword, validation, `_fit_single_pixel`, cluster dispatch |
 | `src/ramanpl/mapping/_pl_mapping.py` | Same as Raman |
 | `benchmarks/benchmark_mapping_fit.py` | `cluster_seeds` axis; `noisy_5x8` case; speedup writer |
+| `benchmarks/validation_v0.6.0_vs_v0.5.0.py` | `"cluster_seeds"` and `"n_jobs"` added to `_CSV_FIELDS`; same fields added to `_run_hard_case` return dict (post-merge CI fix) |
 | `tests/test_api_stability.py` | New test for `cluster_seeds` keyword presence |
 | `tests/test_release_benchmark_smoke.py` | Expects `cluster_seeds` field in records |
+| `tests/test_cluster_seed_helpers.py` | Six `_build_cluster_schedule` fixtures updated to `(cluster_id, (x, y))` format (post-merge fix) |
 | `tests/test_packaging_smoke.py` | Version bump to `0.6.5` |
 | `pyproject.toml` | Version: `0.6.5` |
 | `src/ramanpl/__init__.py` | `__version__ = "0.6.5"` |

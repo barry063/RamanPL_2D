@@ -39,6 +39,23 @@
   added (Option B: markdown explanation + code cell after the existing `n_jobs`
   section in each notebook).
 
+### Fixed
+
+- `benchmarks/validation_v0.6.0_vs_v0.5.0.py` — `"cluster_seeds"` and `"n_jobs"`
+  added to `_CSV_FIELDS`; `"n_jobs": 1` and `"cluster_seeds": False` added to the
+  hand-built `_run_hard_case` return dict.  CI regression: `run_mapping_fit_case`
+  (extended in v0.6.5) returns a `cluster_seeds` key that `csv.DictWriter` rejected
+  with `ValueError: dict contains fields not in fieldnames: 'cluster_seeds'`.
+- `src/ramanpl/mapping/_cluster_seeds.py` — `_representative_pixels` now returns
+  `(cluster_id, (x, y))` pairs instead of bare `(x, y)` tuples; `_build_cluster_schedule`
+  unpacks the actual cluster ID rather than using `enumerate`.  When KMeans produces
+  non-contiguous labels (e.g. `{0, 2}` on low-diversity or duplicate spectra), the old
+  `enumerate` index `k=1` looked for pixels with `labels[j, i] == 1`, found none, and
+  silently skipped every pixel in cluster 2, leaving NaNs in `fitted_params` and
+  `residual_map` under `cluster_seeds=True`.
+- `tests/test_cluster_seed_helpers.py` — updated six `_build_cluster_schedule` fixtures
+  to the new `(cluster_id, (x, y))` representative format.
+
 ### Known limitations
 
 - `cluster_seeds=True` is serial-only (`n_jobs=1` required). Two-phase parallel
