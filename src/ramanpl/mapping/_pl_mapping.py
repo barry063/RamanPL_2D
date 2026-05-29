@@ -557,6 +557,12 @@ class PLMapping(_MappingPreprocessMixin):
             )
             reps = _representative_pixels(spectra_fit_cube, labels, cs_meta)
             schedule = _build_cluster_schedule(labels, reps)
+            invalid_mask = (labels == -1)
+            if invalid_mask.any():
+                self.residual_map[invalid_mask] = np.nan
+                self.norm_scale_map[invalid_mask] = np.nan
+                self.peak_positions[invalid_mask] = np.nan
+                self.peak_intensities[invalid_mask] = np.nan
             pbar = tqdm(
                 total=self.Y * self.X,
                 desc="Fitting (PL mapping, cluster seeds)",

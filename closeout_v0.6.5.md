@@ -79,6 +79,8 @@ mapping.fit_spectra(
 | `tests/test_release_benchmark_smoke.py` | Expects `cluster_seeds` field in records |
 | `tests/test_cluster_seed_helpers.py` | Six `_build_cluster_schedule` fixtures updated to `(cluster_id, (x, y))` format (post-merge fix) |
 | `benchmarks/benchmark_mapping_fit.py` | Speedup summary header corrected from `n_starts=1` to `n_starts=4` (post-merge fix) |
+| `src/ramanpl/mapping/_raman_mapping.py` | Invalid pixels NaN-ised before cluster schedule loop (post-merge fix) |
+| `src/ramanpl/mapping/_pl_mapping.py` | Same as Raman (post-merge fix) |
 | `src/ramanpl/mapping/_raman_mapping.py` | Cluster seed broadcast gated on `warm_start_rmse_gate` (post-merge fix) |
 | `src/ramanpl/mapping/_pl_mapping.py` | Same as Raman (post-merge fix) |
 | `tests/test_packaging_smoke.py` | Version bump to `0.6.5` |

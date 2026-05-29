@@ -59,6 +59,13 @@
   `n_starts=1` to `n_starts=4`; the baseline rows were already filtered to
   `n_starts=4` and the cluster-seed variants are built with `n_starts=4`, so the
   file was documenting the wrong experimental setting.
+- `src/ramanpl/mapping/_raman_mapping.py` and `_pl_mapping.py` — invalid pixels
+  (those labeled `-1` by `_cluster_spectra`) are now explicitly NaN-ised in
+  `residual_map`, `norm_scale_map`, `peak_positions`, `peak_intensities`, and the
+  Raman-specific derived maps (`Peaks_distance`, `ratio_A1g_E2g`, `ratio_E2g_A1g`)
+  before the cluster schedule loop.  Previously those pixels were silently skipped,
+  so stale values from a prior `fit_spectra()` call were retained and could be
+  counted or exported as successful fits.
 - `src/ramanpl/mapping/_raman_mapping.py` and `_pl_mapping.py` — cluster seed
   broadcast now gates on `warm_start_rmse_gate` before setting `cluster_p0`.
   Previously only finiteness was checked, so a representative whose fit converged but
