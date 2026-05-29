@@ -78,6 +78,8 @@ mapping.fit_spectra(
 | `tests/test_api_stability.py` | New test for `cluster_seeds` keyword presence |
 | `tests/test_release_benchmark_smoke.py` | Expects `cluster_seeds` field in records |
 | `tests/test_cluster_seed_helpers.py` | Six `_build_cluster_schedule` fixtures updated to `(cluster_id, (x, y))` format (post-merge fix) |
+| `src/ramanpl/mapping/_raman_mapping.py` | Cluster seed broadcast gated on `warm_start_rmse_gate` (post-merge fix) |
+| `src/ramanpl/mapping/_pl_mapping.py` | Same as Raman (post-merge fix) |
 | `tests/test_packaging_smoke.py` | Version bump to `0.6.5` |
 | `pyproject.toml` | Version: `0.6.5` |
 | `src/ramanpl/__init__.py` | `__version__ = "0.6.5"` |

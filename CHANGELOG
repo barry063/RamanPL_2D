@@ -55,6 +55,13 @@
   `residual_map` under `cluster_seeds=True`.
 - `tests/test_cluster_seed_helpers.py` — updated six `_build_cluster_schedule` fixtures
   to the new `(cluster_id, (x, y))` representative format.
+- `src/ramanpl/mapping/_raman_mapping.py` and `_pl_mapping.py` — cluster seed
+  broadcast now gates on `warm_start_rmse_gate` before setting `cluster_p0`.
+  Previously only finiteness was checked, so a representative whose fit converged but
+  exceeded the gate would still seed every cluster member — exactly the propagation the
+  gate exists to prevent.  The fix reads `self.residual_map[sy, sx]` (written by
+  `_fit_single_pixel`) and falls back to `p0_base` when the RMSE is non-finite or
+  above the gate.
 
 ### Known limitations
 

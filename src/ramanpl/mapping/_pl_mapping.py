@@ -568,7 +568,14 @@ class PLMapping(_MappingPreprocessMixin):
                 self._fit_single_pixel(sy, sx, p0_current=p0_base.copy(), **_common_pixel_kwargs)
                 pbar.update(1)
                 rep_params = fitted_params[sy, sx, :]
-                cluster_p0 = rep_params.copy() if np.all(np.isfinite(rep_params)) else p0_base.copy()
+                rep_rmse = self.residual_map[sy, sx]
+                cluster_p0 = (
+                    rep_params.copy()
+                    if (np.all(np.isfinite(rep_params))
+                        and np.isfinite(rep_rmse)
+                        and rep_rmse <= warm_start_rmse_gate)
+                    else p0_base.copy()
+                )
                 p0_member = cluster_p0.copy()
                 for mx, my in entry["members"]:
                     start_p0 = p0_member.copy() if warm_start else cluster_p0.copy()
