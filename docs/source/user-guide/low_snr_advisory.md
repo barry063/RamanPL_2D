@@ -77,7 +77,24 @@ Common signs of bounds problems to look for in `plot_fit()`:
 
 ---
 
-## Step 3 — Trial preprocessing settings
+## Step 3 — Trial preprocessing settings with baseline autotune
+
+Before manually sweeping preprocessing parameters, consider using the
+**baseline autotune workflow** (v0.6.2+) to systematically score a grid of
+baseline configurations on the seed pixel. This is a diagnostic step — it does
+not modify the object or run a full map fit until you explicitly call
+`apply_choice()`.
+
+```python
+result = raman_map.autotune_baseline(seed_coord=(iy, ix), plot=True)
+# Inspect the ranking, then commit the winner:
+raman_map.apply_choice(result.winner)
+```
+
+See {doc}`baseline-autotune` for the full API and default grid.
+
+If you prefer manual tuning, the guidance below still applies. The two most
+impactful controls are smoothing and the baseline correction method.
 
 Preprocessing has a large effect on fitting success for low-SNR data. The two most impactful controls are smoothing and the baseline correction method.
 
@@ -166,6 +183,30 @@ However, for low-SNR data the extra parameter is a liability:
 After fitting with pseudo-Voigt, check `n_params_at_bounds` — if η is consistently hitting 0 or 1 across the map, the data cannot constrain the mixing and a Lorentzian will be both faster and more reliable.
 
 ---
+
+## Step 5b — Use cluster seeds for spatially heterogeneous maps (v0.6.5+)
+
+If your map contains distinct spectral domains (e.g. different layer counts,
+strain regions, or heterostructure boundaries), `cluster_seeds=True` groups
+spectra by similarity before fitting and uses a per-cluster representative fit
+as the initial guess (`p0`) for every pixel in that cluster.
+
+```python
+raman_map.fit_spectra(
+    warm_start=True,
+    cluster_seeds=True,    # opt-in; default False; requires n_jobs=1
+    fit_spectrum_kwargs={"n_starts": 4},
+)
+```
+
+**Important limitations:**
+
+- `cluster_seeds=True` changes the initial guess only. Final parameters still
+  come from normal least-squares fitting on each pixel — it does not alter the
+  fitting model.
+- On spectrally homogeneous cubes this typically provides no advantage over
+  the default initialisation.
+- Requires `n_jobs=1` and `pip install ramanpl[ml]`.
 
 ## Step 6 — Increase multistart attempts for genuinely hard pixels
 

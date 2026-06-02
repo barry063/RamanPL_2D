@@ -64,6 +64,22 @@ raman_map.fit_spectra(
 
 **Warm start:** reuses the previous pixel's fit result as the initial guess for the next pixel — useful for spatially correlated maps.
 
+## Progress reporting (v0.6.1+)
+
+`fit_spectra` displays a per-pixel progress bar by default (`show_progress=True`).
+To suppress it, pass `show_progress=False`. This has no effect on fit results or
+exported data.
+
+```python
+raman_map.fit_spectra(show_progress=False)
+```
+
+## Parallel fitting (v0.6.4+)
+
+`n_jobs=1` (serial) is the default. Pass `n_jobs=N` to distribute the pixel row
+loop across N worker processes. See {doc}`parallel-fitting` for constraints,
+safe/unsafe warm-start modes, and the `cluster_seeds` serial-only limitation.
+
 ## Cluster-seeds warm-start (v0.6.5+)
 
 `cluster_seeds=True` groups spectra into clusters before fitting, fits one representative pixel per cluster first, and uses each representative's fitted parameters as the initial guess (`p0`) for the remaining pixels in that cluster.

@@ -1,7 +1,7 @@
 """
 test_api_stability.py
 ---------------------
-Freeze regression tests for the v0.5.5 public-surface contract.
+Freeze regression tests for the public-surface contract (v0.5.5 through v0.6.6).
 
 Enforces the additive-only column rule and frozen suffix/QA vocabulary
 documented in docs/source/api-stability.md.
@@ -271,3 +271,103 @@ def test_cluster_seeds_keyword_present_on_both_mapping_classes():
         assert default is False, (
             f"{label}.fit_spectra cluster_seeds default should be False, got {default!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1 — show_progress contract
+# ---------------------------------------------------------------------------
+
+def test_show_progress_keyword_on_mapping_fit_spectra():
+    """show_progress=True must be the frozen default on both mapping fit_spectra (v0.6.1+)."""
+    import inspect
+    for cls, label in [(RamanMapping, "RamanMapping"), (PLMapping, "PLMapping")]:
+        sig = inspect.signature(cls.fit_spectra)
+        assert "show_progress" in sig.parameters, (
+            f"{label}.fit_spectra is missing the show_progress parameter"
+        )
+        default = sig.parameters["show_progress"].default
+        assert default is True, (
+            f"{label}.fit_spectra show_progress default should be True, got {default!r}"
+        )
+
+
+def test_show_progress_keyword_on_batch_fit():
+    """show_progress=True must be the frozen default on the public batch fit entry point (v0.6.1+)."""
+    import inspect
+    from ramanpl.batch import fit_spectra_batch
+    sig = inspect.signature(fit_spectra_batch)
+    assert "show_progress" in sig.parameters, (
+        "fit_spectra_batch is missing the show_progress parameter"
+    )
+    default = sig.parameters["show_progress"].default
+    assert default is True, (
+        f"fit_spectra_batch show_progress default should be True, got {default!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.4 — n_jobs contract
+# ---------------------------------------------------------------------------
+
+def test_n_jobs_keyword_on_mapping_fit_spectra():
+    """n_jobs=1 must be the frozen default on both mapping fit_spectra methods (v0.6.4+)."""
+    import inspect
+    for cls, label in [(RamanMapping, "RamanMapping"), (PLMapping, "PLMapping")]:
+        sig = inspect.signature(cls.fit_spectra)
+        assert "n_jobs" in sig.parameters, (
+            f"{label}.fit_spectra is missing the n_jobs parameter"
+        )
+        default = sig.parameters["n_jobs"].default
+        assert default == 1, (
+            f"{label}.fit_spectra n_jobs default should be 1, got {default!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.2 — autotune contract
+# ---------------------------------------------------------------------------
+
+def test_autotune_methods_exist_on_mapping_and_single_fit():
+    """autotune_baseline and apply_choice must exist on all four public fit objects (v0.6.2+)."""
+    from ramanpl.single_fit.RamanFit import RamanFit
+    from ramanpl.single_fit.PLfit import PLfit
+    targets = [
+        (RamanMapping, "RamanMapping"),
+        (PLMapping, "PLMapping"),
+        (RamanFit, "RamanFit"),
+        (PLfit, "PLfit"),
+    ]
+    for cls, label in targets:
+        assert callable(getattr(cls, "autotune_baseline", None)), (
+            f"{label} is missing callable autotune_baseline"
+        )
+        assert callable(getattr(cls, "apply_choice", None)), (
+            f"{label} is missing callable apply_choice"
+        )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.3 — method_grids contract
+# ---------------------------------------------------------------------------
+
+def test_method_grids_is_supported_autotune_kwarg():
+    """method_grids must be an accepted keyword on autotune_baseline (v0.6.3+)."""
+    import inspect
+    from ramanpl.single_fit.RamanFit import RamanFit
+    sig = inspect.signature(RamanFit.autotune_baseline)
+    assert "method_grids" in sig.parameters, (
+        "RamanFit.autotune_baseline is missing the method_grids parameter"
+    )
+
+
+def test_deprecated_autotune_kwargs_absent():
+    """Removed v0.6.2-era kwargs 'methods' and 'lam_grid' must not appear in autotune_baseline (v0.6.3+)."""
+    import inspect
+    from ramanpl.single_fit.RamanFit import RamanFit
+    from ramanpl.single_fit.PLfit import PLfit
+    for cls, label in [(RamanFit, "RamanFit"), (PLfit, "PLfit")]:
+        sig = inspect.signature(cls.autotune_baseline)
+        for removed_kwarg in ("methods", "lam_grid"):
+            assert removed_kwarg not in sig.parameters, (
+                f"{label}.autotune_baseline should not accept removed kwarg {removed_kwarg!r}"
+            )

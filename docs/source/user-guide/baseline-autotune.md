@@ -107,7 +107,8 @@ Pass `method_grids=None` (the default) to use this full 24-candidate grid.
 
 ## v0.6.3 — `method_grids` parameter sweeps
 
-`method_grids` replaces the old `methods` + `lam_grid` pair. It accepts a
+`method_grids` replaces the old `methods` + `lam_grid` pair from v0.6.2. Those
+kwargs are **not accepted** in v0.6.3+ and will raise `TypeError` if passed. It accepts a
 dict mapping each method name to a dict of parameter lists; the Cartesian
 product is taken automatically per method.
 

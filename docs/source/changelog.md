@@ -4,6 +4,7 @@ Full release notes are maintained in the repository root [`CHANGELOG`](https://g
 
 ## Recent releases
 
+- **v0.6.6** — Consolidation pause: API freeze, validation, and documentation for v0.6.1–v0.6.5
 - **v0.6.5** — Similarity-based seed selection for warm-start (`cluster_seeds`)
 - **v0.6.4** — Parallel mapping fit with row-band warm-start
 - **v0.6.3** — Autotune API refinement, real-data notebooks, API docs

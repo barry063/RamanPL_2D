@@ -1,0 +1,10 @@
+{
+  "fit_output_parity": true,
+  "export_schema_stability": true,
+  "call_count_sanity": true,
+  "parallel_safety": true,
+  "cluster_seed_boundary": true,
+  "autotune_non_mutation": true,
+  "batch_progress_default": true,
+  "overall_pass": true
+}
