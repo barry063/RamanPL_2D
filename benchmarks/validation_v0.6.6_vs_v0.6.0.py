@@ -285,11 +285,15 @@ def gate_call_count_sanity():
         return {
             "gate_name": "call_count_sanity",
             "case_label": "small_3x4/n_starts=1",
-            "passed": True,
-            "detail": f"current n_calls={n_calls}; no matching v0.6.0 reference row found",
+            "passed": False,
+            "detail": (
+                f"current n_calls={n_calls}; v0.6.0 reference CSV not found or no matching "
+                f"row (dataset=small_3x4, warm_start=False, n_starts=1). "
+                f"Commit benchmarks/results/v0.6.0_validation.csv to enable this gate."
+            ),
             "n_curve_fit_calls": n_calls,
             "runtime_s": runtime_s,
-            "note": "advisory — wall-clock is not a release gate; v0.6.0 CSV has no n_jobs column so matching by dataset+warm_start+n_starts only",
+            "note": "wall-clock is not a release gate; call-count regression is",
         }
 
     lo = ref_calls * (1 - _CALL_COUNT_TOLERANCE)
@@ -301,11 +305,11 @@ def gate_call_count_sanity():
         "passed": passed,
         "detail": (
             f"current n_calls={n_calls}, v0.6.0 ref={ref_calls}, "
-            f"tolerance=±{int(_CALL_COUNT_TOLERANCE*100)}%"
+            f"tolerance=+/-{int(_CALL_COUNT_TOLERANCE*100)}%"
         ),
         "n_curve_fit_calls": n_calls,
         "runtime_s": runtime_s,
-        "note": "advisory — wall-clock is not a release gate",
+        "note": "wall-clock is advisory; call-count is the regression metric",
     }
 
 
@@ -615,8 +619,8 @@ def run():
     for r in bp_rows:
         print(f"  [{r['case_label']}] {r['passed']}  {r['detail']}")
 
-    # Write CSV
-    with open(_CSV_PATH, "w", newline="") as fh:
+    # Write CSV — explicit UTF-8 so common consumers don't raise UnicodeDecodeError
+    with open(_CSV_PATH, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=_CSV_FIELDS)
         writer.writeheader()
         writer.writerows(all_rows)
