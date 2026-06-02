@@ -1,7 +1,7 @@
 gate_name,case_label,passed,detail,n_curve_fit_calls,runtime_s,note
 fit_output_parity,small_3x4/n_starts=1,True,SHA256 match,,,"show_progress=True default confirmed (Gate 0.2); n_jobs=1, cluster_seeds=False confirmed (Gate 0.3)"
 export_schema_stability,small_3x4,True,export SHA256 matches v0.6.0 reference; QA cols present,,,feature_table() QA column freeze also verified
-call_count_sanity,small_3x4/n_starts=1,True,"current n_calls=12, v0.6.0 ref=12, tolerance=¡À25%",12,1.157545,advisory ¡ª wall-clock is not a release gate
+call_count_sanity,small_3x4/n_starts=1,True,"current n_calls=12, v0.6.0 ref=12, tolerance=+/-25%",12,0.532756,wall-clock is advisory; call-count is the regression metric
 parallel_safety,n_jobs=2/warm_start=False,True,completed without error,,,
 parallel_safety,n_jobs=2/warm_start=True/row_reset=False,True,ValueError raised as expected,,,
 cluster_seed_boundary,cluster_seeds=False/parity,True,SHA256 match,,,
