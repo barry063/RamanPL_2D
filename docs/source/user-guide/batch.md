@@ -27,6 +27,10 @@ batch = RamanBatch(
 batch.fit()
 ```
 
+Progress is shown by default (`show_progress=True` on the underlying
+`fit_spectra_batch` call). Pass `show_progress=False` to suppress it. This has
+no effect on fit results or exported data.
+
 ## Result table
 
 ```python

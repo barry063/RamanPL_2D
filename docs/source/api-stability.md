@@ -1,17 +1,19 @@
-# API stability — v0.5.5–v0.6.0 freeze contract
+# API stability — v0.5.5–v0.6.6 freeze contract
 
 This document is the written, citable stability contract for the public surface
-introduced in v0.5.1–v0.5.4. The same surfaces are enforced as a regression
-test in `tests/test_api_stability.py`.
+introduced in v0.5.1–v0.5.4 and extended additively through v0.6.6. The same
+surfaces are enforced as regression tests in `tests/test_api_stability.py`.
 
 ---
 
-## 1. Scope of the v0.5.5–v0.6.0 freeze
+## 1. Scope of the v0.5.5–v0.6.6 freeze
 
-v0.6.0 inherits the v0.5.5 freeze contract unchanged; the four frozen surfaces below
-remain frozen through v0.6.0 without modification.
+The v0.6.6 consolidation build extends the v0.5.5–v0.6.0 freeze contract to cover
+the additive public surface introduced in v0.6.1–v0.6.5. No existing frozen name is
+renamed, reordered, or removed. No new fitting algorithms, preprocessing algorithms,
+peak models, or export schemas are introduced in v0.6.6.
 
-The following four surfaces are frozen as of v0.5.5:
+The following four surfaces were frozen as of v0.5.5 and remain frozen through v0.6.6:
 
 - **Feature-table column schema** — the set of column names emitted by
   `feature_table()`, and the relative order in which they appear.
@@ -134,7 +136,7 @@ The frozen contract applies uniformly to Raman and PL data:
 
 ## 8. Compatibility policy
 
-Within the v0.5.x series:
+Within the v0.5.x–v0.6.x series:
 
 - **Additive-only** changes are permitted: new columns appended after the QA
   block, new keyword arguments with backward-compatible defaults, new public
@@ -149,16 +151,80 @@ automatically. Any change that breaks those tests is a breaking change.
 
 ---
 
-## 9. v0.6.5 additive changes
+## 9. v0.6.1 — `show_progress` contract
+
+v0.6.1 adds the `show_progress` keyword to `RamanMapping.fit_spectra`,
+`PLMapping.fit_spectra`, and `fit_spectra_batch` with default **`True`**.
+
+Frozen contract:
+
+- `show_progress=True` is the default on all three entry points.
+- Enabling or disabling progress display must not change fitted parameter values
+  or any export column.
+- The `tqdm` package is a hard dependency from v0.6.1 onwards.
+
+---
+
+## 10. v0.6.2 — autotune contract
+
+v0.6.2 adds `autotune_baseline()` and `apply_choice()` to `RamanMapping`,
+`PLMapping`, `RamanFit`, and `PLfit`.
+
+Frozen contract:
+
+- `autotune_baseline()` is **diagnostic and non-mutating**: it scores candidate
+  baseline configurations but does not modify `self.preprocessing`.
+- `apply_choice(result.winner)` is the **explicit mutation point**: it commits
+  the chosen baseline spec to `self.preprocessing` and invalidates any cached
+  preprocessed cube.
+- The provenance block written to exports by autotune workflows is additive
+  and does not alter the frozen feature-table column schema.
+
+---
+
+## 11. v0.6.3 — `method_grids` contract
+
+v0.6.3 replaces the v0.6.2 `methods` / `lam_grid` kwargs with the unified
+`method_grids` API.
+
+Frozen contract:
+
+- `method_grids` is the supported configuration API for `autotune_baseline()`.
+- The removed `methods` and `lam_grid` kwargs from v0.6.2 are not restored and
+  must not be reintroduced.
+
+---
+
+## 12. v0.6.4 — parallel-fit contract
+
+v0.6.4 adds the `n_jobs` keyword to `RamanMapping.fit_spectra` and
+`PLMapping.fit_spectra`.
+
+Frozen contract:
+
+- `n_jobs=1` (serial) is the default.
+- `n_jobs > 1` uses row-band parallel fitting via `loky`; no output schema or
+  feature-table column changes result from parallel execution.
+- Unsafe warm-start state propagation across parallel workers raises explicitly
+  rather than silently producing incorrect results.
+
+---
+
+## 13. v0.6.5 — cluster-seed contract
 
 v0.6.5 adds the `cluster_seeds` keyword to `RamanMapping.fit_spectra` and
-`PLMapping.fit_spectra` with default `False`. This is a backward-compatible
-additive change: existing call sites receive the default and existing output
-is unchanged.
+`PLMapping.fit_spectra`.
 
-The pre-fit spectral clustering used by `cluster_seeds=True` is implemented
-in `ramanpl.mapping._cluster_seeds` (package-private) and does not extend or
-alter the public `ramanpl.ml` surface. Frozen column vocabulary, QA columns,
-and feature-table schema are unchanged.
+Frozen contract:
 
-Full freeze language for v0.6.5 additions is deferred to v0.6.6.
+- `cluster_seeds=False` is the default; existing call sites are unaffected.
+- `cluster_seeds=True` requires scikit-learn (`pip install ramanpl[ml]`) and
+  requires `n_jobs=1`; using `cluster_seeds=True` with `n_jobs > 1` raises.
+- `cluster_seeds=True` and `seed_coord` are mutually exclusive.
+- The implementation is in `ramanpl.mapping._cluster_seeds` (package-private).
+  It does not extend the public `ramanpl.ml` surface.
+- Frozen column vocabulary, QA columns, and feature-table schema are unchanged.
+
+Known limitation: on homogeneous synthetic cubes, `cluster_seeds=True` does not
+reduce `n_curve_fit_calls` compared to the default initialisation. The measured
+benefit depends on multi-domain data with distinct spectral regions.

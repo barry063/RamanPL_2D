@@ -1,5 +1,46 @@
 # Changelog
 
+## [v0.6.6] — 2026-06-02 — Consolidation pause: API freeze, validation, docs
+
+### Added
+
+- `benchmarks/validation_v0.6.6_vs_v0.6.0.py` — reproducible validation harness
+  covering 7 gates: fit-output parity, export-schema stability, call-count sanity,
+  parallel safety, cluster-seed boundary, autotune non-mutation, batch-progress
+  default.
+- `benchmarks/results/v0.6.6_validation.csv` — versioned raw gate evidence.
+- `benchmarks/results/v0.6.6_validation_summary.json` — machine-readable gate
+  summary; all 7 gates passed.
+- `docs/source/validation/v0.6.6.md` — citable validation report.
+- `docs/source/api-stability.md` §9–§13 — freeze contracts for v0.6.1–v0.6.5
+  additive surface (`show_progress`, autotune, `method_grids`, `n_jobs`,
+  `cluster_seeds`).
+- `tests/test_api_stability.py` — six new contract tests: `show_progress=True`
+  default on mapping and batch entry points; `n_jobs=1` default on both mapping
+  classes; `autotune_baseline`/`apply_choice` presence on all four fit objects;
+  `method_grids` keyword present; removed `methods`/`lam_grid` absent.
+- `closeout_v0.6.6.md` — release closeout document.
+
+### Changed
+
+- `docs/source/user-guide/mapping.md` — `show_progress` and `n_jobs` usage
+  added; `parallel-fitting` cross-reference added.
+- `docs/source/user-guide/batch.md` — `show_progress=True` default documented.
+- `docs/source/user-guide/low_snr_advisory.md` — autotune baseline workflow
+  cross-referenced at Step 3; cluster-seeds advisory added as Step 5b.
+- `docs/source/user-guide/baseline-autotune.md` — `methods`/`lam_grid` removal
+  made explicit; `TypeError` on use stated.
+- `checklist.md` — `show_progress` default corrected from `False` to `True`
+  (source default confirmed by Gate 0.2).
+
+### Known limitations
+
+- `cluster_seeds=True` remains serial-only (`n_jobs=1` required).
+- On homogeneous synthetic cubes, `cluster_seeds=True` does not reduce
+  `n_curve_fit_calls`. Benefit depends on multi-domain data.
+
+---
+
 ## [v0.6.5] — 2026-05-28 — Similarity-based seed selection for warm-start
 
 ### Added
