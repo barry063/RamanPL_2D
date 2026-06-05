@@ -274,3 +274,122 @@ def test_feature_table_pl_mapping_ratios_and_separations():
 
     expected_ratio = row["Exciton_peak_height"] / row["Trion_peak_height"]
     assert row["Exciton_Trion_ratio"] == pytest.approx(expected_ratio, rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# v0.6.7: Component-area columns (Step 4)
+# ---------------------------------------------------------------------------
+
+def test_component_area_columns_present_raman():
+    """component_area, _norm, and _fraction columns appear for every peak (RamanMapping)."""
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)
+    df = m.feature_table()
+    for peak in ("E2g", "A1g"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, f"Missing {peak}{suffix}"
+
+
+def test_component_area_columns_present_pl():
+    """component_area, _norm, and _fraction columns appear for every peak (PLMapping)."""
+    m = _make_pl_mapping()
+    _inject_fit(m, _GOOD_PARAMS_PL)
+    df = m.feature_table()
+    for peak in ("Trion", "Exciton"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, f"Missing {peak}{suffix}"
+
+
+def test_component_area_norm_equals_amp_raman():
+    """component_area_norm == amp for each peak (Lorentzian, Raman, intensity_scale=5.0)."""
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)
+    df = m.feature_table()
+    # _GOOD_PARAMS_RAMAN = [386.0, 3.0, 2.0, 407.0, 4.0, 3.0] → amp_E2g=2.0, amp_A1g=3.0
+    for row in df.itertuples():
+        assert row.E2g_component_area_norm == pytest.approx(2.0, rel=1e-9)
+        assert row.A1g_component_area_norm == pytest.approx(3.0, rel=1e-9)
+
+
+def test_component_area_equals_amp_times_scale_raman():
+    """component_area == amp * intensity_scale for each peak (intensity_scale=5.0)."""
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)   # norm_scale_map set to 5.0
+    df = m.feature_table()
+    scale = 5.0
+    for row in df.itertuples():
+        assert row.E2g_component_area == pytest.approx(2.0 * scale, rel=1e-9)
+        assert row.A1g_component_area == pytest.approx(3.0 * scale, rel=1e-9)
+
+
+def test_component_area_fraction_sums_to_one():
+    """Fraction columns sum to 1.0 for every finite (good) pixel."""
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)
+    df = m.feature_table()
+    for _, row in df.iterrows():
+        total = row["E2g_component_area_fraction"] + row["A1g_component_area_fraction"]
+        assert total == pytest.approx(1.0, rel=1e-9), f"Fraction sum={total} at row {_}"
+
+
+def test_area_ratio_column_and_value():
+    """area_ratios= adds {P1}_{P2}_area_ratio = amp[P1] / amp[P2]."""
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)
+    df = m.feature_table(area_ratios=[("A1g", "E2g")])
+    assert "A1g_E2g_area_ratio" in df.columns
+    expected = 3.0 / 2.0   # amp_A1g / amp_E2g
+    for row in df.itertuples():
+        assert row.A1g_E2g_area_ratio == pytest.approx(expected, rel=1e-9)
+
+
+def test_failed_pixel_component_area_all_nan():
+    """Failed pixel row → NaN for all new component-area columns."""
+    m = _make_raman_mapping()
+    fail_px = (0, 0)
+    _inject_fit(m, _GOOD_PARAMS_RAMAN, fail_pixels=[fail_px])
+    df = m.feature_table(area_ratios=[("A1g", "E2g")])
+
+    fail_row = df[(df["x"] == 0) & (df["y"] == 0)].iloc[0]
+    for col in ("E2g_component_area", "E2g_component_area_norm", "E2g_component_area_fraction",
+                "A1g_component_area", "A1g_component_area_norm", "A1g_component_area_fraction",
+                "A1g_E2g_area_ratio"):
+        assert math.isnan(fail_row[col]), f"Expected NaN for {col} on failed pixel"
+
+
+def test_byte_parity_existing_columns_raman():
+    """Existing feature-table columns are identical to the v0.6.6 golden CSV."""
+    import pandas as pd
+    golden = pd.read_csv(
+        Path(__file__).parent.parent / "snapshot" / "featuretable_raman_map_v0.6.6.csv"
+    )
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)
+    df = m.feature_table(ratios=[("A1g", "E2g")], separations=[("A1g", "E2g")])
+
+    shared_cols = [c for c in golden.columns if c in df.columns]
+    pd.testing.assert_frame_equal(
+        df[shared_cols].reset_index(drop=True),
+        golden[shared_cols].reset_index(drop=True),
+        rtol=1e-9, atol=0,
+        check_like=False,
+    )
+
+
+def test_byte_parity_existing_columns_pl():
+    """Existing feature-table columns are identical to the v0.6.6 golden CSV (PL mapping)."""
+    import pandas as pd
+    golden = pd.read_csv(
+        Path(__file__).parent.parent / "snapshot" / "featuretable_pl_map_v0.6.6.csv"
+    )
+    m = _make_pl_mapping()
+    _inject_fit(m, _GOOD_PARAMS_PL)
+    df = m.feature_table(ratios=[("Exciton", "Trion")], separations=[("Exciton", "Trion")])
+
+    shared_cols = [c for c in golden.columns if c in df.columns]
+    pd.testing.assert_frame_equal(
+        df[shared_cols].reset_index(drop=True),
+        golden[shared_cols].reset_index(drop=True),
+        rtol=1e-9, atol=0,
+        check_like=False,
+    )

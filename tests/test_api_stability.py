@@ -31,36 +31,48 @@ from ramanpl.mapping._pl_mapping import PLMapping
 # ---------------------------------------------------------------------------
 
 _QA_COLS = ["rmse", "ok", "n_starts", "n_params_at_bounds"]
-_FROZEN_SUFFIXES = frozenset(
-    ["_position", "_fwhm", "_peak_height", "_peak_height_norm", "_separation", "_ratio"]
-)
+_FROZEN_SUFFIXES = frozenset([
+    "_position", "_fwhm", "_peak_height", "_peak_height_norm",
+    "_component_area", "_component_area_norm", "_component_area_fraction",
+    "_separation", "_ratio", "_area_ratio",
+])
 
 RAMAN_NO_PAIRS = [
     "x", "y",
     "E2g_position", "E2g_fwhm", "E2g_peak_height", "E2g_peak_height_norm",
+    "E2g_component_area", "E2g_component_area_norm", "E2g_component_area_fraction",
     "A1g_position", "A1g_fwhm", "A1g_peak_height", "A1g_peak_height_norm",
+    "A1g_component_area", "A1g_component_area_norm", "A1g_component_area_fraction",
 ] + _QA_COLS
 
 RAMAN_WITH_PAIRS = [
     "x", "y",
     "E2g_position", "E2g_fwhm", "E2g_peak_height", "E2g_peak_height_norm",
+    "E2g_component_area", "E2g_component_area_norm", "E2g_component_area_fraction",
     "A1g_position", "A1g_fwhm", "A1g_peak_height", "A1g_peak_height_norm",
+    "A1g_component_area", "A1g_component_area_norm", "A1g_component_area_fraction",
     "A1g_E2g_separation",
     "A1g_E2g_ratio",
+    "A1g_E2g_area_ratio",
 ] + _QA_COLS
 
 PL_NO_PAIRS = [
     "x", "y",
     "Trion_position", "Trion_fwhm", "Trion_peak_height", "Trion_peak_height_norm",
+    "Trion_component_area", "Trion_component_area_norm", "Trion_component_area_fraction",
     "Exciton_position", "Exciton_fwhm", "Exciton_peak_height", "Exciton_peak_height_norm",
+    "Exciton_component_area", "Exciton_component_area_norm", "Exciton_component_area_fraction",
 ] + _QA_COLS
 
 PL_WITH_PAIRS = [
     "x", "y",
     "Trion_position", "Trion_fwhm", "Trion_peak_height", "Trion_peak_height_norm",
+    "Trion_component_area", "Trion_component_area_norm", "Trion_component_area_fraction",
     "Exciton_position", "Exciton_fwhm", "Exciton_peak_height", "Exciton_peak_height_norm",
+    "Exciton_component_area", "Exciton_component_area_norm", "Exciton_component_area_fraction",
     "Exciton_Trion_separation",
     "Exciton_Trion_ratio",
+    "Exciton_Trion_area_ratio",
 ] + _QA_COLS
 
 
@@ -176,7 +188,11 @@ def test_raman_mapping_columns_subset_and_order_pinned():
 def test_raman_mapping_columns_with_pairs():
     m = _make_raman_mapping()
     _inject_fit(m, _GOOD_PARAMS_RAMAN)
-    df = m.feature_table(ratios=[("A1g", "E2g")], separations=[("A1g", "E2g")])
+    df = m.feature_table(
+        ratios=[("A1g", "E2g")],
+        separations=[("A1g", "E2g")],
+        area_ratios=[("A1g", "E2g")],
+    )
     cols = list(df.columns)
 
     ok, missing = _is_ordered_subset(RAMAN_WITH_PAIRS, cols)
@@ -200,7 +216,11 @@ def test_pl_mapping_columns_subset_and_order_pinned():
 def test_pl_mapping_columns_with_pairs():
     m = _make_pl_mapping()
     _inject_fit(m, _GOOD_PARAMS_PL)
-    df = m.feature_table(ratios=[("Exciton", "Trion")], separations=[("Exciton", "Trion")])
+    df = m.feature_table(
+        ratios=[("Exciton", "Trion")],
+        separations=[("Exciton", "Trion")],
+        area_ratios=[("Exciton", "Trion")],
+    )
     cols = list(df.columns)
 
     ok, missing = _is_ordered_subset(PL_WITH_PAIRS, cols)
@@ -210,10 +230,14 @@ def test_pl_mapping_columns_with_pairs():
 
 
 def test_suffix_vocabulary_is_frozen():
-    """Every non-QA, non-spatial column must use one of the six frozen suffixes."""
+    """Every non-QA, non-spatial column must use one of the frozen suffixes."""
     m = _make_raman_mapping()
     _inject_fit(m, _GOOD_PARAMS_RAMAN)
-    df = m.feature_table(ratios=[("A1g", "E2g")], separations=[("A1g", "E2g")])
+    df = m.feature_table(
+        ratios=[("A1g", "E2g")],
+        separations=[("A1g", "E2g")],
+        area_ratios=[("A1g", "E2g")],
+    )
 
     skip = set(_QA_COLS) | {"x", "y"}
     for col in df.columns:
@@ -371,3 +395,51 @@ def test_deprecated_autotune_kwargs_absent():
             assert removed_kwarg not in sig.parameters, (
                 f"{label}.autotune_baseline should not accept removed kwarg {removed_kwarg!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# v0.6.7 — component-area contract
+# ---------------------------------------------------------------------------
+
+def test_component_area_columns_present_raman_mapping():
+    """RamanMapping.feature_table() emits all three component-area columns for each peak (v0.6.7+)."""
+    m = _make_raman_mapping()
+    _inject_fit(m, _GOOD_PARAMS_RAMAN)
+    df = m.feature_table()
+    for peak in ("E2g", "A1g"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, (
+                f"RamanMapping feature_table() missing column '{peak}{suffix}'"
+            )
+
+
+def test_component_area_columns_present_pl_mapping():
+    """PLMapping.feature_table() emits all three component-area columns for each peak (v0.6.7+)."""
+    m = _make_pl_mapping()
+    _inject_fit(m, _GOOD_PARAMS_PL)
+    df = m.feature_table()
+    for peak in ("Trion", "Exciton"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, (
+                f"PLMapping feature_table() missing column '{peak}{suffix}'"
+            )
+
+
+def test_area_ratios_keyword_on_all_feature_table_entry_points():
+    """area_ratios= keyword must be accepted on all five feature_table() entry points (v0.6.7+)."""
+    import inspect
+    from ramanpl.single_fit.RamanFit import RamanFit
+    from ramanpl.single_fit.PLfit import PLfit
+    from ramanpl.batch import RamanBatch
+    from ramanpl.mapping._preprocess import _MappingPreprocessMixin
+
+    for cls, method_name, label in [
+        (RamanFit, "feature_table", "RamanFit"),
+        (PLfit, "feature_table", "PLfit"),
+        (RamanBatch, "feature_table", "RamanBatch"),
+        (_MappingPreprocessMixin, "feature_table", "_MappingPreprocessMixin"),
+    ]:
+        sig = inspect.signature(getattr(cls, method_name))
+        assert "area_ratios" in sig.parameters, (
+            f"{label}.{method_name} is missing the area_ratios parameter"
+        )

@@ -1,0 +1,2 @@
+source,E2g_position,E2g_fwhm,E2g_peak_height,E2g_peak_height_norm,A1g_position,A1g_fwhm,A1g_peak_height,A1g_peak_height_norm,A1g_E2g_separation,A1g_E2g_ratio,rmse,ok,n_starts,n_params_at_bounds
+synthetic_0,386.0,6.0,0.2122065907891938,0.2122065907891938,407.0,8.0,0.238732414637843,0.238732414637843,21.0,1.125,0.04,True,1.0,0.0

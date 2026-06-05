@@ -1,4 +1,4 @@
-# API stability — v0.5.5–v0.6.6 freeze contract
+# API stability — v0.5.5–v0.6.7 freeze contract
 
 This document is the written, citable stability contract for the public surface
 introduced in v0.5.1–v0.5.4 and extended additively through v0.6.6. The same
@@ -6,14 +6,16 @@ surfaces are enforced as regression tests in `tests/test_api_stability.py`.
 
 ---
 
-## 1. Scope of the v0.5.5–v0.6.6 freeze
+## 1. Scope of the v0.5.5–v0.6.7 freeze
 
-The v0.6.6 consolidation build extends the v0.5.5–v0.6.0 freeze contract to cover
-the additive public surface introduced in v0.6.1–v0.6.5. No existing frozen name is
-renamed, reordered, or removed. No new fitting algorithms, preprocessing algorithms,
-peak models, or export schemas are introduced in v0.6.6.
+The v0.6.7 build extends the v0.5.5–v0.6.6 freeze contract additively with four new
+feature-table column suffixes (`_component_area`, `_component_area_norm`,
+`_component_area_fraction`, `_area_ratio`) and a new `area_ratios=` keyword on all
+five `feature_table()` entry points. No existing frozen name is renamed, reordered,
+or removed. No new fitting algorithms, preprocessing algorithms, or peak models are
+introduced in v0.6.7.
 
-The following four surfaces were frozen as of v0.5.5 and remain frozen through v0.6.6:
+The following four surfaces were frozen as of v0.5.5 and remain frozen through v0.6.7:
 
 - **Feature-table column schema** — the set of column names emitted by
   `feature_table()`, and the relative order in which they appear.
@@ -50,14 +52,22 @@ frozen name will be renamed or reordered without a major version bump.
 
 Every per-peak column name is `{peak_label}{suffix}`, where `suffix` is one of:
 
-| Suffix | Meaning |
-|--------|---------|
-| `_position` | Fitted peak centre (cm⁻¹ for Raman; nm or eV for PL) |
-| `_fwhm` | Full width at half maximum |
-| `_peak_height` | Fitted peak height (absolute intensity) |
-| `_peak_height_norm` | Peak height normalised to the tallest peak in the fit |
-| `_separation` | Position difference for a peak pair (see §5) |
-| `_ratio` | Peak-height ratio for a peak pair (see §5) |
+| Suffix | Meaning | Added |
+|--------|---------|-------|
+| `_position` | Fitted peak centre (cm⁻¹ for Raman; nm or eV for PL) | v0.5.2 |
+| `_fwhm` | Full width at half maximum | v0.5.2 |
+| `_peak_height` | Fitted peak height (absolute intensity) | v0.5.2 |
+| `_peak_height_norm` | Peak height normalised (fit-space units) | v0.5.2 |
+| `_component_area` | Analytic peak area in absolute intensity units (`amp × intensity_scale`) | v0.6.7 |
+| `_component_area_norm` | Analytic peak area in normalised units (= `amp`) | v0.6.7 |
+| `_component_area_fraction` | `area[peak] / Σ area[all peaks]`; 0-sum → NaN | v0.6.7 |
+| `_separation` | Position difference for a peak pair (see §5) | v0.5.2 |
+| `_ratio` | Peak-height ratio for a peak pair (see §5) | v0.5.2 |
+| `_area_ratio` | Component-area ratio for a peak pair via `area_ratios=` (see §14) | v0.6.7 |
+
+The column emission order within a single feature row is:
+per-peak block (all suffixes for peak 1, then peak 2, …) → separation pairs →
+height-ratio pairs → area-ratio pairs → QA block.
 
 No other suffix will be introduced for per-peak columns without a major version
 bump.
@@ -228,3 +238,57 @@ Frozen contract:
 Known limitation: on homogeneous synthetic cubes, `cluster_seeds=True` does not
 reduce `n_curve_fit_calls` compared to the default initialisation. The measured
 benefit depends on multi-domain data with distinct spectral regions.
+
+---
+
+## 14. v0.6.7 — component-area contract
+
+v0.6.7 adds component area columns to the feature table and a new `area_ratios=`
+keyword to all five `feature_table()` entry points.
+
+### Scientific basis
+
+All three lineshapes in `peak_models.py` (Lorentzian, Gaussian, pseudo-Voigt) are
+area-normalised: the analytic integral over (−∞, ∞) equals the `amp` fit parameter.
+Therefore:
+
+- `component_area_norm = amp` (normalised fit units, identical to `amp` in the
+  fit parameter vector)
+- `component_area = amp × intensity_scale` (absolute intensity units, same scale
+  as `peak_height`)
+
+The analytic identity holds exactly for the fitted model. The only approximation is
+window truncation, which is negligible unless a peak is very broad relative to the
+spectral window (i.e. FWHM is a significant fraction of the window width).
+
+### New column definitions
+
+| Column | Definition | Units |
+|--------|------------|-------|
+| `{peak}_component_area` | `amp × intensity_scale` | absolute intensity |
+| `{peak}_component_area_norm` | `amp` | normalised (fit-space) |
+| `{peak}_component_area_fraction` | `area[peak] / Σ area[all peaks]`; 0-sum → NaN | dimensionless |
+| `{P1}_{P2}_area_ratio` | `area_norm[P1] / area_norm[P2]`; 0-denom → NaN | dimensionless |
+
+Fraction and `area_ratio` are computed from `component_area_norm` (`amp`); because
+`intensity_scale` is constant across peaks within a row, the scale-invariant result
+is identical to the scaled form.
+
+### `area_ratios=` keyword
+
+All five `feature_table()` entry points accept a new `area_ratios=` keyword-only
+argument (default `None`) with the same `list[tuple[str, str]]` signature as
+`ratios=`. Each pair `(P1, P2)` adds a `{P1}_{P2}_area_ratio` column.
+
+### Frozen contract
+
+- Column order within a row: all per-peak suffixes for peak 1 (position, fwhm,
+  peak_height, peak_height_norm, component_area, component_area_norm,
+  component_area_fraction), then peak 2, … → separation pairs → ratio pairs →
+  area_ratio pairs → QA block.
+- `_component_area`, `_component_area_norm`, `_component_area_fraction`, and
+  `_area_ratio` are added to `_FROZEN_SUFFIXES` in `test_api_stability.py`.
+- `export()` and long-format exporters are **unchanged** in v0.6.7 (`amp` was
+  already present in long-format output).
+- No new `curve_fit` calls; no benchmark impact.
+- Plotting of component-area columns is deferred to v0.6.8.

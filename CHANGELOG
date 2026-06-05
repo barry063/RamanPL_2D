@@ -1,5 +1,50 @@
 # Changelog
 
+## [v0.6.7] — 2026-06-05 — Integrated component area in the feature table
+
+### Added
+
+- `{peak}_component_area`, `{peak}_component_area_norm`, `{peak}_component_area_fraction`
+  columns in `feature_table()` for all fitter classes (RamanFit, PLfit, RamanMapping,
+  PLMapping, RamanBatch, PLBatch). Values are exact analytic areas of the fitted lineshape
+  (`amp × intensity_scale` and `amp` respectively); fraction sums to 1 across all peaks in
+  a row.
+- `area_ratios=` keyword on all five `feature_table()` entry points; each `(P1, P2)` pair
+  emits `{P1}_{P2}_area_ratio = amp[P1] / amp[P2]` (zero denominator → NaN).
+- `tests/test_component_area_identity.py` — verifies the area = `amp` identity numerically
+  for Lorentzian, Gaussian, and pseudo-Voigt (16 parameterised cases).
+- `docs/source/api-stability.md` §14 — v0.6.7 component-area freeze contract; §3 suffix
+  table extended with four new frozen suffixes.
+- `snapshot/featuretable_*_v0.6.6.csv` — golden CSVs for byte-parity regression.
+
+### Changed
+
+- `src/ramanpl/descriptors.py` — `build_feature_row` gains `area_ratios=` parameter and
+  emits three new per-peak columns and optional area-ratio pair columns.
+- `src/ramanpl/mapping/_preprocess.py` — `_params_to_export_dict` adds `amp_scaled` to
+  both lorentzian and pvoigt out-dicts; `feature_table` signature gains `area_ratios=` and
+  emits NaN for new columns in the failed-pixel branch.
+- `src/ramanpl/single_fit/RamanFit.py` and `PLfit.py` — `get_fitted_parameters` adds
+  `amp_scaled` to the returned dict; `feature_table` forwards `amp`/`amp_scaled` and gains
+  `area_ratios=`.
+- `src/ramanpl/batch.py` — `feature_table` forwards `amp`/`amp_scaled` and gains
+  `area_ratios=`.
+- `tests/test_api_stability.py` — `_FROZEN_SUFFIXES` extended; reference column lists
+  updated; three new v0.6.7 contract tests added.
+- `tests/test_descriptors_unit.py`, `test_feature_table_mapping.py`,
+  `test_feature_table_batch_and_single.py` — extended with component-area correctness,
+  byte-parity, and cross-path consistency tests.
+- `docs/source/quickstart.md` — feature-table section documents new columns.
+- Version bumped to 0.6.7 in `pyproject.toml`, `__init__.py`, `CITATION.cff`, `conf.py`,
+  `test_packaging_smoke.py`.
+
+### Not changed (scope boundary)
+
+- `export()` and long-format exporters — `amp` was already present; no schema change.
+- Fitting algorithms, peak models, preprocessing — zero changes.
+- Benchmarks — zero new `curve_fit` calls; no performance impact.
+- Plotting — deferred to v0.6.8.
+
 ## [v0.6.6] — 2026-06-02 — Consolidation pause: API freeze, validation, docs
 
 ### Added

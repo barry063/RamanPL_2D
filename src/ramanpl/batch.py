@@ -1513,7 +1513,7 @@ class _BaseBatch:
 
         return stats_df
 
-    def feature_table(self, *, ratios=None, separations=None):
+    def feature_table(self, *, ratios=None, separations=None, area_ratios=None):
         """
         Return a wide-format DataFrame of per-spectrum peak descriptors and QA columns.
 
@@ -1540,7 +1540,8 @@ class _BaseBatch:
         _, _, first_fitter = self.fits[0]
         peak_labels = list(first_fitter.peak_labels)
         descriptors.validate_peak_pairs(
-            list(ratios or []) + list(separations or []), peak_labels
+            list(ratios or []) + list(separations or []) + list(area_ratios or []),
+            peak_labels,
         )
 
         rows = []
@@ -1552,6 +1553,8 @@ class _BaseBatch:
                     "fwhm": d["fwhm"],
                     "peak_height": d["peak_height"],
                     "peak_height_norm": d["height_norm"],
+                    "amp": d["amp"],
+                    "amp_scaled": d["amp_scaled"],
                 }
                 for name, d in fitted.items()
             }
@@ -1564,7 +1567,8 @@ class _BaseBatch:
                 "n_params_at_bounds": float(diag.get("n_params_at_bounds", float("nan"))),
             }
             feat = descriptors.build_feature_row(
-                per_peak, qa, peak_labels, ratios=ratios, separations=separations
+                per_peak, qa, peak_labels,
+                ratios=ratios, separations=separations, area_ratios=area_ratios,
             )
             rows.append({"source": raw_s.source, **feat})
 

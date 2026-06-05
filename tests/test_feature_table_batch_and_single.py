@@ -229,3 +229,208 @@ def test_feature_table_qa_columns_consistent_across_classes(tmp_path):
     b.fit()
     batch_cols = set(b.feature_table().columns)
     assert _QA_COLS.issubset(batch_cols), f"Batch missing QA cols: {_QA_COLS - batch_cols}"
+
+
+# ---------------------------------------------------------------------------
+# v0.6.7: Component-area columns — single-fit and batch (Step 4)
+# ---------------------------------------------------------------------------
+
+def test_raman_fit_component_area_columns_present():
+    """RamanFit.feature_table() includes all three new component-area columns."""
+    rng = np.random.default_rng(50)
+    y = _raman_spectrum(rng)
+    fitter = RamanFit(
+        y, _X_RAMAN,
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    df = fitter.feature_table()
+    for peak in ("A1g", "E12g"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, f"Missing {peak}{suffix}"
+
+
+def test_pl_fit_component_area_columns_present():
+    """PLfit.feature_table() includes all three new component-area columns."""
+    rng = np.random.default_rng(51)
+    y = _pl_spectrum(rng)
+    fitter = PLfit(
+        y, _X_PL,
+        custom_peaks=_PL_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    df = fitter.feature_table()
+    for peak in ("Trion", "Exciton"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, f"Missing {peak}{suffix}"
+
+
+def test_raman_fit_component_area_norm_equals_amp():
+    """component_area_norm == amp from get_fitted_parameters()."""
+    rng = np.random.default_rng(52)
+    y = _raman_spectrum(rng)
+    fitter = RamanFit(
+        y, _X_RAMAN,
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    fitted = fitter.get_fitted_parameters()
+    df = fitter.feature_table()
+    row = df.iloc[0]
+    for peak in ("A1g", "E12g"):
+        assert row[f"{peak}_component_area_norm"] == pytest.approx(fitted[peak]["amp"], rel=1e-9)
+
+
+def test_raman_fit_component_area_equals_amp_times_scale():
+    """component_area == amp * peak_intensity (= amp_scaled)."""
+    rng = np.random.default_rng(53)
+    y = _raman_spectrum(rng)
+    fitter = RamanFit(
+        y, _X_RAMAN,
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    fitted = fitter.get_fitted_parameters()
+    df = fitter.feature_table()
+    row = df.iloc[0]
+    for peak in ("A1g", "E12g"):
+        assert row[f"{peak}_component_area"] == pytest.approx(fitted[peak]["amp_scaled"], rel=1e-9)
+
+
+def test_raman_fit_fraction_sums_to_one():
+    """component_area_fraction sums to 1.0 for a single-fit row."""
+    rng = np.random.default_rng(54)
+    y = _raman_spectrum(rng)
+    fitter = RamanFit(
+        y, _X_RAMAN,
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    df = fitter.feature_table()
+    row = df.iloc[0]
+    total = row["A1g_component_area_fraction"] + row["E12g_component_area_fraction"]
+    assert total == pytest.approx(1.0, rel=1e-9)
+
+
+def test_raman_fit_area_ratio_column():
+    """area_ratios= keyword adds {P1}_{P2}_area_ratio column."""
+    rng = np.random.default_rng(55)
+    y = _raman_spectrum(rng)
+    fitter = RamanFit(
+        y, _X_RAMAN,
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    fitted = fitter.get_fitted_parameters()
+    df = fitter.feature_table(area_ratios=[("A1g", "E12g")])
+    expected = fitted["A1g"]["amp"] / fitted["E12g"]["amp"]
+    assert df.iloc[0]["A1g_E12g_area_ratio"] == pytest.approx(expected, rel=1e-9)
+
+
+def test_batch_component_area_columns_present(tmp_path):
+    """RamanBatch.feature_table() includes component-area columns."""
+    rng = np.random.default_rng(56)
+    files = []
+    for i in range(2):
+        p = tmp_path / f"comp_{i}.txt"
+        _write_raman_txt(p, _raman_spectrum(rng))
+        files.append(str(p))
+    b = RamanBatch(files, custom_peaks=_RAMAN_CUSTOM_PEAKS, smoothing=False, background_remove=False)
+    b.fit()
+    df = b.feature_table()
+    for peak in ("A1g", "E12g"):
+        for suffix in ("_component_area", "_component_area_norm", "_component_area_fraction"):
+            assert f"{peak}{suffix}" in df.columns, f"Missing {peak}{suffix}"
+
+
+def test_byte_parity_existing_columns_single(tmp_path):
+    """Existing feature-table columns for single-fit match v0.6.6 golden CSV."""
+    import pandas as pd
+    from ramanpl.mapping import RamanMapping
+
+    golden = pd.read_csv(
+        Path(__file__).parent.parent / "snapshot" / "featuretable_single_v0.6.6.csv"
+    )
+
+    # Reproduce same fixture as gen_goldens.py
+    n_pts = 80
+    x_raman = np.linspace(300.0, 700.0, n_pts)
+    custom_peaks_raman = {
+        "E2g": ([380.0, 1.0, 0.001], [392.0, 20.0, 5.0]),
+        "A1g": ([402.0, 1.0, 0.001], [412.0, 20.0, 5.0]),
+    }
+    good_params = np.array([386.0, 3.0, 2.0, 407.0, 4.0, 3.0], dtype=float)
+    peak1 = np.exp(-0.5 * ((x_raman - 386.0) / 3.0) ** 2)
+    peak2 = np.exp(-0.5 * ((x_raman - 407.0) / 4.0) ** 2)
+
+    rf = RamanFit(
+        x_raman, peak1 + peak2,
+        custom_peaks=custom_peaks_raman,
+        normalize=False,
+        background_remove=False,
+        smoothing=False,
+    )
+    rf.params_fit = good_params.copy()
+    rf.peak_intensity = 1.0
+    rf.fit_diagnostics = {"rmse": 0.04, "n_starts": 1, "n_params_at_bounds": 0}
+    df = rf.feature_table(ratios=[("A1g", "E2g")], separations=[("A1g", "E2g")])
+
+    shared_cols = [c for c in golden.columns if c in df.columns]
+    pd.testing.assert_frame_equal(
+        df[shared_cols].reset_index(drop=True),
+        golden[shared_cols].reset_index(drop=True),
+        rtol=1e-9, atol=0,
+        check_like=False,
+    )
+
+
+def test_cross_path_component_area_single_vs_batch(tmp_path):
+    """Single-fit and batch produce identical component-area columns for the same spectrum."""
+    rng = np.random.default_rng(60)
+    y = _raman_spectrum(rng)
+    spec_file = tmp_path / "cross_path.txt"
+    _write_raman_txt(spec_file, y)
+
+    # Single-fit
+    fitter = RamanFit(
+        y, _X_RAMAN,
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    fitter.fit_spectrum()
+    sf_df = fitter.feature_table()
+
+    # Batch (same spectrum)
+    b = RamanBatch(
+        [str(spec_file)],
+        custom_peaks=_RAMAN_CUSTOM_PEAKS,
+        smoothing=False,
+        background_remove=False,
+    )
+    b.fit()
+    batch_df = b.feature_table()
+
+    area_cols = [c for c in sf_df.columns if "component_area" in c]
+    for col in area_cols:
+        assert col in batch_df.columns, f"Batch missing column {col}"
+        sf_val = float(sf_df.iloc[0][col])
+        batch_val = float(batch_df.iloc[0][col])
+        if math.isnan(sf_val):
+            assert math.isnan(batch_val)
+        else:
+            assert sf_val == pytest.approx(batch_val, rel=1e-6), (
+                f"Cross-path mismatch for {col}: single={sf_val}, batch={batch_val}"
+            )

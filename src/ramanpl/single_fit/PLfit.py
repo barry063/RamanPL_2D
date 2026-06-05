@@ -348,7 +348,7 @@ class PLfit:
             )
         self.intensity_normal = self.processed_spectra / self.peak_intensity
 
-    def feature_table(self, *, ratios=None, separations=None):
+    def feature_table(self, *, ratios=None, separations=None, area_ratios=None):
         """
         Return fitted peak descriptors as a single-row DataFrame.
 
@@ -358,6 +358,8 @@ class PLfit:
             Each ``(P1, P2)`` adds ``{P1}_{P2}_ratio``.
         separations : list of (str, str) or None
             Each ``(P1, P2)`` adds ``{P1}_{P2}_separation``.
+        area_ratios : list of (str, str) or None
+            Each ``(P1, P2)`` adds ``{P1}_{P2}_area_ratio``.
 
         Returns
         -------
@@ -372,7 +374,8 @@ class PLfit:
 
         peak_labels = list(self.peak_labels)
         descriptors.validate_peak_pairs(
-            list(ratios or []) + list(separations or []), peak_labels
+            list(ratios or []) + list(separations or []) + list(area_ratios or []),
+            peak_labels,
         )
 
         fitted = self.get_fitted_parameters()
@@ -382,6 +385,8 @@ class PLfit:
                 "fwhm": d["fwhm"],
                 "peak_height": d["peak_height"],
                 "peak_height_norm": d["height_norm"],
+                "amp": d["amp"],
+                "amp_scaled": d["amp_scaled"],
             }
             for name, d in fitted.items()
         }
@@ -394,7 +399,8 @@ class PLfit:
             "n_params_at_bounds": float(diag.get("n_params_at_bounds", float("nan"))),
         }
         feat = descriptors.build_feature_row(
-            per_peak, qa, peak_labels, ratios=ratios, separations=separations
+            per_peak, qa, peak_labels,
+            ratios=ratios, separations=separations, area_ratios=area_ratios,
         )
         return pd.DataFrame.from_records([feat])
 
@@ -611,6 +617,7 @@ class PLfit:
                     fwhm=float(fwhm),
                     scale=float(width),          # HWHM
                     amp=float(amp_area),
+                    amp_scaled=float(amp_area * fit_scale),
                     height_norm=float(height_norm),
                     peak_height=float(height_norm * fit_scale),
                 )
@@ -625,6 +632,7 @@ class PLfit:
                     fwhm_param=float(width),     # explicit: stored width is FWHM
                     eta=float(eta),
                     amp=float(amp_area),
+                    amp_scaled=float(amp_area * fit_scale),
                     height_norm=float(height_norm),
                     peak_height=float(height_norm * fit_scale),
                 )

@@ -184,3 +184,126 @@ def test_ratio_zero_denominator_asymmetry():
     row_ba = build_feature_row(per_peak, qa, ["A", "B"], ratios=[("B", "A")])
     assert math.isnan(row_ab["A_B_ratio"])
     assert row_ba["B_A_ratio"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# v0.6.7: Component-area columns (Step 4)
+# ---------------------------------------------------------------------------
+
+def _lorentzian_peak_dict_with_area(centre, hwhm, amp_area, intensity_scale=1.0):
+    """Like _lorentzian_peak_dict but also supplies amp_scaled."""
+    peak_height_norm = (amp_area / (math.pi * hwhm)) if hwhm != 0 else float("nan")
+    return {
+        "centre": centre,
+        "fwhm": 2.0 * hwhm,
+        "peak_height": peak_height_norm * intensity_scale,
+        "peak_height_norm": peak_height_norm,
+        "amp": amp_area,
+        "amp_scaled": amp_area * intensity_scale,
+        "scale": hwhm,
+    }
+
+
+def test_component_area_columns_values():
+    """component_area_norm == amp; component_area == amp * scale; fraction sums to 1."""
+    scale = 5.0
+    per_peak = {
+        "A": _lorentzian_peak_dict_with_area(520.0, 5.0, 10.0, intensity_scale=scale),
+        "B": _lorentzian_peak_dict_with_area(500.0, 3.0, 6.0, intensity_scale=scale),
+    }
+    qa = _qa()
+    row = build_feature_row(per_peak, qa, ["A", "B"])
+
+    assert row["A_component_area_norm"] == pytest.approx(10.0)
+    assert row["B_component_area_norm"] == pytest.approx(6.0)
+    assert row["A_component_area"] == pytest.approx(10.0 * scale)
+    assert row["B_component_area"] == pytest.approx(6.0 * scale)
+
+    assert row["A_component_area_fraction"] == pytest.approx(10.0 / 16.0)
+    assert row["B_component_area_fraction"] == pytest.approx(6.0 / 16.0)
+    assert row["A_component_area_fraction"] + row["B_component_area_fraction"] == pytest.approx(1.0)
+
+
+def test_component_area_fraction_sum_to_one_three_peaks():
+    """Fraction sum = 1.0 for any number of finite peaks."""
+    scale = 2.0
+    per_peak = {
+        "A": _lorentzian_peak_dict_with_area(520.0, 5.0, 10.0, intensity_scale=scale),
+        "B": _lorentzian_peak_dict_with_area(500.0, 3.0, 6.0, intensity_scale=scale),
+        "C": _lorentzian_peak_dict_with_area(480.0, 4.0, 4.0, intensity_scale=scale),
+    }
+    qa = _qa()
+    row = build_feature_row(per_peak, qa, ["A", "B", "C"])
+    total = row["A_component_area_fraction"] + row["B_component_area_fraction"] + row["C_component_area_fraction"]
+    assert total == pytest.approx(1.0)
+
+
+def test_area_ratio_values_and_zero_denominator():
+    """area_ratio = amp[P1] / amp[P2]; zero denominator → NaN."""
+    per_peak = {
+        "A": _lorentzian_peak_dict_with_area(520.0, 5.0, 10.0),
+        "B": _lorentzian_peak_dict_with_area(500.0, 3.0, 4.0),
+    }
+    qa = _qa()
+    row = build_feature_row(per_peak, qa, ["A", "B"], area_ratios=[("A", "B"), ("B", "A")])
+
+    assert row["A_B_area_ratio"] == pytest.approx(10.0 / 4.0)
+    assert row["B_A_area_ratio"] == pytest.approx(4.0 / 10.0)
+    assert row["A_B_area_ratio"] * row["B_A_area_ratio"] == pytest.approx(1.0, rel=1e-12)
+
+    # zero denominator
+    per_peak_zero = {
+        "A": _lorentzian_peak_dict_with_area(520.0, 5.0, 10.0),
+        "B": {**_lorentzian_peak_dict_with_area(500.0, 3.0, 0.0), "amp": 0.0, "amp_scaled": 0.0},
+    }
+    row_zero = build_feature_row(per_peak_zero, qa, ["A", "B"], area_ratios=[("A", "B")])
+    assert math.isnan(row_zero["A_B_area_ratio"])
+
+
+def test_component_area_nan_when_amp_missing():
+    """If amp/amp_scaled absent from per_peak dict, new columns are NaN (NaN-safe .get)."""
+    per_peak = {
+        "A": {"centre": 520.0, "fwhm": 10.0, "peak_height": 2.0, "peak_height_norm": 0.4},
+    }
+    qa = _qa()
+    row = build_feature_row(per_peak, qa, ["A"])
+
+    assert math.isnan(row["A_component_area"])
+    assert math.isnan(row["A_component_area_norm"])
+    assert math.isnan(row["A_component_area_fraction"])
+
+
+def test_component_area_failed_pixel_all_nan():
+    """Full NaN per_peak dict → all area columns NaN; fraction NaN (not 0/0 error)."""
+    per_peak = {
+        "A": {"centre": float("nan"), "fwhm": float("nan"),
+              "peak_height": float("nan"), "peak_height_norm": float("nan"),
+              "amp": float("nan"), "amp_scaled": float("nan")},
+        "B": {"centre": float("nan"), "fwhm": float("nan"),
+              "peak_height": float("nan"), "peak_height_norm": float("nan"),
+              "amp": float("nan"), "amp_scaled": float("nan")},
+    }
+    qa = _qa(ok=False, rmse=float("nan"))
+    row = build_feature_row(per_peak, qa, ["A", "B"], area_ratios=[("A", "B")])
+
+    assert math.isnan(row["A_component_area"])
+    assert math.isnan(row["A_component_area_norm"])
+    assert math.isnan(row["A_component_area_fraction"])
+    assert math.isnan(row["B_component_area_fraction"])
+    assert math.isnan(row["A_B_area_ratio"])
+
+
+def test_qa_block_remains_last():
+    """QA columns are always the last four columns in the row."""
+    per_peak = {
+        "A": _lorentzian_peak_dict_with_area(520.0, 5.0, 10.0),
+        "B": _lorentzian_peak_dict_with_area(500.0, 3.0, 6.0),
+    }
+    qa = _qa()
+    row = build_feature_row(
+        per_peak, qa, ["A", "B"],
+        ratios=[("A", "B")], separations=[("A", "B")], area_ratios=[("A", "B")],
+    )
+    qa_keys = ["ok", "rmse", "n_starts", "n_params_at_bounds"]
+    keys = list(row.keys())
+    assert keys[-4:] == qa_keys, f"QA not last: tail={keys[-4:]}"

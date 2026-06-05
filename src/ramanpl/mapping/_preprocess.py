@@ -351,6 +351,7 @@ class _MappingPreprocessMixin:
                     peak_height=peak_height,
                     peak_height_norm=float(peak_height_norm),
                     amp=amp_area,
+                    amp_scaled=float(amp_area * intensity_scale),
                     scale=hwhm,
                 )
 
@@ -369,6 +370,7 @@ class _MappingPreprocessMixin:
                     peak_height=peak_height,
                     peak_height_norm=peak_height_norm,
                     amp=amp_area,
+                    amp_scaled=float(amp_area * intensity_scale),
                     scale=fwhm,
                     eta=eta,
                 )
@@ -433,7 +435,7 @@ class _MappingPreprocessMixin:
             "n_params_at_bounds": n_at_bounds,
         }
 
-    def feature_table(self, *, coord_mode="pixel", scaled=True, ratios=None, separations=None):
+    def feature_table(self, *, coord_mode="pixel", scaled=True, ratios=None, separations=None, area_ratios=None):
         """
         Return a wide-format DataFrame of per-pixel peak descriptors and QA columns.
 
@@ -474,7 +476,8 @@ class _MappingPreprocessMixin:
 
         peak_labels = list(self.peak_params)
         descriptors.validate_peak_pairs(
-            list(ratios or []) + list(separations or []), peak_labels
+            list(ratios or []) + list(separations or []) + list(area_ratios or []),
+            peak_labels,
         )
 
         xaxis = np.asarray(getattr(self, self._schema_x_attr()), dtype=float).ravel()
@@ -492,10 +495,15 @@ class _MappingPreprocessMixin:
                     row[f"{name}_fwhm"] = float("nan")
                     row[f"{name}_peak_height"] = float("nan")
                     row[f"{name}_peak_height_norm"] = float("nan")
+                    row[f"{name}_component_area"] = float("nan")
+                    row[f"{name}_component_area_norm"] = float("nan")
+                    row[f"{name}_component_area_fraction"] = float("nan")
                 for p1, p2 in (separations or []):
                     row[f"{p1}_{p2}_separation"] = float("nan")
                 for p1, p2 in (ratios or []):
                     row[f"{p1}_{p2}_ratio"] = float("nan")
+                for p1, p2 in (area_ratios or []):
+                    row[f"{p1}_{p2}_area_ratio"] = float("nan")
                 row.update(qa)
             else:
                 intensity_scale = 1.0
@@ -511,7 +519,7 @@ class _MappingPreprocessMixin:
                 )
                 feat = descriptors.build_feature_row(
                     per_peak, qa, peak_labels,
-                    ratios=ratios, separations=separations,
+                    ratios=ratios, separations=separations, area_ratios=area_ratios,
                 )
                 row = {"x": x, "y": y_coord, **feat}
 
