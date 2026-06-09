@@ -35,6 +35,10 @@
   `test_feature_table_batch_and_single.py` — extended with component-area correctness,
   byte-parity, and cross-path consistency tests.
 - `docs/source/quickstart.md` — feature-table section documents new columns.
+- `example-usage/Ramanfit/Raman_component.ipynb`, `example-usage/PLfit/PL_component.ipynb`,
+  `example-usage/Mapping/Mapping Raman Example.ipynb`, `example-usage/Mapping/Mapping PL Example.ipynb`
+  — new section in each notebook demonstrating `feature_table()` component-area columns and
+  `area_ratios=` usage (with heatmap visualisation for the mapping notebooks).
 - Version bumped to 0.6.7 in `pyproject.toml`, `__init__.py`, `CITATION.cff`, `conf.py`,
   `test_packaging_smoke.py`.
 
