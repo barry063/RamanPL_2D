@@ -23,6 +23,7 @@ from ramanpl.schema import (
     normalise_preprocess_backend,
 )
 from ..peak_models import sum_peaks, single_peak
+from ramanpl.visualisation._single_fit import plot_raman_fit as _plot_raman_fit
 from ._single_fit_core import (
     build_single_fit_export_metadata,
     export_p0_dict,
@@ -1067,145 +1068,15 @@ class RamanFit:
     # Method to plot the fitted spectrum along with components
     def plot_fit(self, params, offset=0, scale=1.0, x_lim = [250, 750], y_lim = [],
                  x_ticks = [300, 350, 400, 450, 500, 550, 600, 650, 700]):
-        """Visualise fitting results and components (Lorentzian + pseudo-Voigt).
-
-        Notes
-        -----
-        - Fit space is always normalised: intensity_normal = processed_spectra / peak_intensity
-        - self.normalize controls DISPLAY only:
-            * True  -> plot in normalised a.u.
-            * False -> plot in counts
-        - Reported "Peak height" is the peak maximum in DISPLAY units.
-
-        Parameters
-        ----------
-        params : array-like
-            Fitting parameters from fit_spectrum()
-        offset : float, optional
-            Vertical offset for plotting multiple spectra (default: 0)
-        scale : float, optional
-            Vertical scaling factor (default: 1.0)
-        x_lim : list, optional
-            X-axis range [min, max] in cm⁻¹ (default: [250, 750])
-        y_lim : list, optional
-            Y-axis range [min, max] (default: auto-scale)
-        x_ticks : list, optional
-            X-axis tick positions in cm⁻¹ (default: 300-700 in 50 cm⁻¹ steps)
-
-        Displays
-        --------
-        - Raw and processed spectra
-        - Fitted curve and individual components
-        - Quality metrics in console output
-        """
-        ## Added in v0.2.7.1 for creating processing comparison
-        self._plot_preprocessing_comparison()
-
-        plt.figure()
-
-        profile = str(getattr(self, "peak_profile", "lorentzian")).lower().strip()
-        stride = int(getattr(self, "params_per_peak", 3))
-        p = np.asarray(params, dtype=float).ravel()
-
-        # Display multiplier: convert model (normalised fit space) to display units
-        display_multiplier = 1.0 if self.normalize else float(self.peak_intensity)
-
-        # Display-space spectra
-        if self.normalize:
-            proc_plot = (self.processed_spectra / self.peak_intensity) * scale + offset
-            raw_plot = (self.raw_spectra / self.peak_intensity) * scale + offset
-            plt.yticks([])
-        else:
-            proc_plot = self.processed_spectra * scale + offset
-            raw_plot = self.raw_spectra * scale + offset
-
-        # Plot spectra
-        plt.plot(self.wavenumber, proc_plot, 'k-', label='Processed Spectrum')
-        plt.plot(self.wavenumber, raw_plot, 'g-', label='Original Spectrum')
-
-        # Total fitted curve (fit space -> display space)
-        y_fit_norm = self._model(self.wavenumber, *p)
-        y_fit_plot = (y_fit_norm * display_multiplier) * scale + offset
-        plt.plot(self.wavenumber, y_fit_plot, 'b--', label='Fitted Total Curve')
-
-        # Residual in fit space (normalised)
-        residual = np.sum((self.intensity_normal - y_fit_norm) ** 2) / np.sum(self.intensity_normal ** 2)
-
-        # Print header (style-preserving)
-        if profile == "lorentzian":
-            print("\n{:<20} {:<15} {:<13} {:<14} {:<10}".format(
-                "Peak", "Position(cm⁻¹)", "FWHM(cm⁻¹)", "Peak height", "Scale"
-            ))
-        elif profile == "pvoigt":
-            print("\n{:<20} {:<15} {:<13} {:<14} {:<10} {:<6}".format(
-                "Peak", "Position(cm⁻¹)", "FWHM(cm⁻¹)", "Peak height", "Scale", "eta"
-            ))
-        else:
-            raise RuntimeError(f"Unsupported peak_profile '{profile}' in plot_fit().")
-
-        print("-" * 80)
-
-        # Plot components and calculate parameters
-        peak_positions = {}
-
-        for i, name in enumerate(self.peak_labels):
-            block = p[i * stride:(i + 1) * stride]
-            loc = float(block[0])
-
-            # Store positions for special peaks
-            peak_positions[str(name)] = loc
-
-            # Component in fit space, then display space
-            comp_profile = "pvoigt" if profile == "pvoigt" else "lorentzian"
-            y_comp_norm = single_peak(self.wavenumber, block, profile=comp_profile)
-            y_comp_plot = (y_comp_norm * display_multiplier) * scale + offset
-
-            # Plot component (keep your legacy red dashed style)
-            plt.plot(self.wavenumber, y_comp_plot, 'r--')
-
-            # Peak height (display units)
-            peak_height = float(np.max(y_comp_norm) * display_multiplier)
-
-            if profile == "lorentzian":
-                # width stored as HWHM in your Lorentzian convention
-                scale_param = float(block[1])
-                fwhm = 2.0 * scale_param
-                amp_area = float(block[2])
-
-                print("{:<20} {:<15.2f} {:<13.2f} {:<14.2f} {:<10.2f}".format(
-                    str(name), loc, fwhm, peak_height, scale_param
-                ))
-
-            else:
-                # pVoigt width stored as FWHM (per your updated peak_models)
-                fwhm = float(block[1])
-                amp_area = float(block[2])
-                eta = float(block[3])
-
-                # "Scale" column: keep something meaningful and stable for users.
-                # For pVoigt we print FWHM again as "Scale" to avoid inventing a new parameter name.
-                # (If you prefer, relabel the column to "Width" for pVoigt later.)
-                print("{:<20} {:<15.2f} {:<13.2f} {:<14.2f} {:<10.2f} {:<6.2f}".format(
-                    str(name), loc, fwhm, peak_height, fwhm, eta
-                ))
-
-        # E12g-A1g separation
-        if 'E12g' in peak_positions and 'A1g' in peak_positions:
-            peak_diff = peak_positions['A1g'] - peak_positions['E12g']
-            print(f"\nE12g(Γ)-A1g(Γ) separation: {peak_diff:.2f} cm⁻¹")
-
-        # Residual print (match your legacy wording)
-        print(f"\nNormalized Residual: {residual:.4f} (0 = perfect fit)")
-
-        # Plot formatting
-        plt.xlabel('Raman Shift (cm⁻¹)')
-        plt.ylabel('Intensity (a.u.)' if self.normalize else 'Intensity (counts)')
-        plt.xlim(x_lim)
-        if y_lim:
-            plt.ylim(y_lim)
-        plt.xticks(x_ticks)
-        plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
-        plt.show()
+        return _plot_raman_fit(
+            self,
+            params,
+            offset=offset,
+            scale=scale,
+            x_lim=x_lim,
+            y_lim=y_lim,
+            x_ticks=x_ticks,
+        )
 
     # Added in v0.2.7.1
     def _plot_preprocessing_comparison(self):

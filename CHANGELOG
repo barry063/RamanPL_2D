@@ -1,5 +1,32 @@
 # Changelog
 
+## [v0.6.8] - 2026-06-22 - Visualisation module extraction
+
+### Added
+
+- Internal `src/ramanpl/visualisation/` package for plotting implementation code.
+- `src/ramanpl/visualisation/_batch.py`, `_mapping.py`, `_single_fit.py`, and `_preview.py`.
+- Internal `_plot_raw_spectrum(...)` helper for array and mapping-pixel preview use. This is package-private in v0.6.8 and is not a stable public API.
+- `tests/test_visualisation_facades.py` with facade-signature checks and lightweight structural figure checks under the Agg backend.
+
+### Changed
+
+- Batch plotting implementations moved behind `ramanpl.batch.plot_overlay`, `plot_waterfall`, and `plot_fitted_parameters`; existing imports from `ramanpl.batch` remain valid.
+- `RamanMapping` and `PLMapping` fitted-map plotting methods now delegate to internal visualisation helpers.
+- `RamanFit.plot_fit` and `PLfit.plot_fit` now delegate to internal visualisation helpers.
+- Version bumped to 0.6.8 in `pyproject.toml`, `src/ramanpl/__init__.py`, `CITATION.cff`, `docs/source/conf.py`, and `tests/test_packaging_smoke.py`.
+
+### Not changed
+
+- Public plotting method signatures and legacy return contracts are preserved: batch plotting returns `(fig, ax)`, while mapping and single-fit plotting keep the existing `plt.show()` / `None` behavior.
+- Integration-class plotting (`Raman_Integration`, `PL_Integration`) remains unchanged and is deferred for later cleanup.
+- No fitting, preprocessing, baseline, peak-model, export, feature-table schema, parallel, or cluster-seed behavior changes.
+
+### Verification
+
+- `py -3.14 -m py_compile` passed for all touched production modules and `tests/test_visualisation_facades.py`.
+- Pytest and import smoke commands were not run in this workspace because the project `.venv` points to a missing Python interpreter and the available system/bundled Python installations lack the scientific/test dependencies.
+
 ## [v0.6.7] — 2026-06-05 — Integrated component area in the feature table
 
 ### Added

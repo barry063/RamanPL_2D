@@ -4,6 +4,7 @@ Full release notes are maintained in the repository root [`CHANGELOG`](https://g
 
 ## Recent releases
 
+- **v0.6.8** - Visualisation module extraction into internal `ramanpl.visualisation`; public class plotting methods and `ramanpl.batch` plotting imports preserved
 - **v0.6.7** — Integrated component area in the feature table (`component_area`, `component_area_norm`, `component_area_fraction`, `area_ratios=`)
 - **v0.6.6** — Consolidation pause: API freeze, validation, and documentation for v0.6.1–v0.6.5
 - **v0.6.5** — Similarity-based seed selection for warm-start (`cluster_seeds`)

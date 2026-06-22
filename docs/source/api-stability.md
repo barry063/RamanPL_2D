@@ -1,4 +1,4 @@
-# API stability — v0.5.5–v0.6.7 freeze contract
+# API stability - v0.5.5-v0.6.8 freeze contract
 
 This document is the written, citable stability contract for the public surface
 introduced in v0.5.1–v0.5.4 and extended additively through v0.6.6. The same
@@ -6,7 +6,7 @@ surfaces are enforced as regression tests in `tests/test_api_stability.py`.
 
 ---
 
-## 1. Scope of the v0.5.5–v0.6.7 freeze
+## 1. Scope of the v0.5.5-v0.6.8 freeze
 
 The v0.6.7 build extends the v0.5.5–v0.6.6 freeze contract additively with four new
 feature-table column suffixes (`_component_area`, `_component_area_norm`,
@@ -15,7 +15,9 @@ five `feature_table()` entry points. No existing frozen name is renamed, reorder
 or removed. No new fitting algorithms, preprocessing algorithms, or peak models are
 introduced in v0.6.7.
 
-The following four surfaces were frozen as of v0.5.5 and remain frozen through v0.6.7:
+v0.6.8 is an internal plotting extraction. It does not add feature-table columns, does not change export schemas, and does not introduce public deprecation warnings. Existing class plotting methods and `ramanpl.batch` plotting imports remain the supported public plotting surface. `ramanpl.visualisation` is internal in v0.6.8 and is not yet a stable public API.
+
+The following four surfaces were frozen as of v0.5.5 and remain frozen through v0.6.8:
 
 - **Feature-table column schema** — the set of column names emitted by
   `feature_table()`, and the relative order in which they appear.
@@ -292,3 +294,18 @@ argument (default `None`) with the same `list[tuple[str, str]]` signature as
   already present in long-format output).
 - No new `curve_fit` calls; no benchmark impact.
 - Plotting of component-area columns is deferred to v0.6.8.
+---
+
+## 15. v0.6.8 - plotting facade contract
+
+v0.6.8 moves plotting implementation code into the internal `ramanpl.visualisation` package while preserving the existing public surface. The supported user-facing plotting calls remain:
+
+- `RamanMapping.plot_spectrum_fit`, `plot_residual_distribution`, `plot_ratio_heatmap`, and `plot_heatmap`
+- `PLMapping.plot_spectrum_fit`, `plot_residual_distribution`, and `plot_heatmap`
+- `RamanFit.plot_fit` and `PLfit.plot_fit`
+- `ramanpl.batch.plot_overlay`, `plot_waterfall`, `plot_fitted_parameters`, and the corresponding batch class methods
+
+No deprecation warnings are introduced in v0.6.8. Batch plotting keeps returning `(fig, ax)`. Mapping and single-fit plotting keep the legacy `plt.show()` and `None` return behavior. `ramanpl.visualisation` and its underscore helpers are internal implementation details until a later public API promotion.
+
+Integration-class plotting (`Raman_Integration.plot_spectrum`, `Raman_Integration.plot_integration_heatmap`, `PL_Integration.plot_spectrum`, and `PL_Integration.plot_integration_heatmap`) remains unchanged in v0.6.8.
+
