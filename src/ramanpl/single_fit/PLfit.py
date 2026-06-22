@@ -21,6 +21,7 @@ from ramanpl.schema import (
     normalise_preprocess_backend,
 )
 from ..peak_models import sum_peaks, single_peak
+from ramanpl.visualisation._single_fit import plot_pl_fit as _plot_pl_fit
 from ._single_fit_core import (
     build_single_fit_export_metadata,
     export_p0_dict,
@@ -833,113 +834,7 @@ class PLfit:
     
     # changed in v0.3.3
     def plot_fit(self, params, offset=0.0, scale=1.0, x_lim=(1.7, 2.2)):
-        """Visualise processed spectrum, fitted total curve, and per-peak components.
-
-        Contract:
-        - Fitting is ALWAYS performed in peak-normalised space: intensity_normal = processed_spectra / peak_intensity
-        - self.normalize controls DISPLAY only:
-            * True  -> plot in normalised units
-            * False -> plot in processed counts
-        - Prints:
-            * normalised residual (fit space)
-            * per-peak position + (FWHM for Lorentzian, width for pVoigt) + peak height (in display units)
-        """
-        if params is None:
-            raise ValueError("params must be provided (e.g. output from fit_spectrum).")
-
-        # Preprocessing comparison (your existing feature)
-        self._plot_preprocessing_comparison()
-
-        p = np.asarray(params, dtype=float).ravel()
-        labels = list(getattr(self, "peak_labels", []))
-        if not labels:
-            raise RuntimeError("No peak labels available for plotting components.")
-
-        profile = str(getattr(self, "peak_profile", "lorentzian")).lower().strip()
-        stride = int(getattr(self, "params_per_peak", 3))
-
-        expected = stride * len(labels)
-        if p.size < expected:
-            raise RuntimeError(
-                f"params length {p.size} is insufficient for {len(labels)} peaks with stride={stride} "
-                f"(expected >= {expected})."
-            )
-
-        # ---- Display scaling: fit-space is normalised; display is either normalised or counts
-        if self.normalize:
-            data_plot = (self.processed_spectra / self.peak_intensity) * scale + offset
-            display_multiplier = 1.0  # keep in normalised units
-            y_label = "Intensity (a.u.)"
-        else:
-            data_plot = self.processed_spectra * scale + offset
-            display_multiplier = float(self.peak_intensity)  # convert model from normalised to counts
-            y_label = "Intensity (counts)"
-
-        # ---- Total fit in fit space (normalised)
-        y_fit_norm = self._model(self.energy, *p)
-        y_fit_plot = (y_fit_norm * display_multiplier) * scale + offset
-
-        # ---- Residual in fit space (normalised)
-        residual = np.sum((self.intensity_normal - y_fit_norm) ** 2) / np.sum(self.intensity_normal ** 2)
-        print(f'Normalized Residual: {residual:.4f} (Perfect fit has R = 0)\n')
-
-        # ---- Plot
-        plt.figure()
-        plt.plot(self.energy, data_plot, "k-", label="Processed Spectrum")
-        plt.plot(self.energy, y_fit_plot, "b--", label="Fitted Total Curve")
-
-        # Print per-peak summary header
-        if profile == "lorentzian":
-            print(f"Per-peak (Lorentzian): position, FWHM, peak height:")
-        elif profile == "pvoigt":
-            print(f"Per-peak (pseudo-Voigt): position, FWHM, eta, peak height:")
-        else:
-            raise RuntimeError(f"Unsupported peak_profile '{profile}' in plot_fit().")
-
-        for i, name in enumerate(labels):
-            block = p[i * stride : (i + 1) * stride]
-
-            comp_profile = "pvoigt" if profile == "pvoigt" else "lorentzian"
-            y_comp_norm = single_peak(self.energy, block, profile=comp_profile)
-            y_comp_plot = (y_comp_norm * display_multiplier) * scale + offset
-
-            # Keep legacy colours for Trion/Exciton
-            name_l = str(name).lower()
-            if name_l == "trion":
-                style = "r--"
-                label = "Trion"
-            elif name_l == "exciton":
-                style = "g--"
-                label = "Exciton"
-            else:
-                style = "--"
-                label = str(name)
-
-            plt.plot(self.energy, y_comp_plot, style, label=label)
-
-            # Reporting (legacy decimals + rename Amplitude -> Peak height)
-            centre = float(block[0])
-
-            if profile == "lorentzian":
-                width_hwhm = float(block[1])
-                fwhm = 2.0 * width_hwhm
-
-                amp_area = float(block[2])
-                height_norm = (amp_area / (np.pi * width_hwhm)) if width_hwhm != 0 else np.nan
-                peak_height = float(height_norm * display_multiplier)
-                print(f'{label}: {centre:.3f} eV | FWHM: {fwhm:.4f} eV | Peak height: {peak_height:.2f}')
-            else:
-                fwhm = float(block[1])
-                eta = float(block[3])
-                peak_height = float(np.max(y_comp_norm) * display_multiplier)
-                print(f'{label}: {centre:.2f} eV | FWHM: {fwhm:.2f} eV  | Peak height: {peak_height:.2f} | eta: {eta:.2f}')
-
-        plt.xlabel("Energy (eV)")
-        plt.ylabel(y_label)
-        plt.xlim(list(x_lim))
-        plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
-        # plt.tight_layout()
-        plt.show()
+        return _plot_pl_fit(self, params, offset=offset, scale=scale, x_lim=x_lim)
 
     ## Added in build v0.2.7.1
     def _plot_preprocessing_comparison(self):
